@@ -1,8 +1,9 @@
 use std::io::BufWriter;
 
+use num_traits::ToPrimitive;
 use rust_bitwriter::BitWriter;
 
-use crate::model::{Answer, Packet, QueryType, Question, Resource};
+use crate::model::{Answer, Packet, QueryType, Question, Resource, QueryClass};
 
 fn write_qname(bw: &mut BitWriter, qname: &Vec<String>) {
     for part in qname {
@@ -102,7 +103,7 @@ impl Writable for Question {
             .write_u16(self.qtype as u16, 16)
             .expect("Failed to write qtype");
         writer
-            .write_u16(self.qclass as u16, 16)
+            .write_u16(self.qclass.to_u16().unwrap_or(1), 16)
             .expect("Failed to write class");
         return writer.data().to_owned();
     }
@@ -144,7 +145,7 @@ impl Writable for Resource {
             .write_u16(self.qtype as u16, 16)
             .expect("Failed to write qtype");
         writer
-            .write_u16(self.qclass as u16, 16)
+            .write_u16(ToPrimitive::to_u16(&self.qclass).unwrap_or(1), 16)
             .expect("Failed to write class");
         writer.write_u32(self.ttl, 32).expect("Failed to write TTL");
         writer
