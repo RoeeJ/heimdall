@@ -25,7 +25,7 @@ fn main() -> ! {
             std::fs::write("out/recr.bin", &packet.to_bytes())
                 .expect("Failed to serialize recr.bin");
             let porig = read_packet(&orig);
-            dbg!(&porig,&resp);
+            dbg!(&porig);
             if let Err(e) = sock.send_to(&resp.to_bytes(), from) {
                 eprintln!("ERR:{}", e.to_string());
             }
@@ -38,12 +38,22 @@ fn generate_response(packet: &Packet) -> Packet {
     resp.qr = true;
     resp.ra = resp.rd;
     resp.questions.iter().for_each(|q| {
+        let mut data: Vec<u8> = vec![1,1,1,1];
+        if q.qtype == QueryType::CNAME {
+            let mut out = vec![];
+            q.qname.iter().for_each(|part| {
+                out.push(part.len() as u8);
+                out.append(&mut part.as_bytes().to_vec());
+            });
+            out.push(0x00 as u8);
+            data = out; 
+        } 
         resp.answers.push(Resource {
             name: Name::String(q.qname.clone()),
             qtype: q.qtype,
             qclass: q.qclass,
             ttl: 1,
-            data: vec![1, 1, 1, 1],
+            data,
         });
     });
     return resp;
@@ -86,9 +96,6 @@ fn read_packet(buf: &[u8]) -> Packet {
     for _ in 0..packet.arcount {
         println!("Read Additional Resource",);
         if let Some(r) = read_resource(&mut reader) {
-            if r.qtype == QueryType::OPT {
-                continue;
-            }
             packet.resources.push(r);
         }
     }
@@ -126,9 +133,10 @@ fn read_resource(reader: &mut BitReader) -> Option<Resource> {
 
     r.qtype = num::FromPrimitive::from_u16(reader.read_u16(16).expect("Failed to read QueryType"))
         .unwrap_or(QueryType::UNK);
+    let qclass = reader.read_u16(16).expect("Failed to read QueryClass");
     r.qclass =
-        num::FromPrimitive::from_u16(reader.read_u16(16).expect("Failed to read QueryClass"))
-            .unwrap_or(QueryClass::ANY);
+        num::FromPrimitive::from_u16(qclass)
+            .unwrap_or(QueryClass::Other(qclass));
 
     match name {
         Name::Empty => {

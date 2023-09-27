@@ -1,3 +1,4 @@
+use num_traits::{FromPrimitive, ToPrimitive};
 use ux::{u3, u4};
 
 #[derive(Default, Debug, Clone)]
@@ -42,8 +43,7 @@ pub enum Name {
     Empty,
 }
 
-#[derive(FromPrimitive)]
-#[derive(Default, Debug, Copy, Clone, PartialEq)]
+#[derive(FromPrimitive, Default, Debug, Copy, Clone, PartialEq)]
 pub enum QueryType {
     #[default]
     UNK = 0,
@@ -100,8 +100,8 @@ pub enum QueryType {
     DLV = 32769,
 }
 
-#[derive(FromPrimitive)]
 #[derive(Default, Debug, Copy, Clone)]
+#[repr(u16)]
 pub enum QueryClass {
     #[default]
     IN = 1,
@@ -109,6 +109,55 @@ pub enum QueryClass {
     CH = 3,
     HS = 4,
     ANY = 255,
+    Other(u16),
+}
+
+impl ToPrimitive for QueryClass {
+    fn to_i64(&self) -> Option<i64> {
+        Some(match self {
+            QueryClass::IN => 1,
+            QueryClass::CS => 2,
+            QueryClass::CH => 3,
+            QueryClass::HS => 4,
+            QueryClass::ANY => 255,
+            QueryClass::Other(x) => *x as i64,
+        })
+    }
+
+    fn to_u64(&self) -> Option<u64> {
+        Some(match self {
+            QueryClass::IN => 1,
+            QueryClass::CS => 2,
+            QueryClass::CH => 3,
+            QueryClass::HS => 4,
+            QueryClass::ANY => 255,
+            QueryClass::Other(x) => *x as u64,
+        })
+    }
+}
+
+impl FromPrimitive for QueryClass {
+    fn from_i64(n: i64) -> Option<Self> {
+        Some(match n {
+            1 => Self::IN,
+            2 => Self::CS,
+            3 => Self::CH,
+            4 => Self::HS,
+            255 => Self::ANY,
+            x => Self::Other(x as u16),
+        })
+    }
+
+    fn from_u64(n: u64) -> Option<Self> {
+        Some(match n {
+            1 => Self::IN,
+            2 => Self::CS,
+            3 => Self::CH,
+            4 => Self::HS,
+            255 => Self::ANY,
+            x => Self::Other(x as u16),
+        })
+    }
 }
 
 #[derive(Default, Debug, Clone)]
@@ -117,11 +166,10 @@ pub struct Resource {
     pub qtype: QueryType,
     pub qclass: QueryClass,
     pub ttl: u32,
-    pub data: Vec<u8>
+    pub data: Vec<u8>,
 }
 
-#[derive(FromPrimitive)]
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(FromPrimitive, Default, Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum Opcode {
     #[default]
@@ -134,8 +182,7 @@ pub enum Opcode {
     Other,
 }
 
-#[derive(FromPrimitive)]
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(FromPrimitive, Default, Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum RCode {
     #[default]
@@ -147,4 +194,3 @@ pub enum RCode {
     PolicyFail = 5,
     UNK,
 }
-
