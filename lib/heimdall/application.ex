@@ -19,7 +19,6 @@ defmodule Heimdall.Application do
       # Start to serve requests, typically the last entry
       HeimdallWeb.Endpoint,
       Heimdall.DNS.Cache,
-      Heimdall.DNS.Resolver,
       {Heimdall.DNS.Server, 1053}
     ]
 
