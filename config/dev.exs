@@ -4,7 +4,7 @@ import Config
 config :heimdall, Heimdall.Repo,
   username: "postgres",
   password: "postgres",
-  hostname: "10.10.1.254",
+  hostname: "localhost",
   database: "heimdall_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,

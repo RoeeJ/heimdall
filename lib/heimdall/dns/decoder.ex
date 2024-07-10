@@ -1,5 +1,42 @@
-defmodule Heimdall.DNS.Model do
-  def parse_labels(labels, data) do
+defmodule Heimdall.DNS.Decoder do
+  alias Heimdall.DNS.Model
+
+  @spec packet(data :: bitstring()) :: Model.Packet.t()
+  def packet(data) when is_bitstring(data) do
+
+    <<id::16, qr::1, opcode::4, aa::1, tc::1, rd::1, ra::1, z::3, rcode::4, data::bitstring>> =
+      data
+
+    <<qdcount::16, ancount::16, nscount::16, arcount::16, data::bitstring>> = data
+
+    [questions, data] = Model.Question.parse([], data, qdcount)
+    [answers, data] = Model.Answer.parse([], data, ancount)
+    [nameservers, data] = Model.Nameserver.parse([], data, nscount)
+    [additional, data] = Model.Additional.parse([], data, arcount)
+
+    %Model.Packet{
+      id: id,
+      qr: qr(qr),
+      opcode: opcode(opcode),
+      aa: aa,
+      tc: tc,
+      rd: rd,
+      ra: ra,
+      z: z,
+      rcode: rcode,
+      qdcount: qdcount,
+      ancount: ancount,
+      nscount: nscount,
+      arcount: arcount,
+      questions: questions,
+      answers: answers,
+      nameservers: nameservers,
+      additional: additional
+    }
+  end
+
+  @spec labels(labels :: [String.t()], data :: bitstring()) :: {[String.t()], bitstring()}
+  def labels(labels, data) do
     <<label_len::8, data::bitstring>> = data
 
     case label_len do
@@ -8,10 +45,11 @@ defmodule Heimdall.DNS.Model do
 
       _ ->
         <<label::binary-size(label_len), data::bitstring>> = data
-        parse_labels([label | labels], data)
+        labels([label | labels], data)
     end
   end
 
+  @spec qr(0 | 1) :: :request | :response
   def qr(n) do
     case n do
       0 -> :request
@@ -20,6 +58,7 @@ defmodule Heimdall.DNS.Model do
     end
   end
 
+  @spec opcode(0 | 1 | 2) :: :iquery | :query | :status
   def opcode(n) do
     case n do
       0 -> :query

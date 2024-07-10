@@ -1,5 +1,6 @@
 defmodule Heimdall.DNS.Model.Packet do
   @type t() :: %__MODULE__{}
+
   defstruct id: nil,
             qr: nil,
             opcode: nil,
