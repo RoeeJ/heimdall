@@ -1,5 +1,7 @@
 defmodule Heimdall.DNS.Model.EDNS.Cookie do
-  @type t() :: %__MODULE__{}
+  @type t() :: %__MODULE__{
+    opt_length: non_neg_integer(), client_cookie: bitstring(), server_cookie: bitstring()
+  }
 
   require Logger
   defstruct opt_length: nil, client_cookie: nil, server_cookie: nil

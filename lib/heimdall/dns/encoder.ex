@@ -1,128 +1,94 @@
 defmodule Heimdall.DNS.Encoder do
   alias Heimdall.DNS.Model
 
-  @spec packet(packet :: Model.Packet.t()) :: bitstring()
   def packet(%Model.Packet{} = packet) do
-    data =
-      <<packet.id::16, qr(packet.qr)::1, opcode(packet.opcode)::4, packet.aa::1, packet.tc::1,
-        packet.rd::1, packet.ra::1, packet.z::3, packet.rcode::4, packet.qdcount::16,
-        packet.ancount::16, packet.nscount::16, packet.arcount::16>>
+    header = encode_header(packet)
+    questions = Enum.map(packet.questions, &encode_question/1)
+    answers = Enum.map(packet.answers, &Model.ResourceRecord.encode/1)
+    authority = Enum.map(packet.nameservers, &Model.ResourceRecord.encode/1)
+    additional = Enum.map(packet.additional, &Model.ResourceRecord.encode/1)
 
-    data =
-      Enum.reduce(packet.questions, data, fn v, acc ->
-        acc <> Model.Question.encode(v)
-      end)
-
-    data =
-      Enum.reduce(packet.answers, data, fn v, acc ->
-        acc <> Model.Answer.encode(v)
-      end)
-
-    data =
-      Enum.reduce(packet.nameservers, data, fn v, acc ->
-        acc <> Model.Nameserver.encode(v)
-      end)
-
-    data =
-      Enum.reduce(packet.additional, data, fn v, acc ->
-        acc <> Model.Additional.encode(v)
-      end)
-
-    data
+    header <>
+      Enum.join(questions) <> Enum.join(answers) <> Enum.join(authority) <> Enum.join(additional)
   end
 
-  def labels(label) do
-    String.split(label, ".")
-    |> Enum.reverse()
-    |> Enum.reduce(<<0>>, fn v, acc ->
-      <<String.length(v)::8, v::bitstring, acc::bitstring>>
-    end)
+  defp encode_header(packet) do
+    <<
+      packet.id::16,
+      qr(packet.qr)::1,
+      opcode(packet.opcode)::4,
+      aa(packet.authoritative)::1,
+      tc(packet.truncated)::1,
+      rd(packet.recurs_desired)::1,
+      ra(packet.recurs_available)::1,
+      # Z (reserved)
+      0::3,
+      rcode(packet.resp_code)::4,
+      packet.qdcount::16,
+      packet.ancount::16,
+      packet.nscount::16,
+      packet.arcount::16
+    >>
   end
 
-  @spec qr(:request | :response) :: 0 | 1
-  def qr(n) do
-    case n do
-      :request -> 0
-      :response -> 1
-      _ -> throw("Invalid QR value #{n}")
-    end
+  defp encode_question(%Model.Question{} = q) do
+    labels(q.qname) <> <<qtype(q.qtype)::16, qclass(q.qclass)::16>>
   end
 
-  @spec opcode(:query | :iquery | :status) :: 0 | 1 | 2
-  def opcode(n) do
-    case n do
-      :query -> 0
-      :iquery -> 1
-      :status -> 2
-      _ -> throw("Invalid opcode value #{n}")
-    end
+  def labels(name) when is_binary(name) do
+    name
+    |> String.split(".")
+    |> Enum.map(fn part -> <<byte_size(part)::8, part::binary>> end)
+    |> Enum.join()
+    |> Kernel.<>(<<0>>)
   end
 
-  def qtype(n) do
-    case n do
-      :a -> 1
-      :ns -> 2
-      :cname -> 5
-      :soa -> 6
-      :ptr -> 12
-      :hinfo -> 13
-      :mx -> 15
-      :text -> 16
-      :rp -> 17
-      :afsdb -> 18
-      :sig -> 24
-      :key -> 25
-      :aaaa -> 28
-      :loc -> 29
-      :srv -> 33
-      :naptr -> 35
-      :kx -> 36
-      :cert -> 37
-      :dname -> 39
-      :opt -> 41
-      :apl -> 42
-      :ds -> 43
-      :sshfp -> 44
-      :ipseckey -> 45
-      :rrsig -> 46
-      :nsec -> 47
-      :dnskey -> 48
-      :dhcid -> 49
-      :nsec3 -> 50
-      :nsec3param -> 51
-      :tlsa -> 52
-      :smimea -> 53
-      :hip -> 55
-      :cds -> 59
-      :cdnskey -> 60
-      :openpgpkey -> 61
-      :csync -> 62
-      :zonemd -> 63
-      :svcb -> 64
-      :https -> 65
-      :eui48 -> 108
-      :eui64 -> 109
-      :tkey -> 249
-      :tsig -> 250
-      :axfr -> 252
-      :mailb -> 253
-      :maila -> 254
-      :all -> 255
-      :uri -> 256
-      :caa -> 257
-      :ta -> 32768
-      :dlv -> 32769
-      _ -> throw("Unknown QTYPE value #{n}")
-    end
+  def labels(name) when is_list(name) do
+    name
+    |> Enum.map(fn part -> <<byte_size(part)::8, part::binary>> end)
+    |> Enum.join()
+    |> Kernel.<>(<<0>>)
   end
 
-  def qclass(n) do
-    case n do
-      :in -> 1
-      :cs -> 2
-      :ch -> 3
-      :hesiod -> 4
-      _ -> throw("Unknown QCLASS value #{n}")
-    end
-  end
+  def qr(:query), do: 0
+  def qr(:response), do: 1
+
+  def opcode(:query), do: 0
+  def opcode(:iquery), do: 1
+  def opcode(:status), do: 2
+
+  def aa(true), do: 1
+  def aa(false), do: 0
+
+  def tc(true), do: 1
+  def tc(false), do: 0
+
+  def rd(true), do: 1
+  def rd(false), do: 0
+
+  def ra(true), do: 1
+  def ra(false), do: 0
+
+  def rcode(:no_err), do: 0
+  def rcode(:server_err), do: 1
+  def rcode(:format_err), do: 2
+  def rcode(:name_err), do: 3
+  def rcode(:not_implemented), do: 4
+  def rcode(:refused), do: 5
+
+  def qtype(:a), do: 1
+  def qtype(:ns), do: 2
+  def qtype(:cname), do: 5
+  def qtype(:soa), do: 6
+  def qtype(:ptr), do: 12
+  def qtype(:mx), do: 15
+  def qtype(:txt), do: 16
+  def qtype(:aaaa), do: 28
+  def qtype(:srv), do: 33
+  def qtype(:opt), do: 41
+
+  def qclass(:in), do: 1
+  def qclass(:cs), do: 2
+  def qclass(:ch), do: 3
+  def qclass(:hs), do: 4
 end

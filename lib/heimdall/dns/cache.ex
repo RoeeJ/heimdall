@@ -24,7 +24,6 @@ defmodule Heimdall.DNS.Cache do
 
         case Resolver.query(hostname, record_type) do
           {:ok, res} ->
-            IO.inspect(res)
             # :ets.insert(@entries_table, {{hostname, record_type}, res})
             {:reply, res, state}
 
@@ -35,8 +34,31 @@ defmodule Heimdall.DNS.Cache do
     end
   end
 
+  def handle_call({:resolve, hostname, record_type}, from, state) do
+    case :ets.lookup(@entries_table, {hostname, record_type}) do
+      [res] ->
+        {{_hostname, _rtype}, res} = res
+        {:reply, {:ok, res}, state}
+
+      [] ->
+
+        case Resolver.resolve(hostname, record_type) do
+          {:ok, res} ->
+            :ets.insert(@entries_table, {{hostname, record_type}, res})
+            {:reply, {:ok, res}, state}
+
+          {:error, err} ->
+            Logger.error("Error while querying: #{err}")
+            {:reply, {:error, err}, state}
+        end
+    end
+  end
+
   def query(hostname, record_type) do
-    Logger.info("Received query request for #{hostname} of record type #{record_type}")
     GenServer.call(__MODULE__, {:query, hostname, record_type})
+  end
+
+  def resolve(hostname, record_type) do
+    GenServer.call(__MODULE__, {:resolve, hostname, record_type})
   end
 end

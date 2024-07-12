@@ -1,6 +1,11 @@
 defmodule Heimdall.DNS.Model.Question do
-  alias Heimdall.DNS.Decoder
-  alias Heimdall.DNS.Encoder
+  alias Heimdall.DNS.{Encoder, Decoder, Model}
+
+  @type t() :: %__MODULE__{
+          qname: String.t(),
+          qclass: Model.qclass_atoms(),
+          qtype: Model.qtype_atoms()
+        }
 
   defstruct qname: nil, qtype: nil, qclass: nil
 

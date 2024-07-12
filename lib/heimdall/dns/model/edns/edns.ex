@@ -1,5 +1,14 @@
 defmodule Heimdall.DNS.Model.EDNS do
-  alias Heimdall.DNS.Model.EDNS
+  alias Heimdall.DNS.{Model.EDNS}
+
+  @type t() :: %__MODULE__{
+          payload_size: non_neg_integer(),
+          rcode: non_neg_integer(),
+          version: non_neg_integer(),
+          z: non_neg_integer(),
+          data_length: non_neg_integer(),
+          data: EDNS.Cookie.t() | any
+        }
 
   defstruct payload_size: nil, rcode: nil, version: nil, z: nil, data_length: nil, data: nil
 
@@ -7,6 +16,7 @@ defmodule Heimdall.DNS.Model.EDNS do
     <<payload_size::16, rcode::8, version::8, z::16, data_length::16, data::bitstring>> = data
     <<edns_data::binary-size(data_length), data::bitstring>> = data
     option = parse_option(edns_data)
+
     [
       %__MODULE__{
         payload_size: payload_size,
@@ -26,7 +36,9 @@ defmodule Heimdall.DNS.Model.EDNS do
     case option_type(type) do
       :cookie ->
         EDNS.Cookie.parse(data)
-      n -> throw("Unknown OPT value #{n}")
+
+      n ->
+        throw("Unknown OPT value #{n}")
     end
   end
 
