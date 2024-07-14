@@ -3,11 +3,13 @@ defmodule Heimdall.DNS.Server do
   require Logger
   alias Heimdall.DNS.{Encoder, Decoder, Model, Resolver}
 
-  def start_link(port \\ 1053) do
-    GenServer.start_link(__MODULE__, port)
+  def start_link(opts) do
+    GenServer.start_link(__MODULE__, opts)
   end
 
-  def init(port) do
+  def init(opts) do
+    port = Keyword.get(opts, :port)
+    Logger.info("Heimdall DNS starting on port #{port}")
     {:ok, socket} = :gen_udp.open(port, [:binary, active: true])
     {:ok, %{socket: socket}}
   end
@@ -17,6 +19,11 @@ defmodule Heimdall.DNS.Server do
       handle_dns_query(socket, address, port, data)
     end)
 
+    {:noreply, state}
+  end
+
+  def handle_info(msg, state) do
+    IO.inspect(msg, label: "Unhandled message")
     {:noreply, state}
   end
 

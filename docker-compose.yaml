@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    expose:
+      - 4000
+      - 1053/udp
+    ports:
+      - "4000:4000"
+      - "1053:1053/udp"
+    environment:
+      - MIX_ENV=prod
+      - PHX_SERVER=y
+      - PHX_HOST=localhost
+      - PORT=4000
+      - DNS_PORT=1053
+      - SECRET_KEY_BASE=nn6k31eJOhOmKFmuiakXgjrl39l7d6sk5oiZKMhU8D3l9pywE8qY5T8Jd7kJ4zJt
+      - DATABASE_URL=ecto://postgres:postgres@db/heimdall
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=heimdall
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

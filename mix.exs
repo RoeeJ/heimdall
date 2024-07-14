@@ -61,7 +61,8 @@ defmodule Heimdall.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:mix_test_watch, "~> 1.0", only: [:dev, :test], runtime: false},
       {:exsync, "~> 0.4", only: :dev},
-      {:dns, "~> 2.4"}
+      {:dns, "~> 2.4"},
+      {:cachex, "~> 3.6"}
     ]
   end
 

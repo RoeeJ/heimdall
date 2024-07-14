@@ -8,6 +8,9 @@ defmodule Heimdall.Application do
   @impl true
   def start(_type, _args) do
     children = [
+      {Ecto.Migrator,
+       repos: Application.fetch_env!(:heimdall, :ecto_repos),
+       skip: System.get_env("SKIP_MIGRATIONS") == "true"},
       HeimdallWeb.Telemetry,
       Heimdall.Repo,
       {DNSCluster, query: Application.get_env(:heimdall, :dns_cluster_query) || :ignore},
@@ -18,9 +21,10 @@ defmodule Heimdall.Application do
       # {Heimdall.Worker, arg},
       # Start to serve requests, typically the last entry
       HeimdallWeb.Endpoint,
-      Heimdall.DNS.Cache,
+      Heimdall.DNS.Manager,
       Heimdall.DNS.Resolver,
-      {Heimdall.DNS.Server, 1053}
+      {Heimdall.DNS.Server, port: Application.get_env(:heimdall, :dns_port) || 1053},
+      {Cachex, name: :dns_cache, stats: true, transactions: true}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

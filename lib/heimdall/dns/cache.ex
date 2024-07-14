@@ -1,64 +1,67 @@
 defmodule Heimdall.DNS.Cache do
-  require Logger
-  use GenServer
-  alias Heimdall.DNS.Resolver
+  @cache_name :dns_cache
 
-  @entries_table :dns_entries
+  def get(key) do
+    case Cachex.get(@cache_name, key) do
+      {:ok, nil} ->
+        {:ok, nil}
 
-  def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+      {:ok, {last_fetch_time, resources}} ->
+        now = System.system_time(:second)
 
-  def init(opts) do
-    Logger.info("DNS Cache starting")
-    entries_table = :ets.new(@entries_table, [:set, :protected, :named_table])
-    {:ok, %{entries: entries_table}}
-  end
+        {valid_resources, expired_resources} =
+          Enum.split_with(resources, fn {expiration, _} ->
+            expiration > now
+          end)
 
-  def handle_call({:query, hostname, record_type}, from, state) do
-    case :ets.lookup(@entries_table, {hostname, record_type}) do
-      [res] ->
-        Logger.info("Cache hit!")
-        {:reply, res, state}
+        updated_resources =
+          Enum.map(valid_resources, fn {expiration, resource} ->
+            %{resource | ttl: expiration - now}
+          end)
 
-      [] ->
-        Logger.info("Cache miss!")
+        cond do
+          Enum.empty?(valid_resources) ->
+            Cachex.del(@cache_name, key)
+            {:ok, nil}
 
-        case Resolver.query(hostname, record_type) do
-          {:ok, res} ->
-            # :ets.insert(@entries_table, {{hostname, record_type}, res})
-            {:reply, res, state}
+          Enum.empty?(expired_resources) ->
+            {:ok, updated_resources}
 
-          {:error, err} ->
-            Logger.error("Error while querying: #{err}")
-            {:reply, {:error, err}, state}
+          true ->
+            {:partial, updated_resources, last_fetch_time}
         end
+
+      error ->
+        error
     end
   end
 
-  def handle_call({:resolve, hostname, record_type}, from, state) do
-    case :ets.lookup(@entries_table, {hostname, record_type}) do
-      [res] ->
-        {{_hostname, _rtype}, res} = res
-        {:reply, {:ok, res}, state}
+  def put(key, resources) do
+    now = System.system_time(:second)
 
-      [] ->
+    cached_resources =
+      Enum.map(resources, fn resource ->
+        expiration = now + resource.ttl
+        {expiration, resource}
+      end)
 
-        case Resolver.resolve(hostname, record_type) do
-          {:ok, res} ->
-            :ets.insert(@entries_table, {{hostname, record_type}, res})
-            {:reply, {:ok, res}, state}
+    max_ttl =
+      Enum.max_by(cached_resources, fn {expiration, _} -> expiration end)
+      |> elem(0)
+      |> Kernel.-(now)
 
-          {:error, err} ->
-            Logger.error("Error while querying: #{err}")
-            {:reply, {:error, err}, state}
-        end
+    Cachex.put(@cache_name, key, {now, cached_resources}, ttl: :timer.seconds(max_ttl))
+  end
+
+  def stats() do
+    with {:ok, count} <- Cachex.count(@cache_name),
+         {:ok, size} <- Cachex.size(@cache_name) do
+      %{
+        count: count,
+        size: size
+      }
+    else
+      _ -> %{}
     end
-  end
-
-  def query(hostname, record_type) do
-    GenServer.call(__MODULE__, {:query, hostname, record_type})
-  end
-
-  def resolve(hostname, record_type) do
-    GenServer.call(__MODULE__, {:resolve, hostname, record_type})
   end
 end

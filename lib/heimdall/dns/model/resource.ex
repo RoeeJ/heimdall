@@ -11,7 +11,7 @@ defmodule Heimdall.DNS.Model.ResourceRecord do
           rdata: Model.EDNS.t() | bitstring() | any()
         }
 
-  defstruct qname: nil, qtype: nil, qclass: nil, ttl: nil, rdlength: nil, rdata: nil
+  defstruct qname: nil, qtype: nil, qclass: :in, ttl: 0, rdlength: nil, rdata: nil
 
   def parse(records, data, 0), do: [records, data]
 

@@ -21,9 +21,14 @@ defmodule HeimdallWeb.Router do
   end
 
   # Other scopes may use custom stacks.
-  # scope "/api", HeimdallWeb do
-  #   pipe_through :api
-  # end
+  scope "/api", HeimdallWeb do
+    pipe_through :api
+
+    scope "/cache" do
+      get "/clear", CacheController, :clear
+      get "/stats", CacheController, :stats
+    end
+  end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:heimdall, :dev_routes) do

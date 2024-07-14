@@ -2,6 +2,7 @@ defmodule Heimdall.DNS.Decoder do
   alias Heimdall.DNS.{Model, Model.EDNS}
   import Bitwise
 
+  @spec packet(data :: bitstring()) :: Heimdall.DNS.Model.Packet.t()
   def packet(data) when is_binary(data) do
     {header, rest} = decode_header(data)
     {questions, rest} = decode_questions(rest, header.qdcount)
@@ -139,18 +140,26 @@ defmodule Heimdall.DNS.Decoder do
 
   def qr(0), do: :query
   def qr(1), do: :response
+  def qr(n), do: throw("Unknown qr value: #{n}")
 
+  @spec opcode(Model.opcode_ints()) :: Model.opcode_atoms()
   def opcode(0), do: :query
   def opcode(1), do: :iquery
   def opcode(2), do: :status
+  def opcode(n), do: throw("Unknown opcode value: #{n}")
 
+  @spec rcode(0 | 1 | 2 | 3 | 4 | 5) ::
+          :format_err | :name_err | :no_err | :not_implemented | :refused | :server_err
   def rcode(0), do: :no_err
   def rcode(1), do: :server_err
   def rcode(2), do: :format_err
   def rcode(3), do: :name_err
   def rcode(4), do: :not_implemented
   def rcode(5), do: :refused
+  def rcode(n), do: throw("Unknown rcode value: #{n}")
 
+  @spec qtype(1 | 2 | 5 | 6 | 12 | 15 | 16 | 28 | 33 | 41) ::
+          :a | :aaaa | :cname | :mx | :ns | :opt | :ptr | :soa | :srv | :txt
   def qtype(1), do: :a
   def qtype(2), do: :ns
   def qtype(5), do: :cname
@@ -161,7 +170,9 @@ defmodule Heimdall.DNS.Decoder do
   def qtype(28), do: :aaaa
   def qtype(33), do: :srv
   def qtype(41), do: :opt
+  def qtype(n), do: throw("Unknown qtype value: #{n}")
 
+  @spec qclass(1 | 2 | 3 | 4) :: :ch | :cs | :hs | :in
   def qclass(1), do: :in
   def qclass(2), do: :cs
   def qclass(3), do: :ch

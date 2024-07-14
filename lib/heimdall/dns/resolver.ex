@@ -1,6 +1,9 @@
 defmodule Heimdall.DNS.Resolver do
   use GenServer
-  alias Heimdall.DNS.Model
+  require Logger
+  alias Heimdall.DNS.Model.ResourceRecord
+  alias Heimdall.DNS.{Model, Cache}
+  alias Heimdall.Schema.Record
 
   @default_nameservers [
     {"1.1.1.1", 53},
@@ -21,22 +24,97 @@ defmodule Heimdall.DNS.Resolver do
   end
 
   def handle_call({:query, domain, type, opts}, _from, state) do
-    nameservers = Keyword.get(opts, :nameservers, state.nameservers)
-    query_opts = Keyword.put(opts, :nameservers, nameservers)
+    cache_key = {domain, type}
 
-    case DNS.query(domain, type, query_opts) do
-      {:ok, dns_record} ->
-        resources = dns_record_to_resources(dns_record)
-        {:reply, {:ok, resources}, state}
+    case Cache.get(cache_key) do
+      {:ok, cached_resources} when not is_nil(cached_resources) and cached_resources != [] ->
+        {:reply, {:ok, cached_resources}, state}
 
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
+      {:partial, partial_resources, last_fetch_time} ->
+        if should_refresh?(last_fetch_time) do
+          case refresh_records(domain, type, opts) do
+            {:ok, fresh_resources} ->
+              {:reply, {:ok, fresh_resources}, state}
+
+            {:error, _} ->
+              {:reply, {:ok, partial_resources}, state}
+          end
+        else
+          {:reply, {:ok, partial_resources}, state}
+        end
+
+      _ ->
+        case refresh_records(domain, type, opts) do
+          {:ok, fresh_resources} ->
+            {:reply, {:ok, fresh_resources}, state}
+
+          {:error, reason} ->
+            {:reply, {:error, reason}, state}
+        end
     end
   end
 
-  defp dns_record_to_resources(dns_record) do
-    Enum.map(dns_record.anlist, &dns_rr_to_heimdall/1)
+  defp should_refresh?(last_fetch_time) do
+    now = System.system_time(:second)
+    # Refresh if last fetch was more than 5 minutes ago
+    now - last_fetch_time > 300
   end
+
+  defp refresh_records(domain, type, opts) do
+    nameservers = Keyword.get(opts, :nameservers, @default_nameservers)
+    query_opts = Keyword.put(opts, :nameservers, nameservers)
+
+    Logger.debug("Refreshing records for #{domain} (#{type})")
+
+    case Heimdall.DNS.Manager.query_subdomain(domain, type) do
+      {:error, _} ->
+        case DNS.query(domain, type, query_opts) do
+          {:ok, dns_record} ->
+            resources = dns_record_to_resources(dns_record)
+            Cache.put({domain, type}, resources)
+            {:ok, resources}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {:ok, records} when is_list(records) ->
+        resources = Enum.map(records, &schema_record_to_resource(&1, domain))
+        Cache.put({domain, type}, resources)
+        {:ok, resources}
+    end
+  end
+
+  defp schema_record_to_resource(rec, domain) do
+    {qtype, data, datalength} = record_to_resource(rec)
+
+    %Model.ResourceRecord{
+      qname: domain,
+      qtype: qtype,
+      qclass: :in,
+      rdata: data,
+      rdlength: datalength,
+      ttl: rec.ttl
+    }
+  end
+
+  defp record_to_resource(%Record{type: :a, data: data} = rec),
+    do:
+      {:a,
+       Map.get(data, "ip")
+       |> String.split(".")
+       |> Enum.map(&String.to_integer/1)
+       |> List.to_tuple(), 4}
+
+  defp record_to_resource(%Record{type: :cname, data: %{"host" => host} = data} = rec),
+    do: {:cname, host, String.length(host)}
+
+  defp record_to_resource(
+         %Record{type: :mx, data: %{"host" => host, "priority" => priority} = data} = rec
+       ),
+       do: {:mx, {priority, host}, String.length(host)}
+
+  defp dns_record_to_resources(dns_record), do: Enum.map(dns_record.anlist, &dns_rr_to_heimdall/1)
 
   defp dns_rr_to_heimdall(rr) do
     %Model.ResourceRecord{
@@ -66,9 +144,8 @@ defmodule Heimdall.DNS.Resolver do
   defp parse_rdata(:srv, {pri, weight, port, target}), do: {pri, weight, port, to_string(target)}
 
   defp parse_rdata(:mx, {preference, exchange})
-       when is_integer(preference) and is_list(exchange) do
-    {preference, to_string(exchange)}
-  end
+       when is_integer(preference) and is_list(exchange),
+       do: {preference, to_string(exchange)}
 
   defp parse_rdata(_, data), do: data
 end
