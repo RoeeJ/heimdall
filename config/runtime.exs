@@ -28,14 +28,25 @@ if config_env() == :prod do
       For example: ecto://USER:PASS@HOST/DATABASE
       """
 
+  %URI{host: database_host} = URI.parse(database_url)
+
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
-  db_ssl = System.get_env("DB_SSL") in ~w(1 y yes true)
+  db_ssl = if System.get_env("DB_SSL") in ~w(1 y yes true), do: [cacerts: :public_key.cacerts_get()], else: false
+
+  database_ca_cert_filepath =
+    System.get_env("DATABASE_CA_CERT_FILEPATH") || "/etc/ssl/certs/ca-certificates.crt"
 
   config :heimdall, Heimdall.Repo,
     ssl: db_ssl,
     ssl_opts: [
-      verify: :verify_none,
-      cacerts: :public_key.cacerts_get()
+      verify: :verify_peer,
+      cacertfile: database_ca_cert_filepath,
+      # see https://pspdfkit.com/blog/2022/using-ssl-postgresql-connections-elixir/
+      server_name_indication: to_charlist(database_host),
+      customize_hostname_check: [
+        # Our hosting provider uses a wildcard certificate. By default, Erlang does not support wildcard certificates. This function supports validating wildcard hosts
+        match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+      ]
     ],
     url: database_url,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
