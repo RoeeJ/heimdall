@@ -64,4 +64,8 @@ defmodule Heimdall.DNS.Cache do
       _ -> %{}
     end
   end
+
+  def clear() do
+    Cachex.clear(@cache_name)
+  end
 end
