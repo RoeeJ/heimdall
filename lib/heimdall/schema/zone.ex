@@ -1,4 +1,9 @@
 defmodule Heimdall.Schema.Zone do
+  @moduledoc """
+  Zone schema.
+  """
+  @derive {Jason.Encoder, except: [:__meta__, :records, :soa]}
+  alias Heimdall.Repo
   alias Heimdall.Schema.{Record, SOA}
 
   @type t() :: %__MODULE__{
@@ -30,4 +35,9 @@ defmodule Heimdall.Schema.Zone do
     |> validate_required([:name, :serial])
     |> unique_constraint(:name)
   end
+
+  def all(),
+    do:
+      Repo.all(__MODULE__)
+      |> Repo.preload(:records)
 end

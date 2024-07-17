@@ -1,32 +1,79 @@
-<header class="px-4 sm:px-6 lg:px-8">
-  <div class="flex items-center justify-between border-b border-zinc-100 py-3 text-sm">
-    <div class="flex items-center gap-4">
-      <a href="/">
-        <img src={~p"/images/logo.svg"} width="36" />
+<header class="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b bg-background px-4 sm:px-6">
+  <a href="/" class="flex items-center gap-2 font-semibold">
+    <img src={~p"/images/logo.svg"} width="36" />
+    <span>DNS Manager</span>
+  </a>
+  <nav class="hidden lg:flex">
+    <ul class="flex gap-4">
+      <li>
+        <a href="/dashboard" class="hover:text-zinc-700">Dashboard</a>
+      </li>
+      <li>
+        <a href="/zones" class="hover:text-zinc-700">Zones</a>
+      </li>
+      <li>
+        <a href="/analytics" class="hover:text-zinc-700">Analytics</a>
+      </li>
+      <li>
+        <a href="/settings" class="hover:text-zinc-700">Settings</a>
+      </li>
+    </ul>
+  </nav>
+  <div class="relative">
+    <button class="overflow-hidden rounded-full" onclick="document.getElementById('profile-dropdown').classList.toggle('hidden')">
+      <img
+        src={"//randomuser.me/api/portraits/men/51.jpg"}
+        width="36"
+        height="36"
+        alt="Avatar"
+        class="overflow-hidden rounded-full"
+      />
+    </button>
+    <div id="profile-dropdown" class="absolute right-0 mt-2 w-48 bg-white border rounded shadow-lg hidden">
+      <div class="px-4 py-2 text-sm text-gray-700">My Account</div>
+      <div class="border-t"></div>
+      <a href="/settings" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+        Settings
       </a>
-      <p class="bg-brand/5 text-brand rounded-full px-2 font-medium leading-6">
-        v<%= Application.spec(:phoenix, :vsn) %>
-      </p>
-    </div>
-    <div class="flex items-center gap-4 font-semibold leading-6 text-zinc-900">
-      <a href="https://twitter.com/elixirphoenix" class="hover:text-zinc-700">
-        @elixirphoenix
+      <a href="/support" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+        Support
       </a>
-      <a href="https://github.com/phoenixframework/phoenix" class="hover:text-zinc-700">
-        GitHub
-      </a>
-      <a
-        href="https://hexdocs.pm/phoenix/overview.html"
-        class="rounded-lg bg-zinc-100 px-2 py-1 hover:bg-zinc-200/80"
-      >
-        Get Started <span aria-hidden="true">&rarr;</span>
-      </a>
+      <div class="border-t"></div>
+      <a href="/logout" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Logout</a>
     </div>
   </div>
 </header>
-<main class="px-4 py-20 sm:px-6 lg:px-8">
-  <div class="mx-auto max-w-2xl">
+<div class="flex flex-1 h-screen">
+  <aside class="mt-16 hidden w-64 shrink-0 border-r bg-background lg:block">
+    <nav class="grid gap-6 px-4 py-8 text-sm font-medium">
+      <a
+        href="/dashboard"
+        class="flex items-center gap-4 px-2 py-2 text-muted-foreground hover:text-foreground"
+      >
+        <span>Dashboard</span>
+      </a>
+      <a
+        href="/zones"
+        class="flex items-center gap-4 px-2 py-2 text-muted-foreground hover:text-foreground"
+      >
+        <span>Zones</span>
+      </a>
+      <a
+        href="/analytics"
+        class="flex items-center gap-4 px-2 py-2 text-muted-foreground hover:text-foreground"
+      >
+        <span>Analytics</span>
+      </a>
+      <a
+        href="/settings"
+        class="flex items-center gap-4 px-2 py-2 text-muted-foreground hover:text-foreground"
+      >
+        <span>Settings</span>
+      </a>
+    </nav>
+  </aside>
+  <main class="flex-1 mt-16 px-4 py-8 sm:px-6 lg:px-8 overflow-auto">
     <.flash_group flash={@flash} />
     <%= @inner_content %>
-  </div>
-</main>
+  </main>
+</div>

@@ -1,4 +1,8 @@
 defmodule Heimdall.DNS.Cache do
+  @moduledoc """
+  Cache for DNS records.
+  """
+
   @cache_name :dns_cache
 
   def get(key) do
@@ -37,32 +41,52 @@ defmodule Heimdall.DNS.Cache do
   end
 
   def put(key, resources) do
-    now = System.system_time(:second)
+    unless Enum.empty?(resources) do
+      now = System.system_time(:second)
 
-    cached_resources =
-      Enum.map(resources, fn resource ->
-        expiration = now + resource.ttl
-        {expiration, resource}
-      end)
+      cached_resources =
+        Enum.map(resources, fn resource ->
+          expiration = now + resource.ttl
+          {expiration, resource}
+        end)
 
-    max_ttl =
-      Enum.max_by(cached_resources, fn {expiration, _} -> expiration end)
-      |> elem(0)
-      |> Kernel.-(now)
+      max_ttl =
+        Enum.max_by(cached_resources, fn {expiration, _} -> expiration end)
+        |> elem(0)
+        |> Kernel.-(now)
 
-    Cachex.put(@cache_name, key, {now, cached_resources}, ttl: :timer.seconds(max_ttl))
+      Cachex.put(@cache_name, key, {now, cached_resources}, ttl: :timer.seconds(max_ttl))
+    end
   end
 
   def stats() do
     with {:ok, count} <- Cachex.count(@cache_name),
-         {:ok, size} <- Cachex.size(@cache_name) do
-      %{
-        count: count,
-        size: size
-      }
+         {:ok, size} <- Cachex.size(@cache_name),
+         {:ok, stats} <- Cachex.stats(@cache_name) do
+      {:ok,
+       %{
+         count: count,
+         size: size,
+         calls: stats.calls,
+         hits: Map.get(stats, :hits, 0),
+         evictions: Map.get(stats, :evictions, 0),
+         writes: Map.get(stats, :writes, 0),
+         expirations: Map.get(stats, :expirations, 0),
+         misses: Map.get(stats, :misses, 0),
+         hit_rate: Float.round(Map.get(stats, :hit_rate, 0), 2)
+       }}
     else
-      _ -> %{}
+      {:error, reason} ->
+        {:error, "Failed to get cache stats, #{reason}"}
+
+      r ->
+        throw(r)
     end
+  end
+
+  @spec delete(key :: term()) :: :ok
+  def delete(key) do
+    Cachex.del(@cache_name, key)
   end
 
   def clear() do

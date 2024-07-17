@@ -18,6 +18,11 @@ defmodule HeimdallWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    live "/dashboard", DashboardLive
+    live "/zones", ZonesLive
+    live "/zones/:zone_id", ZoneLive
+    live "/analytics", AnalyticsLive
+    live "/settings", SettingsLive
   end
 
   # Other scopes may use custom stacks.

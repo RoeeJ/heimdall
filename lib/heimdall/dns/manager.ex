@@ -1,6 +1,10 @@
 defmodule Heimdall.DNS.Manager do
+  @moduledoc """
+  GenServer process for managing DNS zones and records.
+  """
   use GenServer
-  alias Heimdall.Schema.{Zone, Record, SOA}
+  alias Heimdall.DNS.Model
+  alias Heimdall.Schema.{Zone, Record}
   alias Heimdall.Repo
   import Ecto.Query
 
@@ -14,87 +18,204 @@ defmodule Heimdall.DNS.Manager do
   end
 
   # Zone Operations
+  @spec add_zone(map()) :: {:ok, Zone.t()} | {:error, Ecto.Changeset.t()}
   def add_zone(zone_params) do
     GenServer.call(__MODULE__, {:add_zone, zone_params})
   end
 
+  @spec find_zone(String.t()) :: {:ok, Zone.t()} | {:error, :zone_not_found}
   def find_zone(query_name) do
     GenServer.call(__MODULE__, {:find_zone, query_name})
   end
 
+  @spec get_zone(integer()) :: {:ok, Zone.t()} | {:error, :zone_not_found}
+  def get_zone(zone_id) do
+    GenServer.call(__MODULE__, {:get_zone, zone_id})
+  end
+
   # Record Operations
+  @spec add_record(String.t(), map()) :: {:ok, Record.t()} | {:error, any()}
   def add_record(zone_name, record_params) do
     GenServer.call(__MODULE__, {:add_record, zone_name, record_params})
   end
 
+  @spec get_records(String.t(), Keyword.t()) :: {:ok, [Record.t()]} | {:error, :zone_not_found}
   def get_records(zone_name, opts \\ []) do
     GenServer.call(__MODULE__, {:get_records, zone_name, opts})
   end
 
+  @spec update_record(integer(), map()) :: {:ok, Record.t()} | {:error, any()}
   def update_record(id, params) do
     GenServer.call(__MODULE__, {:update_record, id, params})
   end
 
+  @spec delete_record(integer()) :: {:ok, Record.t()} | {:error, any()}
   def delete_record(id) do
     GenServer.call(__MODULE__, {:delete_record, id})
   end
 
   # New method for querying specific subdomain records
+  @spec query_subdomain(String.t(), Model.qtype_atoms() | nil) ::
+          {:ok, [Record.t()]} | {:error, :zone_not_found}
   def query_subdomain(full_domain, type \\ nil) do
     GenServer.call(__MODULE__, {:query_subdomain, full_domain, type})
   end
 
   @impl true
+  def handle_call({:get_zone, zone_id}, _from, state) do
+    {:reply, do_get_zone(zone_id), state}
+  end
+
+  @impl true
   def handle_call({:add_zone, zone_params}, _from, state) do
-    result = create_zone(zone_params)
+    result =
+      %Zone{}
+      |> Zone.changeset(zone_params)
+      |> Repo.insert()
+
     {:reply, result, state}
   end
 
   @impl true
   def handle_call({:find_zone, query_name}, _from, state) do
-    result = do_find_zone(query_name)
-    {:reply, result, state}
+    {:reply, do_find_zone(query_name), state}
   end
 
   @impl true
-  def handle_call({:add_record, zone_name, record_params}, _from, state) do
-    result = do_add_record(zone_name, record_params)
+  def handle_call({:add_record, zone_id, record_params}, _from, state) do
+    result =
+      Repo.transaction(fn ->
+        with {:ok, zone} <- do_get_zone(zone_id),
+             {:ok, record} <-
+               %Record{}
+               |> Record.changeset(Map.put(record_params, :zone_id, zone.id))
+               |> Repo.insert(),
+             {:ok, _updated_zone} <- increment_zone_serial(zone),
+             cache_key <- generate_cache_key(record, zone) do
+          Heimdall.DNS.Cache.delete(cache_key)
+          {:ok, record}
+        else
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end)
+
     {:reply, result, state}
   end
 
   @impl true
   def handle_call({:get_records, zone_name, opts}, _from, state) do
-    result = do_get_records(zone_name, opts)
+    result =
+      with {:ok, zone} <- find_zone(zone_name) do
+        query = from r in Record, where: r.zone_id == ^zone.id
+
+        query =
+          case Keyword.get(opts, :type) do
+            nil -> query
+            type -> where(query, [r], r.type == ^type)
+          end
+
+        query =
+          case Keyword.get(opts, :name) do
+            nil -> query
+            "@" -> where(query, [r], r.name == "")
+            name -> where(query, [r], r.name == ^name)
+          end
+
+        {:ok, Repo.all(query)}
+      end
+
     {:reply, result, state}
   end
 
   @impl true
   def handle_call({:update_record, id, params}, _from, state) do
-    result = do_update_record(id, params)
+    result =
+      Repo.transaction(fn ->
+        record = Repo.get!(Record, id)
+        changeset = Record.changeset(record, params)
+
+        if changeset.changes == %{} do
+          {:ok, record}
+        else
+          with {:ok, updated_record} <- Repo.update(changeset),
+               zone <- Repo.get!(Zone, updated_record.zone_id),
+               {:ok, _updated_zone} <- increment_zone_serial(zone) do
+            # Clear cache for relevant records
+            cache_key = generate_cache_key(updated_record, zone)
+            Heimdall.DNS.Cache.delete(cache_key)
+            {:ok, updated_record}
+          else
+            {:error, reason} -> Repo.rollback(reason)
+          end
+        end
+      end)
+
     {:reply, result, state}
   end
 
   @impl true
   def handle_call({:delete_record, id}, _from, state) do
-    result = do_delete_record(id)
+    result =
+      Repo.transaction(fn ->
+        with {:ok, record} <- Repo.get(Record, id) |> Repo.delete(),
+             {:ok, zone} <- do_get_zone(record.zone_id),
+             {:ok, _updated_zone} <- increment_zone_serial(zone),
+             cache_key <- generate_cache_key(record, zone) do
+          Heimdall.DNS.Cache.delete(cache_key)
+          {:ok, record}
+        else
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end)
+
     {:reply, result, state}
   end
 
   @impl true
   def handle_call({:query_subdomain, full_domain, type}, _from, state) do
-    result = do_query_subdomain(full_domain, type)
+    parts = String.split(full_domain, ".")
+
+    result =
+      Enum.reduce_while(0..length(parts), {:error, :zone_not_found}, fn i, acc ->
+        potential_zone = Enum.take(parts, i * -1) |> Enum.join(".")
+
+        case do_find_zone(potential_zone) do
+          {:ok, zone} -> {:halt, {:ok, zone}}
+          _ -> {:cont, acc}
+        end
+      end)
+      |> case do
+        {:ok, zone} ->
+          subdomain = get_subdomain(parts, zone.name)
+
+          query =
+            from r in Record,
+              where: r.zone_id == ^zone.id
+
+          query = build_subdomain_query(query, subdomain)
+          query = if type, do: where(query, [r], r.type == ^type), else: query
+
+          {:ok, Repo.all(query)}
+
+        error ->
+          error
+      end
+
     {:reply, result, state}
   end
 
   # Private functions
 
-  defp create_zone(params) do
-    %Zone{}
-    |> Zone.changeset(params)
-    |> Repo.insert()
+  @spec do_get_zone(integer()) :: {:ok, Zone.t()} | {:error, :zone_not_found}
+  def do_get_zone(zone_id) do
+    case Zone |> Repo.get(zone_id) |> Repo.preload(records: from(r in Record, order_by: r.id)) do
+      nil -> {:error, :zone_not_found}
+      zone -> {:ok, zone}
+    end
   end
 
-  defp do_find_zone(query_name) do
+  @spec do_find_zone(String.t()) :: {:ok, Zone.t()} | {:error, :zone_not_found}
+  def do_find_zone(query_name) do
     query_parts = String.split(query_name, ".")
 
     Zone
@@ -103,11 +224,15 @@ defmodule Heimdall.DNS.Manager do
     |> limit(1)
     |> Repo.one()
     |> case do
-      nil ->
-        {:error, :zone_not_found}
+      nil -> {:error, :zone_not_found}
+      zone -> {:ok, zone |> Repo.preload(:soa) |> Repo.preload(:records)}
+    end
+  end
 
-      zone ->
-        {:ok, zone |> Repo.preload(:soa) |> Repo.preload(:records)}
+  defp generate_cache_key(updated_record, zone) do
+    case updated_record.name do
+      "@" -> {zone.name, updated_record.type}
+      _ -> {"#{updated_record.name}.#{zone.name}", updated_record.type}
     end
   end
 
@@ -122,83 +247,6 @@ defmodule Heimdall.DNS.Manager do
       end)
 
     subdomain_matches
-  end
-
-  defp do_add_record(zone_name, record_params) do
-    with {:ok, zone} <- do_find_zone(zone_name),
-         {:ok, record} <- create_record(zone, record_params) do
-      {:ok, record}
-    else
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp create_record(zone, params) do
-    %Record{}
-    |> Record.changeset(Map.put(params, :zone_id, zone.id))
-    |> Repo.insert()
-  end
-
-  defp do_get_records(zone_name, opts) do
-    with {:ok, zone} <- do_find_zone(zone_name) do
-      query = from r in Record, where: r.zone_id == ^zone.id
-
-      query =
-        case Keyword.get(opts, :type) do
-          nil -> query
-          type -> where(query, [r], r.type == ^type)
-        end
-
-      query =
-        case Keyword.get(opts, :name) do
-          nil -> query
-          "@" -> where(query, [r], r.name == "")
-          name -> where(query, [r], r.name == ^name)
-        end
-
-      {:ok, Repo.all(query)}
-    end
-  end
-
-  defp do_update_record(id, params) do
-    Record
-    |> Repo.get(id)
-    |> Record.changeset(params)
-    |> Repo.update()
-  end
-
-  defp do_delete_record(id) do
-    Record
-    |> Repo.get(id)
-    |> Repo.delete()
-  end
-
-  defp do_query_subdomain(full_domain, type) do
-    parts = String.split(full_domain, ".")
-
-    with {:ok, zone} <- find_matching_zone(parts) do
-      subdomain = get_subdomain(parts, zone.name)
-
-      query =
-        from r in Record,
-          where: r.zone_id == ^zone.id
-
-      query = build_subdomain_query(query, subdomain)
-      query = if type, do: where(query, [r], r.type == ^type), else: query
-
-      {:ok, Repo.all(query)}
-    end
-  end
-
-  defp find_matching_zone(parts) do
-    Enum.reduce_while(0..length(parts), {:error, :zone_not_found}, fn i, acc ->
-      potential_zone = Enum.take(parts, i * -1) |> Enum.join(".")
-
-      case do_find_zone(potential_zone) do
-        {:ok, zone} -> {:halt, {:ok, zone}}
-        _ -> {:cont, acc}
-      end
-    end)
   end
 
   defp get_subdomain(full_parts, zone_parts) do
@@ -216,5 +264,14 @@ defmodule Heimdall.DNS.Manager do
   defp build_subdomain_query(query, subdomain) do
     # Subdomain query - match the exact subdomain and all records under it
     where(query, [r], r.name == ^subdomain)
+  end
+
+  defp increment_zone_serial(zone) do
+    updated_zone = Zone.changeset(zone, %{serial: zone.serial + 1})
+
+    case Repo.update(updated_zone) do
+      {:ok, zone} -> {:ok, zone}
+      {:error, changeset} -> {:error, changeset}
+    end
   end
 end

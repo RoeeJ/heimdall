@@ -1,4 +1,8 @@
 defmodule Heimdall.DNS.Model.ResourceRecord do
+  @moduledoc """
+  Resource record for DNS.
+  """
+
   alias Heimdall.DNS.{Encoder, Decoder, Model}
   import Bitwise
 

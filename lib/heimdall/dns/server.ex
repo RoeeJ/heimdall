@@ -1,4 +1,7 @@
 defmodule Heimdall.DNS.Server do
+  @moduledoc """
+  GenServer for handling DNS requests.
+  """
   use GenServer
   require Logger
   alias Heimdall.DNS.{Encoder, Decoder, Model, Resolver}
@@ -22,8 +25,7 @@ defmodule Heimdall.DNS.Server do
     {:noreply, state}
   end
 
-  def handle_info(msg, state) do
-    IO.inspect(msg, label: "Unhandled message")
+  def handle_info(_msg, state) do
     {:noreply, state}
   end
 

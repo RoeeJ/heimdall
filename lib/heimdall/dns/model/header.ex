@@ -1,4 +1,8 @@
 defmodule Heimdall.DNS.Model.Header do
+  @moduledoc """
+  Header for DNS.
+  """
+
   alias Heimdall.DNS.Decoder
 
   @type t() :: %__MODULE__{
@@ -31,13 +35,13 @@ defmodule Heimdall.DNS.Model.Header do
             arcount: nil
 
   @spec encode(header :: t()) :: bitstring()
-  def encode(%__MODULE__{} = header) do
+  def encode(%__MODULE__{} = _header) do
+    raise "Not implemented"
   end
 
   @spec decode(data :: bitstring()) :: {header :: t(), rest :: bitstring()}
   def decode(
-        <<id::16, flags::16, qdcount::16, ancount::16, nscount::16, arcount::16, rest::binary>> =
-          data
+        <<id::16, flags::16, qdcount::16, ancount::16, nscount::16, arcount::16, rest::binary>>
       ) do
     <<qr::1, opcode::4, aa::1, tc::1, rd::1, ra::1, _z::3, rcode::4>> = <<flags::16>>
 
