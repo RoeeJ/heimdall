@@ -21,9 +21,8 @@ defmodule Heimdall.Application do
       # {Heimdall.Worker, arg},
       # Start to serve requests, typically the last entry
       HeimdallWeb.Endpoint,
-      Heimdall.DNS.Manager,
-      Heimdall.DNS.Resolver,
-      {Heimdall.DNS.Server, port: Application.get_env(:heimdall, :dns_port) || 1053},
+      {Heimdall.Servers.UDPServer, port: Application.get_env(:heimdall, :dns_port) || 1053},
+      {Heimdall.Servers.TCPServer, port: Application.get_env(:heimdall, :dns_port) || 1053},
       {Cachex, name: :dns_cache, stats: true, transactions: true}
     ]
 

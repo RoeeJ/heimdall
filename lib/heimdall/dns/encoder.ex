@@ -8,8 +8,9 @@ defmodule Heimdall.DNS.Encoder do
     authority = Enum.map(packet.nameservers, &Model.ResourceRecord.encode/1)
     additional = Enum.map(packet.additional, &Model.ResourceRecord.encode/1)
 
-    header <>
-      Enum.join(questions) <> Enum.join(answers) <> Enum.join(authority) <> Enum.join(additional)
+    {:ok,
+     header <>
+       Enum.join(questions) <> Enum.join(answers) <> Enum.join(authority) <> Enum.join(additional)}
   end
 
   defp encode_header(packet) do
@@ -21,8 +22,7 @@ defmodule Heimdall.DNS.Encoder do
       tc(packet.truncated)::1,
       rd(packet.recurs_desired)::1,
       ra(packet.recurs_available)::1,
-      # Z (reserved)
-      0::3,
+      packet.z::3,
       rcode(packet.resp_code)::4,
       packet.qdcount::16,
       packet.ancount::16,
@@ -34,6 +34,9 @@ defmodule Heimdall.DNS.Encoder do
   defp encode_question(%Model.Question{} = q) do
     labels(q.qname) <> <<qtype(q.qtype)::16, qclass(q.qclass)::16>>
   end
+
+  def labels(""), do: <<0::8>>
+  def labels("."), do: <<0::8>>
 
   def labels(name) when is_binary(name) do
     name

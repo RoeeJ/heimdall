@@ -1,4 +1,8 @@
 defmodule Heimdall.DNS.Model.EDNS do
+  @moduledoc """
+  EDNS model.
+  """
+  require Logger
   alias Heimdall.DNS.{Model.EDNS}
 
   @type t() :: %__MODULE__{
@@ -15,7 +19,12 @@ defmodule Heimdall.DNS.Model.EDNS do
   def parse(data) do
     <<payload_size::16, rcode::8, version::8, z::16, data_length::16, data::bitstring>> = data
     <<edns_data::binary-size(data_length), data::bitstring>> = data
-    option = parse_option(edns_data)
+    option =
+      if data_length > 0 do
+        parse_option(edns_data)
+      else
+        nil
+      end
 
     [
       %__MODULE__{

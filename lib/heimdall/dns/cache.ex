@@ -78,9 +78,6 @@ defmodule Heimdall.DNS.Cache do
     else
       {:error, reason} ->
         {:error, "Failed to get cache stats, #{reason}"}
-
-      r ->
-        throw(r)
     end
   end
 

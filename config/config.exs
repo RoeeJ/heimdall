@@ -10,6 +10,10 @@ import Config
 config :heimdall, :dns_port, String.to_integer(System.get_env("DNS_PORT") || "1053")
 
 config :heimdall,
+       :recursion,
+       String.downcase(System.get_env("RECURSION") || "true") in ~w(true yes y 1)
+
+config :heimdall,
   ecto_repos: [Heimdall.Repo],
   generators: [timestamp_type: :utc_datetime]
 

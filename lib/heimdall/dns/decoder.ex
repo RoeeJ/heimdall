@@ -13,6 +13,7 @@ defmodule Heimdall.DNS.Decoder do
     %Model.Packet{
       id: header.id,
       qr: header.qr,
+      z: header.z,
       opcode: header.opcode,
       authoritative: header.aa,
       truncated: header.tc,
@@ -33,12 +34,13 @@ defmodule Heimdall.DNS.Decoder do
   defp decode_header(
          <<id::16, flags::16, qdcount::16, ancount::16, nscount::16, arcount::16, rest::binary>>
        ) do
-    <<qr::1, opcode::4, aa::1, tc::1, rd::1, ra::1, _z::3, rcode::4>> = <<flags::16>>
+    <<qr::1, opcode::4, aa::1, tc::1, rd::1, ra::1, z::3, rcode::4>> = <<flags::16>>
 
     header = %{
       id: id,
       qr: qr(qr),
       opcode: opcode(opcode),
+      z: z,
       aa: aa == 1,
       tc: tc == 1,
       rd: rd == 1,
@@ -114,7 +116,10 @@ defmodule Heimdall.DNS.Decoder do
   end
 
   def labels(data, acc \\ [])
-  def labels(<<0, rest::binary>>, acc), do: {Enum.reverse(acc) |> Enum.join("."), rest}
+  def labels(<<0, rest::binary>>, acc) do
+    label = if acc == [], do: ".", else: Enum.reverse(acc) |> Enum.join(".")
+    {label, rest}
+  end
 
   def labels(<<len, part::binary-size(len), rest::binary>>, acc) do
     labels(rest, [to_string(part) | acc])

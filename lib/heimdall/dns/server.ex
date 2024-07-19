@@ -1,42 +1,19 @@
 defmodule Heimdall.DNS.Server do
   @moduledoc """
-  GenServer for handling DNS requests.
+  DNS Server module for handling DNS queries and responses.
   """
-  use GenServer
+
   require Logger
   alias Heimdall.DNS.{Encoder, Decoder, Model, Resolver}
 
-  def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts)
-  end
-
-  def init(opts) do
-    port = Keyword.get(opts, :port)
-    Logger.info("Heimdall DNS starting on port #{port}")
-    {:ok, socket} = :gen_udp.open(port, [:binary, active: true])
-    {:ok, %{socket: socket}}
-  end
-
-  def handle_info({:udp, socket, address, port, data}, state) do
-    Task.start(fn ->
-      handle_dns_query(socket, address, port, data)
-    end)
-
-    {:noreply, state}
-  end
-
-  def handle_info(_msg, state) do
-    {:noreply, state}
-  end
-
-  defp handle_dns_query(socket, address, port, data) do
-    case Decoder.packet(data) do
-      %Model.Packet{} = packet ->
-        response = process_packet(packet)
-        send_response(socket, address, port, response)
-
-      _ ->
-        Logger.error("Failed to decode DNS packet")
+  def query(data) do
+    with %Model.Packet{} = packet <- Decoder.packet(data),
+         %Model.Packet{} = response <- process_packet(packet),
+         {:ok, encoded_response} <- Encoder.packet(response) do
+      {:ok, encoded_response}
+    else
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -51,7 +28,8 @@ defmodule Heimdall.DNS.Server do
         answers: answers,
         ancount: length(answers),
         additional: additional,
-        arcount: length(additional)
+        arcount: length(additional),
+        resp_code: if(answers == [], do: :name_err, else: packet.resp_code)
     }
   end
 
@@ -62,7 +40,7 @@ defmodule Heimdall.DNS.Server do
           resources
 
         {:error, reason} ->
-          Logger.error("Got err: #{reason} when querying #{q.qname} for #{q.qtype} records")
+          Logger.debug("Got err: #{reason} when querying #{q.qname} for #{q.qtype} records")
           []
       end
     end)
@@ -90,17 +68,5 @@ defmodule Heimdall.DNS.Server do
 
   defp generate_server_cookie do
     <<Heimdall.Constants.server_cookie()::64>>
-  end
-
-  defp send_response(socket, address, port, response) do
-    encoded_response = Encoder.packet(response)
-
-    case :gen_udp.send(socket, address, port, encoded_response) do
-      :ok ->
-        :ok
-
-      {:error, reason} ->
-        Logger.error("Failed to send DNS response: #{inspect(reason)}")
-    end
   end
 end

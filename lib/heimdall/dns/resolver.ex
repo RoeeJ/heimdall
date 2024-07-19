@@ -3,7 +3,6 @@ defmodule Heimdall.DNS.Resolver do
   Resolver for DNS.
   """
 
-  use GenServer
   require Logger
   alias Heimdall.DNS.{Model, Cache}
   alias Heimdall.Schema.Record
@@ -13,49 +12,62 @@ defmodule Heimdall.DNS.Resolver do
     {"1.0.0.1", 53}
   ]
 
-  def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
-  end
-
-  def init(opts) do
-    nameservers = Keyword.get(opts, :nameservers, @default_nameservers)
-    {:ok, %{nameservers: nameservers}}
-  end
-
   def query(domain, type \\ :a, opts \\ []) do
-    GenServer.call(__MODULE__, {:query, domain, type, opts})
-  end
-
-  def handle_call({:query, domain, type, opts}, _from, state) do
     cache_key = {domain, type}
+
+    nameservers = Keyword.get(opts, :nameservers, @default_nameservers)
+    opts = Keyword.put(opts, :nameservers, nameservers)
 
     case Cache.get(cache_key) do
       {:ok, cached_resources} when not is_nil(cached_resources) and cached_resources != [] ->
-        {:reply, {:ok, cached_resources}, state}
+        {:ok, cached_resources}
 
       {:partial, partial_resources, last_fetch_time} ->
-        handle_partial_cache(partial_resources, last_fetch_time, domain, type, opts, state)
+        handle_partial_cache(partial_resources, last_fetch_time, domain, type, opts)
 
       _ ->
-        handle_no_cache(domain, type, opts, state)
+        handle_no_cache(domain, type, opts)
     end
   end
 
-  defp handle_partial_cache(partial_resources, last_fetch_time, domain, type, opts, state) do
+  defp handle_partial_cache(partial_resources, last_fetch_time, domain, type, opts) do
     if should_refresh?(last_fetch_time) do
       case refresh_records(domain, type, opts) do
-        {:ok, fresh_resources} -> {:reply, {:ok, fresh_resources}, state}
-        {:error, _} -> {:reply, {:ok, partial_resources}, state}
+        {:ok, fresh_resources} -> {:ok, fresh_resources}
+        {:error, :nxdomain} -> {:error, :nxdomain}
+        {:error, _} -> {:ok, partial_resources}
       end
     else
-      {:reply, {:ok, partial_resources}, state}
+      {:ok, partial_resources}
     end
   end
 
-  defp handle_no_cache(domain, type, opts, state) do
+  defp handle_no_cache(domain, type, opts) do
+    Logger.debug("No cache for #{domain} (#{type})")
+
     case refresh_records(domain, type, opts) do
-      {:ok, fresh_resources} -> {:reply, {:ok, fresh_resources}, state}
-      {:error, reason} -> {:reply, {:error, reason}, state}
+      {:ok, fresh_resources} -> {:ok, fresh_resources}
+      {:error, :nxdomain} -> handle_nxdomain(domain, type, opts)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp handle_nxdomain(domain, type, opts) do
+    if Application.get_env(:heimdall, :recursion, false) do
+      Logger.debug("Recursion enabled, querying further for #{domain} (#{type})")
+
+      case DNS.query(domain, type, opts) do
+        {:ok, dns_record} ->
+          resources = dns_record_to_resources(dns_record)
+          Cache.put({domain, type}, resources)
+          {:ok, resources}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    else
+      Logger.debug("Recursion not enabled, not querying further for #{domain} (#{type})")
+      {:error, :nxdomain}
     end
   end
 
@@ -65,24 +77,12 @@ defmodule Heimdall.DNS.Resolver do
     now - last_fetch_time > 300
   end
 
-  defp refresh_records(domain, type, opts) do
-    nameservers = Keyword.get(opts, :nameservers, @default_nameservers)
-    query_opts = Keyword.put(opts, :nameservers, nameservers)
-
+  defp refresh_records(domain, type, _opts) do
     Logger.debug("Refreshing records for #{domain} (#{type})")
 
     case Heimdall.DNS.Manager.query_subdomain(domain, type) do
-      {:error, _} ->
-        case DNS.query(domain, type, query_opts) do
-          {:ok, dns_record} ->
-            resources = dns_record_to_resources(dns_record)
-            Cache.put({domain, type}, resources)
-
-            {:ok, resources}
-
-          {:error, reason} ->
-            {:error, reason}
-        end
+      {:error, :nxdomain} ->
+        {:error, :nxdomain}
 
       {:ok, records} when is_list(records) ->
         resources = Enum.map(records, &schema_record_to_resource(&1, domain))

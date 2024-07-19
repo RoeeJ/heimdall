@@ -65,7 +65,6 @@ if config_env() == :prod do
       """
 
   host = System.get_env("PHX_HOST") || "example.com"
-  dns_port = String.to_integer(System.get_env("DNS_PORT") || "1053")
   port = String.to_integer(System.get_env("PORT") || "4000")
 
   config :heimdall, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")

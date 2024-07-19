@@ -20,7 +20,7 @@ defmodule Heimdall.DNS.Model.ResourceRecord do
   def parse(records, data, 0), do: [records, data]
 
   def parse(records, data, count) do
-    [qname, data] = Decoder.labels(data)
+    {qname, data} = Decoder.labels(data)
     <<qtype::16, data::bitstring>> = data
 
     case Decoder.qtype(qtype) do
