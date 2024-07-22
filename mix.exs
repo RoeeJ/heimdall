@@ -50,13 +50,6 @@ defmodule Heimdall.MixProject do
        app: false,
        compile: false,
        depth: 1},
-      {:fontawesome,
-       github: "FortAwesome/Font-Awesome",
-       tag: "6.x",
-       sparse: "svgs",
-       app: false,
-       compile: false,
-       depth: 1},
       {:swoosh, "~> 1.5"},
       {:finch, "~> 0.13"},
       {:telemetry_metrics, "~> 1.0"},
@@ -85,7 +78,10 @@ defmodule Heimdall.MixProject do
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
-      "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
+      "assets.setup": [
+        "tailwind.install --if-missing",
+        "esbuild.install --if-missing"
+      ],
       "assets.build": ["tailwind heimdall", "esbuild heimdall"],
       "assets.deploy": [
         "tailwind heimdall --minify",

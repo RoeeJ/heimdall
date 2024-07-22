@@ -1,0 +1,206 @@
+<div class="container mx-auto px-4 py-8">
+  <h1 class="text-3xl font-bold mb-6 text-base-content text-center">Edit DNS Zone</h1>
+  
+  <div class="bg-base-300 shadow-md rounded-lg overflow-hidden p-6 flex flex-col gap-1 items-center">
+    <h2 class="text-xl font-semibold text-base-content mb-4 text-center">Zone Details</h2>
+    
+    <p><strong>ID:</strong> <%= @zone.id %></p>
+    <p><strong>Name:</strong> <%= @zone.name %></p>
+    <p><strong>Serial:</strong> <%= @zone.serial %></p>
+    <p><strong>Created At:</strong> <%= @zone.inserted_at %></p>
+    <p><strong>Updated At:</strong> <%= @zone.updated_at %></p>
+  </div>
+  
+  <div class="mt-8 bg-base-300 shadow-md rounded-lg overflow-hidden p-6 flex flex-col gap-1 items-center">
+    <h2 class="text-xl font-semibold text-base-content mb-4 text-center">Records</h2>
+    
+    <table class="table w-full">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>TTL</th>
+          <th>Data</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      
+      <tbody>
+        <%= for record <- @zone.records do %>
+          <tr>
+            <td colspan="5">
+              <form
+                phx-change="update_record"
+                phx-value-id={record.id}
+                phx-submit="save_record"
+                class="flex items-center space-x-4"
+              >
+                <input
+                  type="text"
+                  name="record[name]"
+                  value={record.name}
+                  phx-value-field="name"
+                  pattern="^(@|\*|([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*)?$"
+                  required
+                  class="input input-bordered w-full max-w-xs"
+                />
+                <select
+                  name="record[type]"
+                  phx-value-field="type"
+                  required
+                  class="select select-bordered w-full max-w-xs"
+                >
+                  <%= for type <- supported_record_types() do %>
+                    <option value={type} selected={type == record.type}>
+                      <%= String.upcase(Atom.to_string(type)) %>
+                    </option>
+                  <% end %>
+                </select>
+                
+                <.ttl_dropdown
+                  name="record[ttl]"
+                  value={record.ttl}
+                  phx-value-field="ttl"
+                  field="ttl"
+                  required
+                  class="select select-bordered w-full max-w-xs"
+                />
+                <input
+                  type="number"
+                  value={record.data["preference"]}
+                  name="record[data][preference]"
+                  phx-value-field="data[preference]"
+                  min="0"
+                  max="65535"
+                  required
+                  class="input input-bordered w-full max-w-xs"
+                  disabled={record.type != :mx}
+                />
+                <%= if record.type not in [:a, :aaaa] do %>
+                  <input
+                    type="text"
+                    value={record.data["host"]}
+                    name="record[data][host]"
+                    phx-value-field="data[host]"
+                    required
+                    class="input input-bordered w-full max-w-xs"
+                  />
+                <% else %>
+                  <input
+                    type="text"
+                    value={record.data["ip"]}
+                    name="record[data][ip]"
+                    phx-value-field="data[ip]"
+                    required
+                    class="input input-bordered w-full max-w-xs"
+                  />
+                <% end %>
+                
+                <div class="w-24 gap-2 flex flex-row">
+                  <button class="btn btn-primary btn-outline" type="submit">
+                    <i class="i-mdi-floppy-disk text-lg"></i>
+                  </button>
+                  
+                  <button
+                    phx-click="delete_record"
+                    phx-value-id={record.id}
+                    class="btn btn-error btn-outline"
+                    type="button"
+                  >
+                    <i class="i-mdi-delete text-lg"></i>
+                  </button>
+                </div>
+              </form>
+            </td>
+          </tr>
+        <% end %>
+        
+        <tr>
+          <td colspan="5">
+            <form
+              phx-change="update_new_record"
+              phx-value-id={@new_record.id}
+              phx-submit="add_record"
+              class="flex items-center space-x-4"
+            >
+              <input
+                type="text"
+                name="record[name]"
+                value={@new_record.name}
+                phx-value-field="name"
+                pattern="^(@|\*|([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*)?$"
+                required
+                class="input input-bordered w-full max-w-xs"
+                placeholder="Name"
+              />
+              <select
+                name="record[type]"
+                phx-value-field="type"
+                required
+                class="select select-bordered w-full max-w-xs"
+                placeholder="Type"
+              >
+                <%= for type <- supported_record_types() do %>
+                  <option value={type} selected={type == @new_record.type}>
+                    <%= String.upcase(Atom.to_string(type)) %>
+                  </option>
+                <% end %>
+              </select>
+              
+              <.ttl_dropdown
+                name="record[ttl]"
+                value={@new_record.ttl}
+                phx-value-field="ttl"
+                field="ttl"
+                required
+                class="select select-bordered w-full max-w-xs"
+                placeholder="TTL"
+              />
+              <input
+                type="number"
+                value={@new_record.data["preference"]}
+                name="record[data][preference]"
+                phx-value-field="data[preference]"
+                min="0"
+                max="65535"
+                required
+                class="input input-bordered w-full max-w-xs"
+                disabled={@new_record.type != :mx}
+                placeholder="Preference"
+              />
+              <%= if @new_record.type not in [:a, :aaaa] do %>
+                <input
+                  type="text"
+                  value={@new_record.data["host"]}
+                  name="record[data][host]"
+                  phx-value-field="data[host]"
+                  required
+                  class="input input-bordered w-full max-w-xs"
+                  placeholder="Host"
+                />
+              <% else %>
+                <input
+                  type="text"
+                  value={@new_record.data["ip"]}
+                  name="record[data][ip]"
+                  phx-value-field="data[ip]"
+                  required
+                  class="input input-bordered w-full max-w-xs"
+                  placeholder="IP"
+                />
+              <% end %>
+              
+              <div class="min-w-24 gap-2 flex flex-row">
+                <button class="btn btn-primary btn-outline" type="submit">
+                  <i class="i-mdi-plus text-lg"></i>
+                </button>
+              </div>
+            </form>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="mt-8 bg-base-100 shadow-md rounded-lg overflow-hidden p-6"></div>
+</div>

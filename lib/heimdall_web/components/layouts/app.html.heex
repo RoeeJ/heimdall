@@ -1,4 +1,4 @@
-<header class="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b bg-background px-4 sm:px-6">
+<header class="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b bg-base-100 px-4 sm:px-6">
   <a href="/" class="flex items-center gap-2 font-semibold">
     <img src={~p"/images/logo.svg"} width="36" />
     <span>DNS Manager</span>
@@ -6,68 +6,78 @@
   <nav class="hidden lg:flex">
     <ul class="flex gap-4">
       <li>
-        <a href="/dashboard" class="hover:text-zinc-700">Dashboard</a>
+        <a href="/dashboard" class="hover:text-primary">Dashboard</a>
       </li>
       <li>
-        <a href="/zones" class="hover:text-zinc-700">Zones</a>
+        <a href="/zones" class="hover:text-primary">Zones</a>
       </li>
       <li>
-        <a href="/analytics" class="hover:text-zinc-700">Analytics</a>
+        <a href="/analytics" class="hover:text-primary">Analytics</a>
       </li>
       <li>
-        <a href="/settings" class="hover:text-zinc-700">Settings</a>
+        <a href="/settings" class="hover:text-primary">Settings</a>
       </li>
     </ul>
   </nav>
   <div class="relative">
-    <button class="overflow-hidden rounded-full" onclick="document.getElementById('profile-dropdown').classList.toggle('hidden')">
+    <button
+      class="overflow-hidden rounded-full"
+      onclick="document.getElementById('profile-dropdown').classList.toggle('hidden')"
+    >
       <img
-        src={"//randomuser.me/api/portraits/men/51.jpg"}
+        src="//randomuser.me/api/portraits/men/51.jpg"
         width="36"
         height="36"
         alt="Avatar"
         class="overflow-hidden rounded-full"
       />
     </button>
-    <div id="profile-dropdown" class="absolute right-0 mt-2 w-48 bg-white border rounded shadow-lg hidden">
-      <div class="px-4 py-2 text-sm text-gray-700">My Account</div>
+    <div
+      id="profile-dropdown"
+      class="absolute right-0 mt-2 w-48 bg-base-100 border rounded shadow-lg hidden"
+    >
+      <div class="px-4 py-2 text-sm text-base-content">My Account</div>
       <div class="border-t"></div>
-      <a href="/settings" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+      <a href="/settings" class="block px-4 py-2 text-sm text-base-content hover:bg-base-200">
         Settings
       </a>
-      <a href="/support" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+      <a href="/support" class="block px-4 py-2 text-sm text-base-content hover:bg-base-200">
         Support
       </a>
       <div class="border-t"></div>
-      <a href="/logout" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Logout</a>
+      <a href="/logout" class="block px-4 py-2 text-sm text-base-content hover:bg-base-200">Logout</a>
     </div>
   </div>
 </header>
 <div class="flex flex-1 h-screen">
-  <aside class="mt-16 hidden w-64 shrink-0 border-r bg-background lg:block">
+  <aside class="mt-16 hidden w-64 shrink-0 border-r bg-base-100 lg:block">
     <nav class="grid gap-6 px-4 py-8 text-sm font-medium">
       <a
         href="/dashboard"
-        class="flex items-center gap-4 px-2 py-2 text-muted-foreground hover:text-foreground"
+        class="flex items-center gap-4 px-2 py-2 text-base-content hover:text-primary"
       >
+        <span class="i-mdi-gauge text-2xl" />
         <span>Dashboard</span>
       </a>
       <a
         href="/zones"
-        class="flex items-center gap-4 px-2 py-2 text-muted-foreground hover:text-foreground"
+        class="flex items-center gap-4 px-2 py-2 text-base-content hover:text-primary"
       >
+        <span class="i-mdi-dns text-2xl" />
         <span>Zones</span>
       </a>
       <a
         href="/analytics"
-        class="flex items-center gap-4 px-2 py-2 text-muted-foreground hover:text-foreground"
+        class="flex items-center gap-4 px-2 py-2 text-base-content hover:text-primary"
       >
+        <span class="i-mdi-chart-line-variant text-2xl" />
         <span>Analytics</span>
       </a>
       <a
         href="/settings"
-        class="flex items-center gap-4 px-2 py-2 text-muted-foreground hover:text-foreground"
+        class="flex items-center gap-4 px-2 py-2 text-base-content hover:text-primary"
       >
+        <span class="i-mdi-cog text-2xl" />
         <span>Settings</span>
       </a>
     </nav>

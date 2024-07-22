@@ -1,0 +1,16 @@
+{
+  "name": "heimdall",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@egoist/tailwindcss-icons": "^1.8.1",
+    "@iconify/json": "^2.2.229",
+    "daisyui": "^4.12.10"
+  }
+}

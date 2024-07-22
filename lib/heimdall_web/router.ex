@@ -19,8 +19,8 @@ defmodule HeimdallWeb.Router do
 
     get "/", PageController, :home
     live "/dashboard", DashboardLive
-    live "/zones", ZonesLive
-    live "/zones/:zone_id", ZoneLive
+    live "/zones", Zones.IndexLive
+    live "/zones/:zone_id", Zones.IdLive
     live "/analytics", AnalyticsLive
     live "/settings", SettingsLive
   end
