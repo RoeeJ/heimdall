@@ -1,11 +1,23 @@
 defmodule Heimdall.Schema.SOA do
+  @moduledoc """
+  SOA record schema
+  """
   use Ecto.Schema
   import Ecto.Changeset
+
+  @type t() :: %__MODULE__{
+          id: non_neg_integer(),
+          inserted_at: NaiveDateTime.t(),
+          updated_at: NaiveDateTime.t(),
+          mname: String.t(),
+          rname: String.t(),
+          zone: Heimdall.DNS.Zone.t()
+        }
 
   schema "soa_records" do
     field :mname, :string
     field :rname, :string
-    belongs_to :zone, Heimdall.DNS.Zone
+    belongs_to :zone, Heimdall.Schema.Zone
 
     timestamps()
   end

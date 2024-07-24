@@ -49,6 +49,7 @@ defmodule Heimdall.DNS.Manager do
              |> Repo.insert(),
            {:ok, _updated_zone} <- increment_zone_serial(zone),
            cache_key <- generate_cache_key(record, zone) do
+            IO.inspect([cache_key, record, zone])
         Heimdall.DNS.Cache.delete(cache_key)
         {:ok, record}
       else
@@ -109,6 +110,7 @@ defmodule Heimdall.DNS.Manager do
            {:ok, zone} <- get_zone(record.zone_id),
            {:ok, _updated_zone} <- increment_zone_serial(zone),
            cache_key <- generate_cache_key(record, zone) do
+        IO.inspect([cache_key, record])
         Heimdall.DNS.Cache.delete(cache_key)
         {:ok, record}
       else
@@ -129,6 +131,7 @@ defmodule Heimdall.DNS.Manager do
 
     Enum.reduce_while(1..(parts_length - 1), {:error, :nxdomain}, fn i, acc ->
       potential_zone = Enum.take(parts, -i) |> Enum.join(".")
+      IO.inspect(potential_zone)
 
       case find_zone(potential_zone) do
         {:ok, zone} -> {:halt, {:ok, zone}}
@@ -144,25 +147,63 @@ defmodule Heimdall.DNS.Manager do
             where: r.zone_id == ^zone.id
 
         query = build_subdomain_query(query, subdomain)
-        query = if type, do: where(query, [r], r.type == ^type), else: query
+
+        query =
+          case type do
+            nil -> query
+            :any -> query
+            _ -> where(query, [r], r.type == ^type)
+          end
 
         records = Repo.all(query)
 
-        if records == [] do
-          {:error, :nxdomain}
-        else
-          {:ok, records}
-        end
+        records =
+          case type do
+            :any -> records
+            _ -> Enum.filter(records, fn r -> r.type == type end)
+          end
+
+        {:ok, records}
 
       _ ->
-        {:error, :nxdomain}
+        # Check for 1 part TLD
+        case find_zone(full_domain) do
+          {:ok, zone} ->
+            subdomain = get_subdomain(parts, zone.name)
+
+            query =
+              from r in Record,
+                where: r.zone_id == ^zone.id
+
+            query = build_subdomain_query(query, subdomain)
+
+            query =
+              case type do
+                nil -> query
+                :any -> query
+                _ -> where(query, [r], r.type == ^type)
+              end
+
+            records = Repo.all(query)
+
+            records =
+              case type do
+                :any -> records
+                _ -> Enum.filter(records, fn r -> r.type == type end)
+              end
+
+            {:ok, records}
+
+          _ ->
+            {:error, :nxdomain}
+        end
     end
   end
 
   defp generate_cache_key(updated_record, zone) do
     case updated_record.name do
-      "@" -> {zone.name, updated_record.type}
-      _ -> {"#{updated_record.name}.#{zone.name}", updated_record.type}
+      "@" -> zone.name
+      _ -> "#{updated_record.name}.#{zone.name}"
     end
   end
 

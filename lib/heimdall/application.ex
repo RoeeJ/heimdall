@@ -23,6 +23,8 @@ defmodule Heimdall.Application do
       HeimdallWeb.Endpoint,
       {Heimdall.Servers.UDPServer, port: Application.get_env(:heimdall, :dns_port) || 1053},
       {Heimdall.Servers.TCPServer, port: Application.get_env(:heimdall, :dns_port) || 1053},
+      {Heimdall.Servers.Limiter, name: Heimdall.Servers.Limiter},
+      {Heimdall.Servers.Blocker, name: Heimdall.Servers.Blocker},
       {Cachex, name: :dns_cache, stats: true, transactions: true}
     ]
 

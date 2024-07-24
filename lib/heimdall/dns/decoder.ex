@@ -175,6 +175,7 @@ defmodule Heimdall.DNS.Decoder do
   def qtype(28), do: :aaaa
   def qtype(33), do: :srv
   def qtype(41), do: :opt
+  def qtype(255), do: :any
   def qtype(n), do: throw("Unknown qtype value: #{n}")
 
   @spec qclass(1 | 2 | 3 | 4) :: :ch | :cs | :hs | :in

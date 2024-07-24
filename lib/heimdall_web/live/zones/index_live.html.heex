@@ -18,6 +18,14 @@
           >
             Records
           </th>
+
+
+          <th
+            scope="col"
+            class="px-6 py-3 text-left text-xs font-medium text-base-content uppercase tracking-wider"
+          >
+            Serial
+          </th>
           
           <th
             scope="col"
@@ -38,14 +46,19 @@
             <td class="px-6 py-4 whitespace-nowrap text-sm text-base-content">
               <%= length(zone.records) %>
             </td>
+
+
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-base-content">
+              <%= zone.serial %>
+            </td>
             
             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
               <button
                 phx-click="edit_zone"
                 phx-value-id={zone.id}
-                class="text-secondary hover:text-secondary-focus focus:outline-none focus:underline ml-4 btn btn-outline"
+                class="text-success hover:text-secondary-focus focus:outline-none focus:underline ml-4 btn btn-outline"
               >
-                Edit
+                <i class="i-mdi-pencil text-xl" />
               </button>
               
               <button
@@ -54,7 +67,7 @@
                 phx-value-id={zone.id}
                 class="text-error hover:text-error-focus focus:outline-none focus:underline ml-4 btn btn-outline"
               >
-                Delete
+                <i class="i-mdi-delete text-xl" />
               </button>
             </td>
           </tr>
@@ -66,22 +79,24 @@
   <div class="bg-base-100 shadow-md rounded-lg p-6">
     <h2 class="text-2xl font-bold mb-4 text-base-content">Add New Zone</h2>
     
-    <form phx-submit="create_zone">
+    <form phx-submit="create_zone" phx-change="validate_zone_name">
       <div class="mb-4">
         <label for="zone_name" class="block text-sm font-medium text-base-content">
           Zone Name
         </label>
+        
         <input
           type="text"
           id="zone_name"
           name="zone[name]"
           class="input input-bordered w-full mt-1"
           required
+          phx-debounce="500"
         />
       </div>
       
       <div class="flex justify-end">
-        <button type="submit" class="btn btn-primary">Add Zone</button>
+        <button type="submit" class="btn btn-primary" disabled={@zone_name_invalid}>Add Zone</button>
       </div>
     </form>
   </div>

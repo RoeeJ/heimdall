@@ -5,6 +5,8 @@ defmodule Heimdall.Schema.Zone do
   @derive {Jason.Encoder, except: [:__meta__, :records, :soa]}
   alias Heimdall.Repo
   alias Heimdall.Schema.{Record, SOA}
+  import Ecto.Query
+
 
   @type t() :: %__MODULE__{
           id: non_neg_integer(),
@@ -40,4 +42,14 @@ defmodule Heimdall.Schema.Zone do
     do:
       Repo.all(__MODULE__)
       |> Repo.preload(:records)
+
+  def create(name) do
+    %__MODULE__{}
+    |> changeset(%{"name" => name})
+    |> Repo.insert()
+  end
+
+  def delete(zone), do: Repo.delete(zone)
+
+  def exists?(name), do: Repo.exists?(from z in __MODULE__, where: z.name == ^name)
 end

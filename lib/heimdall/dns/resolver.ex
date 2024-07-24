@@ -6,6 +6,7 @@ defmodule Heimdall.DNS.Resolver do
   require Logger
   alias Heimdall.DNS.{Model, Cache}
   alias Heimdall.Schema.Record
+  alias Heimdall.Servers.Blocker
 
   @default_nameservers [
     {"1.1.1.1", 53},
@@ -13,20 +14,27 @@ defmodule Heimdall.DNS.Resolver do
   ]
 
   def query(domain, type \\ :a, opts \\ []) do
-    cache_key = {domain, type}
-
+    cache_key = domain
     nameservers = Keyword.get(opts, :nameservers, @default_nameservers)
     opts = Keyword.put(opts, :nameservers, nameservers)
 
-    case Cache.get(cache_key) do
-      {:ok, cached_resources} when not is_nil(cached_resources) and cached_resources != [] ->
-        {:ok, cached_resources}
+    case Blocker.filter_query(domain) do
+      :blocked ->
+        {:error, :blocked}
 
-      {:partial, partial_resources, last_fetch_time} ->
-        handle_partial_cache(partial_resources, last_fetch_time, domain, type, opts)
+      :allowed ->
+        Logger.debug("Query allowed for #{domain}")
 
-      _ ->
-        handle_no_cache(domain, type, opts)
+        case Cache.get(cache_key) do
+          {:ok, cached_resources} when not is_nil(cached_resources) and cached_resources != [] ->
+            {:ok, cached_resources}
+
+          {:partial, partial_resources, last_fetch_time} ->
+            handle_partial_cache(partial_resources, last_fetch_time, domain, type, opts)
+
+          _ ->
+            handle_no_cache(domain, type, opts)
+        end
     end
   end
 
@@ -59,7 +67,7 @@ defmodule Heimdall.DNS.Resolver do
       case DNS.query(domain, type, opts) do
         {:ok, dns_record} ->
           resources = dns_record_to_resources(dns_record)
-          Cache.put({domain, type}, resources)
+          Cache.put(domain, resources)
           {:ok, resources}
 
         {:error, reason} ->
@@ -87,58 +95,9 @@ defmodule Heimdall.DNS.Resolver do
       {:ok, records} when is_list(records) ->
         resources = Enum.map(records, &schema_record_to_resource(&1, domain))
 
-        Cache.put({domain, type}, resources)
+        Cache.put(domain, resources)
 
         {:ok, resources}
-    end
-  end
-
-  defp record_to_resource(%Record{} = rec) do
-    case rec do
-      %{type: :a, data: %{"ip" => ip}} ->
-        {:a,
-         ip
-         |> String.split(".")
-         |> Enum.map(&String.to_integer/1)
-         |> List.to_tuple(), 4}
-
-      %{type: :aaaa, data: %{"ip" => ip}} ->
-        expanded_ip = expand_ipv6_address(ip)
-
-        {:aaaa,
-         expanded_ip
-         |> String.split(":")
-         |> Enum.map(&String.to_integer(&1, 16))
-         |> List.to_tuple(), 16}
-
-      %{type: :cname, data: %{"host" => host}} ->
-        {:cname, host, String.length(host)}
-
-      %{type: :ns, data: %{"host" => host}} ->
-        {:ns, host, String.length(host)}
-
-      %{type: :mx, data: %{"host" => host, "preference" => preference}} ->
-        {:mx, {preference, host}, String.length(host)}
-
-      _ ->
-        raise "Unsupported record type: #{rec.type}"
-    end
-  end
-
-  defp expand_ipv6_address(address) do
-    parts = String.split(address, ":")
-    double_colon_index = Enum.find_index(parts, &(&1 == ""))
-
-    if double_colon_index do
-      before_dc = Enum.take(parts, double_colon_index)
-      after_dc = Enum.drop(parts, double_colon_index + 1)
-      missing_parts = 8 - (length(before_dc) + length(after_dc))
-
-      (before_dc ++ List.duplicate("0000", missing_parts) ++ after_dc)
-      |> Enum.map_join(":", &String.pad_leading(&1, 4, "0"))
-    else
-      parts
-      |> Enum.map_join(":", &String.pad_leading(&1, 4, "0"))
     end
   end
 
@@ -168,13 +127,64 @@ defmodule Heimdall.DNS.Resolver do
     }
   end
 
-  # Assuming string
+  defp record_to_resource(%Record{} = rec) do
+    case rec do
+      %{type: :a, data: %{"ip" => ip}} ->
+        {:a, parse_ip(ip), 4}
+
+      %{type: :aaaa, data: %{"ip" => ip}} ->
+        {:aaaa, parse_ipv6(ip), 16}
+
+      %{type: :cname, data: %{"host" => host}} ->
+        {:cname, host, String.length(host)}
+
+      %{type: :ns, data: %{"host" => host}} ->
+        {:ns, host, String.length(host)}
+
+      %{type: :mx, data: %{"host" => host, "preference" => preference}} ->
+        {:mx, {preference, host}, String.length(host)}
+
+      _ ->
+        raise "Unsupported record type: #{rec.type}"
+    end
+  end
+
+  defp parse_ip(ip) do
+    ip
+    |> String.split(".")
+    |> Enum.map(&String.to_integer/1)
+    |> List.to_tuple()
+  end
+
+  defp parse_ipv6(ip) do
+    expanded_ip = expand_ipv6_address(ip)
+
+    expanded_ip
+    |> String.split(":")
+    |> Enum.map(&String.to_integer(&1, 16))
+    |> List.to_tuple()
+  end
+
+  defp expand_ipv6_address(address) do
+    parts = String.split(address, ":")
+    double_colon_index = Enum.find_index(parts, &(&1 == ""))
+
+    if double_colon_index do
+      before_dc = Enum.take(parts, double_colon_index)
+      after_dc = Enum.drop(parts, double_colon_index + 1)
+      missing_parts = 8 - (length(before_dc) + length(after_dc))
+
+      (before_dc ++ List.duplicate("0000", missing_parts) ++ after_dc)
+      |> Enum.map_join(":", &String.pad_leading(&1, 4, "0"))
+    else
+      parts
+      |> Enum.map_join(":", &String.pad_leading(&1, 4, "0"))
+    end
+  end
+
   defp calculate_rdlength(data) when is_binary(data), do: byte_size(data)
-  # Assuming charlist
   defp calculate_rdlength(data) when is_list(data), do: length(data)
-  # Assuming IPv4 address
   defp calculate_rdlength(data) when is_tuple(data), do: tuple_size(data) * 4
-  # Default case for other types
   defp calculate_rdlength(_), do: 0
 
   defp parse_rdata(:a, {a, b, c, d}), do: {a, b, c, d}
@@ -183,10 +193,7 @@ defmodule Heimdall.DNS.Resolver do
   defp parse_rdata(:txt, data) when is_list(data), do: to_string(data)
   defp parse_rdata(:ns, data), do: to_string(data)
   defp parse_rdata(:srv, {pri, weight, port, target}), do: {pri, weight, port, to_string(target)}
-
-  defp parse_rdata(:mx, {preference, exchange})
-       when is_integer(preference) and is_list(exchange),
-       do: {preference, to_string(exchange)}
-
+  defp parse_rdata(:mx, {preference, exchange}) when is_integer(preference) and is_list(exchange),
+    do: {preference, to_string(exchange)}
   defp parse_rdata(_, data), do: data
 end

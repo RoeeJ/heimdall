@@ -62,7 +62,8 @@ defmodule Heimdall.MixProject do
       {:mix_test_watch, "~> 1.0", only: [:dev, :test], runtime: false},
       {:exsync, "~> 0.4", only: :dev},
       {:dns, "~> 2.4"},
-      {:cachex, "~> 3.6"}
+      {:cachex, "~> 3.6"},
+      {:httpoison, "~> 2.0"}
     ]
   end
 

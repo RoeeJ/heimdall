@@ -17,11 +17,15 @@ defmodule Heimdall.Servers.UDPServer do
   end
 
   def handle_info({:udp, socket, address, port, data}, state) do
-    case Heimdall.DNS.Server.query(data) do
-      {:ok, response} ->
-        :gen_udp.send(socket, address, port, response)
-      {:error, reason} ->
-        Logger.error("Failed to handle DNS query: #{reason}")
+    if Heimdall.Servers.Limiter.allow?(address) do
+      case Heimdall.DNS.Server.query(data) do
+        {:ok, response} ->
+          :gen_udp.send(socket, address, port, response)
+        {:error, reason} ->
+          Logger.error("Failed to handle DNS query: #{reason}")
+      end
+    else
+      Logger.warning("Rate limit exceeded for client #{inspect(address)}")
     end
 
     {:noreply, state}
