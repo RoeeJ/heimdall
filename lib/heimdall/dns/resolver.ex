@@ -4,6 +4,7 @@ defmodule Heimdall.DNS.Resolver do
   """
 
   require Logger
+  alias Heimdall.Servers.Tracker
   alias Heimdall.DNS.{Model, Cache}
   alias Heimdall.Schema.Record
   alias Heimdall.Servers.Blocker
@@ -13,6 +14,16 @@ defmodule Heimdall.DNS.Resolver do
     {"1.0.0.1", 53}
   ]
 
+  def start_link(_) do
+    {:ok,
+     %{
+       total_queries: 0,
+       failed_queries: 0,
+       blocked_queries: 0,
+       cache_stats: %{}
+     }}
+  end
+
   def query(domain, type \\ :a, opts \\ []) do
     cache_key = domain
     nameservers = Keyword.get(opts, :nameservers, @default_nameservers)
@@ -20,6 +31,8 @@ defmodule Heimdall.DNS.Resolver do
 
     case Blocker.filter_query(domain) do
       :blocked ->
+        Tracker.report_blocked()
+        publish_query(domain, :block)
         {:error, :blocked}
 
       :allowed ->
@@ -27,15 +40,45 @@ defmodule Heimdall.DNS.Resolver do
 
         case Cache.get(cache_key) do
           {:ok, cached_resources} when not is_nil(cached_resources) and cached_resources != [] ->
+            Tracker.report_success()
+            publish_query(domain, :success)
             {:ok, cached_resources}
 
           {:partial, partial_resources, last_fetch_time} ->
-            handle_partial_cache(partial_resources, last_fetch_time, domain, type, opts)
+            result = handle_partial_cache(partial_resources, last_fetch_time, domain, type, opts)
+            publish_query(domain, :success)
+            result
 
           _ ->
-            handle_no_cache(domain, type, opts)
+            result = handle_no_cache(domain, type, opts)
+
+            case result do
+              {:ok, _} ->
+                Tracker.report_success()
+                publish_query(domain, :success)
+                result
+
+              {:error, _} ->
+                Tracker.report_failed()
+                publish_query(domain, :fail)
+                result
+            end
         end
     end
+  end
+
+  def stats(state) do
+    state
+  end
+
+  # Internal Functions
+
+  defp publish_query(domain, status) do
+    Phoenix.PubSub.broadcast(Heimdall.PubSub, "queries", %{
+      timestamp: DateTime.utc_now(),
+      domain: domain,
+      status: status
+    })
   end
 
   defp handle_partial_cache(partial_resources, last_fetch_time, domain, type, opts) do
@@ -86,10 +129,9 @@ defmodule Heimdall.DNS.Resolver do
   end
 
   defp refresh_records(domain, type, _opts) do
-    Logger.debug("Refreshing records for #{domain} (#{type})")
-
     case Heimdall.DNS.Manager.query_subdomain(domain, type) do
       {:error, :nxdomain} ->
+        Cache.put(domain, [])
         {:error, :nxdomain}
 
       {:ok, records} when is_list(records) ->
@@ -193,7 +235,13 @@ defmodule Heimdall.DNS.Resolver do
   defp parse_rdata(:txt, data) when is_list(data), do: to_string(data)
   defp parse_rdata(:ns, data), do: to_string(data)
   defp parse_rdata(:srv, {pri, weight, port, target}), do: {pri, weight, port, to_string(target)}
+
   defp parse_rdata(:mx, {preference, exchange}) when is_integer(preference) and is_list(exchange),
     do: {preference, to_string(exchange)}
+
   defp parse_rdata(_, data), do: data
+
+  defp update_stats(state, stat) do
+    Map.update!(state, stat, &(&1 + 1))
+  end
 end

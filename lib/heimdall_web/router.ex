@@ -21,7 +21,8 @@ defmodule HeimdallWeb.Router do
     live "/dashboard", DashboardLive
     live "/zones", Zones.IndexLive
     live "/zones/:zone_id", Zones.IdLive
-    live "/analytics", AnalyticsLive
+    live "/analytics", Analytics.IndexLive
+    live "/blocklists", Blocklists.IndexLive
     live "/settings", SettingsLive
   end
 

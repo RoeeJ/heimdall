@@ -1,0 +1,89 @@
+<div class="container mx-auto p-4">
+  <h1 class="text-2xl font-bold mb-4">Blocklist Management</h1>
+  
+  <h2 class="text-xl font-bold mb-4">Current Blocklist URLs</h2>
+  
+  <div class="overflow-x-auto mb-8">
+    <table class="table w-full">
+      <thead class="sticky top-0">
+        <tr>
+          <th>URL</th>
+          
+          <th>Actions</th>
+        </tr>
+      </thead>
+      
+      <tbody id="blocklist-urls">
+        <tr :for={url <- @blocklist_urls} id={"blocklist-url-#{url}"}>
+          <td><%= url %></td>
+          
+          <td>
+            <button phx-click="remove_blocklist_url" phx-value-url={url} class="btn btn-danger">
+              Remove
+            </button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <h2 class="text-xl font-bold mb-4">Current Blocked Domains</h2>
+  
+  <div class="overflow-x-auto mb-8">
+    <table class="table w-full">
+      <thead class="sticky top-0">
+        <tr>
+          <th>Domain</th>
+          
+          <th>Actions</th>
+        </tr>
+      </thead>
+      
+      <tbody id="blocked-domains">
+        <tr :for={domain <- @blocked_domains} id={"blocked-domain-#{domain}"}>
+          <td><%= domain %></td>
+          
+          <td>
+            <button
+              phx-click="remove_blocked_domain"
+              phx-value-domain={domain}
+              class="btn btn-danger"
+            >
+              Remove
+            </button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <h2 class="text-xl font-bold mb-4">Current Whitelisted Domains</h2>
+  
+  <div class="overflow-x-auto">
+    <table class="table w-full">
+      <thead class="sticky top-0">
+        <tr>
+          <th>Domain</th>
+          
+          <th>Actions</th>
+        </tr>
+      </thead>
+      
+      <tbody id="whitelisted-domains">
+        <tr :for={domain <- @whitelisted_domains} id={"whitelisted-domain-#{domain}"}>
+          <td><%= domain %></td>
+          
+          <td>
+            <button
+              phx-click="remove_whitelisted_domain"
+              phx-value-domain={domain}
+              class="btn btn-danger"
+            >
+              Remove
+            </button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

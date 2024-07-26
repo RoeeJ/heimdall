@@ -15,17 +15,14 @@ defmodule Heimdall.Application do
       Heimdall.Repo,
       {DNSCluster, query: Application.get_env(:heimdall, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Heimdall.PubSub},
-      # Start the Finch HTTP client for sending emails
       {Finch, name: Heimdall.Finch},
-      # Start a worker by calling: Heimdall.Worker.start_link(arg)
-      # {Heimdall.Worker, arg},
-      # Start to serve requests, typically the last entry
-      HeimdallWeb.Endpoint,
-      {Heimdall.Servers.UDPServer, port: Application.get_env(:heimdall, :dns_port) || 1053},
-      {Heimdall.Servers.TCPServer, port: Application.get_env(:heimdall, :dns_port) || 1053},
+      {Cachex, name: :dns_cache, stats: true, transactions: true},
+      {Heimdall.Servers.UDPServer, port: Application.get_env(:heimdall, :dns_port)},
+      {Heimdall.Servers.TCPServer, port: Application.get_env(:heimdall, :dns_port)},
       {Heimdall.Servers.Limiter, name: Heimdall.Servers.Limiter},
       {Heimdall.Servers.Blocker, name: Heimdall.Servers.Blocker},
-      {Cachex, name: :dns_cache, stats: true, transactions: true}
+      {Heimdall.Servers.Tracker, name: Heimdall.Servers.Tracker},
+      HeimdallWeb.Endpoint
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

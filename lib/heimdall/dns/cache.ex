@@ -4,6 +4,7 @@ defmodule Heimdall.DNS.Cache do
   """
 
   @cache_name :dns_cache
+  @default_ttl 300
 
   def get(key) do
     case Cachex.get(@cache_name, key) do
@@ -41,9 +42,11 @@ defmodule Heimdall.DNS.Cache do
   end
 
   def put(key, resources) do
-    unless Enum.empty?(resources) do
-      now = System.system_time(:second)
+    now = System.system_time(:second)
 
+    if Enum.empty?(resources) do
+      Cachex.put(@cache_name, key, {now, []}, ttl: :timer.seconds(@default_ttl))
+    else
       cached_resources =
         Enum.map(resources, fn resource ->
           expiration = now + resource.ttl
@@ -73,7 +76,7 @@ defmodule Heimdall.DNS.Cache do
          writes: Map.get(stats, :writes, 0),
          expirations: Map.get(stats, :expirations, 0),
          misses: Map.get(stats, :misses, 0),
-         hit_rate: Float.round(Map.get(stats, :hit_rate, 0), 2)
+         hit_rate: Float.round(Map.get(stats, :hit_rate, 0.0), 2)
        }}
     else
       {:error, reason} ->

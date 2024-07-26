@@ -2,20 +2,16 @@ defmodule Heimdall.DNS.Manager do
   @moduledoc """
   Module for managing DNS zones and records.
   """
-  alias Heimdall.DNS.Model
   alias Heimdall.Schema.{Zone, Record}
   alias Heimdall.Repo
   import Ecto.Query
 
-  # Zone Operations
-  @spec add_zone(map()) :: {:ok, Zone.t()} | {:error, Ecto.Changeset.t()}
   def add_zone(zone_params) do
     %Zone{}
     |> Zone.changeset(zone_params)
     |> Repo.insert()
   end
 
-  @spec find_zone(String.t()) :: {:ok, Zone.t()} | {:error, :zone_not_found}
   def find_zone(query_name) do
     query_parts = String.split(query_name, ".")
 
@@ -30,16 +26,15 @@ defmodule Heimdall.DNS.Manager do
     end
   end
 
-  @spec get_zone(integer()) :: {:ok, Zone.t()} | {:error, :zone_not_found}
   def get_zone(zone_id) do
-    case Zone |> Repo.get(zone_id) |> Repo.preload(records: from(r in Record, order_by: r.id)) do
+    case Zone
+         |> Repo.get(zone_id)
+         |> Repo.preload(records: from(r in Record, order_by: r.id)) do
       nil -> {:error, :zone_not_found}
       zone -> {:ok, zone}
     end
   end
 
-  # Record Operations
-  @spec add_record(String.t(), map()) :: {:ok, Record.t()} | {:error, any()}
   def add_record(zone_id, record_params) do
     Repo.transaction(fn ->
       with {:ok, zone} <- get_zone(zone_id),
@@ -49,7 +44,6 @@ defmodule Heimdall.DNS.Manager do
              |> Repo.insert(),
            {:ok, _updated_zone} <- increment_zone_serial(zone),
            cache_key <- generate_cache_key(record, zone) do
-            IO.inspect([cache_key, record, zone])
         Heimdall.DNS.Cache.delete(cache_key)
         {:ok, record}
       else
@@ -58,7 +52,6 @@ defmodule Heimdall.DNS.Manager do
     end)
   end
 
-  @spec get_records(String.t(), Keyword.t()) :: {:ok, [Record.t()]} | {:error, :zone_not_found}
   def get_records(zone_name, opts \\ []) do
     with {:ok, zone} <- find_zone(zone_name) do
       query = from r in Record, where: r.zone_id == ^zone.id
@@ -80,7 +73,6 @@ defmodule Heimdall.DNS.Manager do
     end
   end
 
-  @spec update_record(integer(), map()) :: {:ok, Record.t()} | {:error, any()}
   def update_record(id, params) do
     Repo.transaction(fn ->
       record = Repo.get!(Record, id)
@@ -103,14 +95,12 @@ defmodule Heimdall.DNS.Manager do
     end)
   end
 
-  @spec delete_record(integer()) :: {:ok, Record.t()} | {:error, any()}
   def delete_record(id) do
     Repo.transaction(fn ->
       with {:ok, record} <- Repo.get(Record, id) |> Repo.delete(),
            {:ok, zone} <- get_zone(record.zone_id),
            {:ok, _updated_zone} <- increment_zone_serial(zone),
            cache_key <- generate_cache_key(record, zone) do
-        IO.inspect([cache_key, record])
         Heimdall.DNS.Cache.delete(cache_key)
         {:ok, record}
       else
@@ -119,19 +109,12 @@ defmodule Heimdall.DNS.Manager do
     end)
   end
 
-  # New method for querying specific subdomain records
-  @spec query_subdomain(String.t(), Model.qtype_atoms() | nil) ::
-          {:ok, [Record.t()]} | {:error, :nxdomain}
-  def query_subdomain(full_domain, type \\ nil)
-  def query_subdomain(".", _type), do: {:error, :nxdomain}
-
-  def query_subdomain(full_domain, type) do
+  def query_subdomain(full_domain, type \\ nil) do
     parts = String.split(full_domain, ".")
     parts_length = length(parts)
 
     Enum.reduce_while(1..(parts_length - 1), {:error, :nxdomain}, fn i, acc ->
       potential_zone = Enum.take(parts, -i) |> Enum.join(".")
-      IO.inspect(potential_zone)
 
       case find_zone(potential_zone) do
         {:ok, zone} -> {:halt, {:ok, zone}}
@@ -198,6 +181,17 @@ defmodule Heimdall.DNS.Manager do
             {:error, :nxdomain}
         end
     end
+  end
+
+  def stats do
+    %{
+      total_queries: 0,
+      failed_queries: 0,
+      blocked_queries: 0,
+      rate_limit_blocked_clients: 0,
+      cache_stats: %{},
+      recent_queries: []
+    }
   end
 
   defp generate_cache_key(updated_record, zone) do
