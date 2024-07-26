@@ -32,7 +32,7 @@ defmodule Heimdall.DNS.Resolver do
     case Blocker.filter_query(domain) do
       :blocked ->
         Tracker.report_blocked()
-        publish_query(domain, :block)
+        publish_query(domain, type, :block)
         {:error, :blocked}
 
       :allowed ->
@@ -41,12 +41,12 @@ defmodule Heimdall.DNS.Resolver do
         case Cache.get(cache_key) do
           {:ok, cached_resources} when not is_nil(cached_resources) and cached_resources != [] ->
             Tracker.report_success()
-            publish_query(domain, :success)
+            publish_query(domain, type, :success)
             {:ok, cached_resources}
 
           {:partial, partial_resources, last_fetch_time} ->
             result = handle_partial_cache(partial_resources, last_fetch_time, domain, type, opts)
-            publish_query(domain, :success)
+            publish_query(domain, type, :success)
             result
 
           _ ->
@@ -55,12 +55,12 @@ defmodule Heimdall.DNS.Resolver do
             case result do
               {:ok, _} ->
                 Tracker.report_success()
-                publish_query(domain, :success)
+                publish_query(domain, type, :success)
                 result
 
               {:error, _} ->
                 Tracker.report_failed()
-                publish_query(domain, :fail)
+                publish_query(domain, type, :fail)
                 result
             end
         end
@@ -73,10 +73,11 @@ defmodule Heimdall.DNS.Resolver do
 
   # Internal Functions
 
-  defp publish_query(domain, status) do
+  defp publish_query(domain, type, status) do
     Phoenix.PubSub.broadcast(Heimdall.PubSub, "queries", %{
       timestamp: DateTime.utc_now(),
       domain: domain,
+      type: type,
       status: status
     })
   end

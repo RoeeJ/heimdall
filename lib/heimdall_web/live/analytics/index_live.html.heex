@@ -33,7 +33,7 @@
         <p><%= @rate_limit_blocked_clients %></p>
       </div>
     </div>
-
+    
     <div class="card bg-base-100 shadow-xl">
       <div class="card-body">
         <h2 class="card-title">Blocked Domains</h2>
@@ -65,6 +65,8 @@
           
           <th>Query</th>
           
+          <th>Type</th>
+          
           <th>Status</th>
         </tr>
       </thead>
@@ -77,6 +79,8 @@
           <td><%= Calendar.strftime(query.timestamp, "%Y-%m-%d %H:%M:%S") %></td>
           
           <td><%= query.domain %></td>
+          
+          <td><%= query.type |> Atom.to_string() |> String.upcase() %></td>
           
           <td><%= query.status %></td>
         </tr>
