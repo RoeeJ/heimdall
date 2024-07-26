@@ -1,7 +1,7 @@
 defmodule Heimdall.Servers.Limiter do
   use GenServer
 
-  @rate_limit 10 # default to 1000 requests per minute
+  @rate_limit 10000 # default to 1000 requests per minute
   @check_interval :timer.seconds(5)
 
   def start_link(_) do

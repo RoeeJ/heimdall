@@ -31,7 +31,11 @@ if config_env() == :prod do
   %URI{host: database_host} = URI.parse(database_url)
 
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
-  db_ssl = if System.get_env("DB_SSL") in ~w(1 y yes true), do: [cacerts: :public_key.cacerts_get()], else: false
+
+  db_ssl =
+    if System.get_env("DB_SSL") in ~w(1 y yes true),
+      do: [cacerts: :public_key.cacerts_get()],
+      else: false
 
   database_ca_cert_filepath =
     System.get_env("DATABASE_CA_CERT_FILEPATH") || "/etc/ssl/certs/ca-certificates.crt"
@@ -80,6 +84,8 @@ if config_env() == :prod do
       port: port
     ],
     secret_key_base: secret_key_base
+
+  config :heimdall, :dns_port, String.to_integer(System.get_env("DNS_PORT") || "1053")
 
   # ## SSL Support
   #
