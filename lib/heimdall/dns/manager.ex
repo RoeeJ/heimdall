@@ -196,8 +196,8 @@ defmodule Heimdall.DNS.Manager do
 
   defp generate_cache_key(updated_record, zone) do
     case updated_record.name do
-      "@" -> zone.name
-      _ -> "#{updated_record.name}.#{zone.name}"
+      "@" -> {zone.name, updated_record.type}
+      _ -> {updated_record.name, zone.name, updated_record.type}
     end
   end
 

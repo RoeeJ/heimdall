@@ -89,6 +89,8 @@ defmodule Heimdall.DNS.Encoder do
   def qtype(:aaaa), do: 28
   def qtype(:srv), do: 33
   def qtype(:opt), do: 41
+  def qtype(:svcb), do: 64
+  def qtype(:https), do: 65
   def qtype(:any), do: 255
 
   def qclass(:in), do: 1

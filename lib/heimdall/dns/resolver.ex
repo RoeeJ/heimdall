@@ -25,45 +25,55 @@ defmodule Heimdall.DNS.Resolver do
   end
 
   def query(domain, type \\ :a, opts \\ []) do
-    cache_key = domain
-    nameservers = Keyword.get(opts, :nameservers, @default_nameservers)
-    opts = Keyword.put(opts, :nameservers, nameservers)
+    if type == :any do
+      {:error, :any_not_supported}
+    else
+      cache_key = {domain, type}
+      nameservers = Keyword.get(opts, :nameservers, @default_nameservers)
+      opts = Keyword.put(opts, :nameservers, nameservers)
 
-    case Blocker.filter_query(domain) do
-      :blocked ->
-        Tracker.report_blocked()
-        publish_query(domain, type, :block)
-        {:error, :blocked}
+      case Blocker.filter_query(domain) do
+        :blocked ->
+          Tracker.report_blocked()
+          publish_query(domain, type, :block)
+          {:error, :blocked}
 
-      :allowed ->
-        Logger.debug("Query allowed for #{domain}")
+        :allowed ->
+          Logger.debug("Query allowed for #{domain}")
 
-        case Cache.get(cache_key) do
-          {:ok, cached_resources} when not is_nil(cached_resources) and cached_resources != [] ->
-            Tracker.report_success()
-            publish_query(domain, type, :success)
+          case Cache.get(cache_key) do
             {:ok, cached_resources}
+            when not is_nil(cached_resources) and cached_resources != [] ->
+              Tracker.report_success()
+              publish_query(domain, type, :success)
+              {:ok, cached_resources}
 
-          {:partial, partial_resources, last_fetch_time} ->
-            result = handle_partial_cache(partial_resources, last_fetch_time, domain, type, opts)
-            publish_query(domain, type, :success)
-            result
+            {:partial, partial_resources, last_fetch_time} ->
+              result =
+                handle_partial_cache(partial_resources, last_fetch_time, domain, type, opts)
 
-          _ ->
-            result = handle_no_cache(domain, type, opts)
+              publish_query(domain, type, :success)
+              result
 
-            case result do
-              {:ok, _} ->
-                Tracker.report_success()
-                publish_query(domain, type, :success)
-                result
+            _ ->
+              result = handle_no_cache(domain, type, opts)
+              handle_query_result(result, domain, type)
+          end
+      end
+    end
+  end
 
-              {:error, _} ->
-                Tracker.report_failed()
-                publish_query(domain, type, :fail)
-                result
-            end
-        end
+  defp handle_query_result(result, domain, type) do
+    case result do
+      {:ok, _} ->
+        Tracker.report_success()
+        publish_query(domain, type, :success)
+        result
+
+      {:error, _} ->
+        Tracker.report_failed()
+        publish_query(domain, type, :fail)
+        result
     end
   end
 
@@ -111,7 +121,7 @@ defmodule Heimdall.DNS.Resolver do
       case DNS.query(domain, type, opts) do
         {:ok, dns_record} ->
           resources = dns_record_to_resources(dns_record)
-          Cache.put(domain, resources)
+          Cache.put({domain, type}, resources)
           {:ok, resources}
 
         {:error, reason} ->
@@ -132,13 +142,13 @@ defmodule Heimdall.DNS.Resolver do
   defp refresh_records(domain, type, _opts) do
     case Heimdall.DNS.Manager.query_subdomain(domain, type) do
       {:error, :nxdomain} ->
-        Cache.put(domain, [])
+        Cache.put({domain, type}, [])
         {:error, :nxdomain}
 
       {:ok, records} when is_list(records) ->
         resources = Enum.map(records, &schema_record_to_resource(&1, domain))
 
-        Cache.put(domain, resources)
+        Cache.put({domain, type}, resources)
 
         {:ok, resources}
     end

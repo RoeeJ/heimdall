@@ -18,8 +18,8 @@ defmodule Heimdall.DNS.Server do
   end
 
   defp process_packet(%Model.Packet{} = packet) do
-    answers = resolve_queries(packet.questions)
-    additional = process_additional(packet.additional)
+    answers = resolve_queries(packet.questions) || []
+    additional = process_additional(packet.additional) || []
 
     %Model.Packet{
       packet
@@ -41,6 +41,9 @@ defmodule Heimdall.DNS.Server do
 
         {:error, reason} ->
           Logger.debug("Got err: #{reason} when querying #{q.qname} for #{q.qtype} records")
+          []
+
+        _ ->
           []
       end
     end)

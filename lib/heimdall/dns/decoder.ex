@@ -175,6 +175,8 @@ defmodule Heimdall.DNS.Decoder do
   def qtype(28), do: :aaaa
   def qtype(33), do: :srv
   def qtype(41), do: :opt
+  def qtype(64), do: :svcb
+  def qtype(65), do: :https
   def qtype(255), do: :any
   def qtype(n), do: throw("Unknown qtype value: #{n}")
 
