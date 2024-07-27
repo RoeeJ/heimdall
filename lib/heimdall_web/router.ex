@@ -33,6 +33,7 @@ defmodule HeimdallWeb.Router do
     scope "/cache" do
       get "/clear", CacheController, :clear
       get "/stats", CacheController, :stats
+      get "/view", CacheController, :view
     end
   end
 

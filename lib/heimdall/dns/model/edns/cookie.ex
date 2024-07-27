@@ -34,6 +34,6 @@ defmodule Heimdall.DNS.Model.EDNS.Cookie do
 
   @spec encode(cookie :: t()) :: bitstring()
   def encode(%__MODULE__{} = cookie) do
-    <<10::16, cookie.opt_length::16, cookie.client_cookie::bitstring, cookie.server_cookie::bitstring>>
+    <<cookie.client_cookie::bitstring, cookie.server_cookie::bitstring>>
   end
 end

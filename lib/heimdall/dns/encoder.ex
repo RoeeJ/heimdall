@@ -56,17 +56,22 @@ defmodule Heimdall.DNS.Encoder do
   end
 
   defp encode_rdata(%Model.EDNS{} = edns, :opt) do
-    encoded_options = Enum.map(edns.options, fn {code, data} ->
-      <<code::16, byte_size(data)::16, data::binary>>
-    end) |> Enum.join()
-
+    encoded_options = Enum.map(edns.options, &encode_edns_option/1) |> Enum.join()
     {encoded_options, byte_size(encoded_options)}
+  end
+
+  defp encode_edns_option({:cookie, cookie}) do
+    encoded_cookie = Model.EDNS.Cookie.encode(cookie)
+    <<10::16, byte_size(encoded_cookie)::16, encoded_cookie::binary>>
+  end
+
+  defp encode_edns_option({code, data}) do
+    <<code::16, byte_size(data)::16, data::binary>>
   end
 
   defp encode_rdata(rdata, _type) when is_binary(rdata) do
     {rdata, byte_size(rdata)}
   end
-
 
   defp encode_header(%Model.Packet{header: header} = packet) do
     <<
@@ -158,4 +163,5 @@ defmodule Heimdall.DNS.Encoder do
   def qclass(:cs), do: 2
   def qclass(:ch), do: 3
   def qclass(:hs), do: 4
+  def qclass(n) when is_integer(n), do: n
 end

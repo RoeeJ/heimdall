@@ -33,13 +33,7 @@ defmodule Heimdall.Servers.TCPServer do
       {:ok, data} ->
         {:ok, {client_address, _client_port}} = :inet.peername(socket)
         if Heimdall.Servers.Limiter.allow?(client_address) do
-          case Heimdall.DNS.Server.query(data) do
-            {:ok, response} ->
-              :gen_tcp.send(socket, response)
-
-            {:error, reason} ->
-              Logger.error("Failed to handle DNS query: #{reason}")
-          end
+          Task.start(fn -> process_query(socket, data) end)
         else
           Logger.warning("Rate limit exceeded for client #{inspect(client_address)}")
         end
@@ -48,6 +42,16 @@ defmodule Heimdall.Servers.TCPServer do
 
       {:error, _reason} ->
         :gen_tcp.close(socket)
+    end
+  end
+
+  defp process_query(socket, data) do
+    case Heimdall.DNS.Server.query(data) do
+      {:ok, response} ->
+        :gen_tcp.send(socket, response)
+
+      {:error, reason} ->
+        Logger.error("Failed to handle DNS query: #{reason}")
     end
   end
 end
