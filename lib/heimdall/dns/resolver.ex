@@ -97,7 +97,6 @@ defmodule Heimdall.DNS.Resolver do
       case refresh_records(domain, type, opts) do
         {:ok, fresh_resources} -> {:ok, fresh_resources}
         {:error, :nxdomain} -> {:error, :nxdomain}
-        {:error, _} -> {:ok, partial_resources}
       end
     else
       {:ok, partial_resources}
@@ -110,7 +109,6 @@ defmodule Heimdall.DNS.Resolver do
     case refresh_records(domain, type, opts) do
       {:ok, fresh_resources} -> {:ok, fresh_resources}
       {:error, :nxdomain} -> handle_nxdomain(domain, type, opts)
-      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -237,7 +235,7 @@ defmodule Heimdall.DNS.Resolver do
 
   defp calculate_rdlength(data) when is_binary(data), do: byte_size(data)
   defp calculate_rdlength(data) when is_list(data), do: length(data)
-  defp calculate_rdlength(data) when is_tuple(data), do: tuple_size(data) * 4
+  defp calculate_rdlength(data) when is_tuple(data), do: tuple_size(data)
   defp calculate_rdlength(_), do: 0
 
   defp parse_rdata(:a, {a, b, c, d}), do: {a, b, c, d}
@@ -251,8 +249,4 @@ defmodule Heimdall.DNS.Resolver do
     do: {preference, to_string(exchange)}
 
   defp parse_rdata(_, data), do: data
-
-  defp update_stats(state, stat) do
-    Map.update!(state, stat, &(&1 + 1))
-  end
 end

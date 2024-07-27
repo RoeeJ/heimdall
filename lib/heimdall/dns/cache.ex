@@ -84,7 +84,6 @@ defmodule Heimdall.DNS.Cache do
     end
   end
 
-  @spec delete(key :: term()) :: :ok
   def delete(key) do
     Cachex.del(@cache_name, key)
   end

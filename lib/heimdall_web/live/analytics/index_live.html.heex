@@ -80,7 +80,7 @@
           
           <td><%= query.domain %></td>
           
-          <td><%= query.type |> Atom.to_string() |> String.upcase() %></td>
+          <td><%= query.type |> to_string() |> String.upcase() %></td>
           
           <td><%= query.status %></td>
         </tr>

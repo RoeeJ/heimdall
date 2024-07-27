@@ -40,8 +40,8 @@ defmodule HeimdallWeb.Analytics.IndexLive do
 
     %{
       total_blocked: total_blocked,
-      total_whitelisted: total_whitelisted,
-      blocklist_urls: blocklist_urls
+      total_whitelisted: _total_whitelisted,
+      blocklist_urls: _blocklist_urls
     } = Blocker.stats()
 
     cache_stats =

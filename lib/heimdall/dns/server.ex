@@ -7,7 +7,7 @@ defmodule Heimdall.DNS.Server do
   alias Heimdall.DNS.{Encoder, Decoder, Model, Resolver}
 
   def query(data) do
-    with %Model.Packet{} = packet <- Decoder.packet(data),
+    with {:ok, %Model.Packet{} = packet} <- Decoder.packet(data),
          %Model.Packet{} = response <- process_packet(packet),
          {:ok, encoded_response} <- Encoder.packet(response) do
       {:ok, encoded_response}
@@ -18,18 +18,21 @@ defmodule Heimdall.DNS.Server do
   end
 
   defp process_packet(%Model.Packet{} = packet) do
-    answers = resolve_queries(packet.questions) || []
-    additional = process_additional(packet.additional) || []
+    answers = resolve_queries(packet.questions)
+    # process_additional(packet.additional)
+    additional = []
 
+    # TODO: replace hardcoded values with constants
     %Model.Packet{
       packet
-      | qr: :response,
-        recurs_available: true,
+      | header: %Model.Header{
+          packet.header
+          | qr: true,
+            recurs_available: true,
+            resp_code: if(answers == [], do: :nxdomain, else: packet.header.resp_code)
+        },
         answers: answers,
-        ancount: length(answers),
-        additional: additional,
-        arcount: length(additional),
-        resp_code: if(answers == [], do: :name_err, else: packet.resp_code)
+        additional: additional
     }
   end
 
@@ -42,34 +45,7 @@ defmodule Heimdall.DNS.Server do
         {:error, reason} ->
           Logger.debug("Got err: #{reason} when querying #{q.qname} for #{q.qtype} records")
           []
-
-        _ ->
-          []
       end
     end)
-  end
-
-  defp process_additional(additional) do
-    Enum.map(additional, fn
-      %Model.ResourceRecord{qtype: :opt, rdata: %Model.EDNS{} = edns} = rr ->
-        %Model.ResourceRecord{rr | rdata: process_edns(edns)}
-
-      other ->
-        other
-    end)
-  end
-
-  defp process_edns(%Model.EDNS{} = edns) do
-    %Model.EDNS{edns | data: process_edns_data(edns.data)}
-  end
-
-  defp process_edns_data(%Model.EDNS.Cookie{} = cookie) do
-    %Model.EDNS.Cookie{cookie | server_cookie: generate_server_cookie(), opt_length: 16}
-  end
-
-  defp process_edns_data(other), do: other
-
-  defp generate_server_cookie do
-    <<Heimdall.Constants.server_cookie()::64>>
   end
 end

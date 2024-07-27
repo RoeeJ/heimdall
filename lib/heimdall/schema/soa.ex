@@ -11,7 +11,7 @@ defmodule Heimdall.Schema.SOA do
           updated_at: NaiveDateTime.t(),
           mname: String.t(),
           rname: String.t(),
-          zone: Heimdall.DNS.Zone.t()
+          zone: Heimdall.Schema.Zone.t()
         }
 
   schema "soa_records" do

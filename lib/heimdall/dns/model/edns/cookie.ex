@@ -1,4 +1,8 @@
 defmodule Heimdall.DNS.Model.EDNS.Cookie do
+  @moduledoc """
+  Represents an EDNS Cookie option.
+  """
+
   @type t() :: %__MODULE__{
     opt_length: non_neg_integer(), client_cookie: bitstring(), server_cookie: bitstring()
   }
@@ -6,7 +10,7 @@ defmodule Heimdall.DNS.Model.EDNS.Cookie do
   require Logger
   defstruct opt_length: nil, client_cookie: nil, server_cookie: nil
 
-  @spec parse(data :: bitstring()) :: Heimdall.DNS.Model.Cookie.t()
+  @spec parse(data :: bitstring()) :: t()
   def parse(data) do
     <<opt_length::16, data::bitstring>> = data
     <<client_cookie::binary-size(8), data::bitstring>> = data
