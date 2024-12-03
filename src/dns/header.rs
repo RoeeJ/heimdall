@@ -20,6 +20,26 @@ pub struct DnsHeader {
     pub arcount: u16,
 }
 
+impl DnsHeader {
+    pub fn new() -> Self {
+        DnsHeader {
+            id: 0,
+            qr: DnsQr::Query,
+            opcode: DnsOpcode::Query,
+            aa: 0,
+            tc: 0,
+            rd: 0,
+            ra: 0,
+            z: 0,
+            rcode: DnsResponseCode::NoError,
+            qdcount: 0,
+            ancount: 0,
+            nscount: 0,
+            arcount: 0,
+        }
+    }
+}
+
 impl DnsWireFormat for DnsHeader {
     fn to_wire(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(12);

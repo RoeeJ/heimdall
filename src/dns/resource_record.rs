@@ -1,11 +1,12 @@
 use bitstream_io::{BigEndian, BitRead, BitReader};
+use serde::{Deserialize, Serialize};
 
 use crate::SERVER_COOKIE;
 
 use super::{decode_domain_name, encode_domain_name, types::*, DnsWireFormat, };
 use std::{io::Cursor, net::{Ipv4Addr, Ipv6Addr}};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RData {
     A(Ipv4Addr),
     AAAA(Ipv6Addr),
@@ -42,7 +43,7 @@ pub enum RData {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DnsResourceRecord {
     pub name: String,
     pub qtype: DnsQType,
@@ -57,7 +58,7 @@ pub type DnsAnswer = DnsResourceRecord;
 pub type DnsAuthority = DnsResourceRecord;
 pub type DnsAdditional = DnsResourceRecord;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[repr(u16)]
 pub enum EdnsOptionCode {
     Cookie = 10,
@@ -82,7 +83,7 @@ impl Into<u16> for EdnsOptionCode {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EdnsOption {
     pub code: EdnsOptionCode,
     pub data: Vec<u8>,
@@ -275,7 +276,7 @@ impl DnsWireFormat for RData {
         }
     }
 
-    fn from_wire(reader: &mut BitReader<Cursor<&[u8]>, BigEndian>) -> Result<Self, std::io::Error> {
+    fn from_wire(_reader: &mut BitReader<Cursor<&[u8]>, BigEndian>) -> Result<Self, std::io::Error> {
         // This should not be called directly - use from_wire_with_type instead
         Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,

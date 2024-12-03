@@ -2,25 +2,55 @@ mod constants;
 mod dns;
 mod prelude;
 
-use std::net::SocketAddr;
+use anyhow::Result;
+use std::collections::HashSet;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, UdpSocket},
+};
 
 use constants::*;
 pub use prelude::*;
-use tokio::net::TcpStream as TokioTcpStream;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, BufStream},
-    net::{TcpListener, TcpStream, UdpSocket},
-};
-use trust_dns_client::proto::iocompat::AsyncIoTokioAsStd;
-use trust_dns_client::{client::AsyncClient, tcp::TcpClientStream};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize the resolver with Redis and Google DNS
-    let resolver = DnsResolver::new("redis://127.0.0.1/").await.expect("Failed to create resolver");
-    resolver.check_updates().await.expect("Failed to check updates");
-    let resolver = std::sync::Arc::new(resolver);
+async fn main() -> Result<()> {
+    // Initialize the resolver with Redis
+    let resolver = DnsResolver::new("redis://127.0.0.1/", FORWARD_DNS_SERVER)
+        .await
+        .expect("Failed to create resolver");
 
+    // Initialize blocklist and public suffixes
+    let mut blocklist = HashSet::new();
+    let mut public_suffixes = HashSet::new();
+
+    // Download and parse blocklist
+    let response = reqwest::get(BLOCKLIST_URL).await?;
+    let content = response.text().await?;
+    for line in content.lines() {
+        let line = line.trim().to_lowercase();
+        if !line.is_empty() && !line.starts_with('#') {
+            let parts: Vec<&str> = line.split(' ').collect();
+            if parts.len() > 1 {
+                blocklist.insert(parts[1].to_string());
+            }
+        }
+    }
+
+    // Download and parse public suffix list
+    let response = reqwest::get(PUBLIC_SUFFIX_LIST_URL).await?;
+    let content = response.text().await?;
+    for line in content.lines() {
+        let line = line.trim().to_lowercase();
+        if !line.is_empty() && !line.starts_with("//") && !line.starts_with('!') && !line.starts_with('*') {
+            public_suffixes.insert(line);
+        }
+    }
+
+    // Set the lists in the resolver
+    resolver.set_blocklist(blocklist).await;
+    resolver.set_public_suffixes(public_suffixes).await;
+
+    let resolver = std::sync::Arc::new(resolver);
     let udp_server = UdpSocket::bind(("0.0.0.0", PORT)).await?;
     let tcp_server = TcpListener::bind(("0.0.0.0", PORT)).await?;
 
@@ -29,7 +59,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let resolver_udp = resolver.clone();
     tokio::spawn(async move {
         loop {
-            let mut forward_resolver = create_forward_resolver(FORWARD_DNS_SERVER).await.expect("Failed to create forward resolver");
             let mut buffer = [0; MAX_UDP_PACKET_SIZE];
             let (amt, src) = match udp_server.recv_from(&mut buffer).await {
                 Ok(result) => result,
@@ -39,35 +68,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             };
 
-            let adjusted_buffer = match buffer.get(0..amt) {
-                Some(buf) => buf,
-                None => {
-                    eprintln!("Invalid buffer slice");
-                    continue;
-                }
-            };
-
-            let packet =
-                match DnsPacket::from_wire(&mut BitReader::new(Cursor::new(adjusted_buffer))) {
-                    Ok(packet) => packet,
-                    Err(e) => {
-                        eprintln!("Failed to parse DNS packet: {}", e);
-                        continue;
+            let query_data = &buffer[..amt];
+            match resolver_udp.handle_query(query_data).await {
+                Ok(response) => {
+                    if let Err(e) = udp_server.send_to(&response, src).await {
+                        eprintln!("Failed to send UDP response: {}", e);
                     }
-                };
-
-            // Use our resolver to handle the query
-            let response = match resolver_udp.lookup(&packet, &mut forward_resolver).await {
-                Ok(response) => response,
-                Err(e) => {
-                    eprintln!("Failed to lookup DNS packet: {}", e);
-                    continue;
                 }
-            };
-            let response_wire = response.to_wire();
-
-            if let Err(e) = udp_server.send_to(&response_wire, &src).await {
-                eprintln!("Failed to send UDP response: {}", e);
+                Err(e) => eprintln!("Failed to handle query: {}", e),
             }
         }
     });
@@ -75,62 +83,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let resolver_tcp = resolver.clone();
     tokio::spawn(async move {
         loop {
-            let mut forward_resolver = create_forward_resolver("8.8.8.8").await.expect("Failed to create forward resolver");
-            let (mut stream, _) = tcp_server
-                .accept()
-                .await
-                .expect("Failed to accept TCP connection");
+            let (mut stream, _) = match tcp_server.accept().await {
+                Ok(result) => result,
+                Err(e) => {
+                    eprintln!("Failed to accept TCP connection: {}", e);
+                    continue;
+                }
+            };
 
             // Read length prefix (2 bytes)
             let mut length_buf = [0u8; 2];
-            stream
-                .read_exact(&mut length_buf)
-                .await
-                .expect("Failed to read message length");
-            let length = u16::from_be_bytes(length_buf) as usize;
+            let length = match stream.read_exact(&mut length_buf).await {
+                Ok(_) => u16::from_be_bytes(length_buf) as usize,
+                Err(e) => {
+                    eprintln!("Failed to read message length: {}", e);
+                    continue;
+                }
+            };
 
             // Read DNS message
             let mut buf = vec![0u8; length];
-            stream
-                .read_exact(&mut buf)
-                .await
-                .expect("Failed to read DNS message");
+            if let Err(e) = stream.read_exact(&mut buf).await {
+                eprintln!("Failed to read DNS message: {}", e);
+                continue;
+            }
 
-            let packet = DnsPacket::from_wire(&mut BitReader::new(Cursor::new(&buf)))
-                .expect("Failed to parse DNS packet");
-            let response = resolver_tcp
-                .lookup(&packet, &mut forward_resolver)
-                .await
-                .expect("Failed to lookup DNS packet");
-            let response_wire = response.to_wire();
+            match resolver_tcp.handle_query(&buf).await {
+                Ok(response) => {
+                    // Write length prefix
+                    let length_bytes = (response.len() as u16).to_be_bytes();
+                    if let Err(e) = stream.write_all(&length_bytes).await {
+                        eprintln!("Failed to write response length: {}", e);
+                        continue;
+                    }
 
-            // Write length prefix
-            let length_bytes = (response_wire.len() as u16).to_be_bytes();
-            stream
-                .write_all(&length_bytes)
-                .await
-                .expect("Failed to write response length");
-
-            // Write response
-            stream
-                .write_all(&response_wire)
-                .await
-                .expect("Failed to send TCP response");
+                    // Write response
+                    if let Err(e) = stream.write_all(&response).await {
+                        eprintln!("Failed to send TCP response: {}", e);
+                    }
+                }
+                Err(e) => eprintln!("Failed to handle query: {}", e),
+            }
         }
     });
 
     std::thread::park();
     Ok(())
-}
-
-async fn create_forward_resolver(
-    dns_server: &str,
-) -> Result<AsyncClient, Box<dyn std::error::Error>> {
-    let socket_addr: SocketAddr = format!("{}:53", dns_server).parse()?;
-    let (stream, sender) =
-        TcpClientStream::<AsyncIoTokioAsStd<TokioTcpStream>>::new(socket_addr.into());
-    let client = AsyncClient::new(stream, sender, None);
-    let (forward_resolver, bg) = client.await.expect("Failed to create async client");
-    tokio::spawn(bg);
-    Ok(forward_resolver)
 }

@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum DnsOpcode {
@@ -22,7 +24,7 @@ pub enum DnsQr {
     Response = 1,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[repr(u16)]
 pub enum DnsQType {
     A = 1,          // IPv4 address
@@ -51,7 +53,7 @@ pub enum DnsQType {
     Other(u16),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[repr(u16)]
 pub enum DnsQClass {
     IN = 1,     // Internet
@@ -61,9 +63,6 @@ pub enum DnsQClass {
     ANY = 255,  // Any class
     Other(u16),
 }
-
-mod impls {
-    use super::*;
 
     impl From<u8> for DnsOpcode {
         fn from(value: u8) -> Self {
@@ -150,7 +149,6 @@ mod impls {
     impl Into<u16> for DnsQType {
         fn into(self) -> u16 {
             match self {
-                DnsQType::Other(value) => value,
                 DnsQType::A => 1,
                 DnsQType::NS => 2,
                 DnsQType::MD => 3,
@@ -174,6 +172,7 @@ mod impls {
                 DnsQType::MAILA => 254,
                 DnsQType::ANY => 255,
                 DnsQType::OPT => 41,
+                DnsQType::Other(value) => value,
             }
         }
     }
@@ -194,13 +193,12 @@ mod impls {
     impl Into<u16> for DnsQClass {
         fn into(self) -> u16 {
             match self {
-                DnsQClass::Other(value) => value,
                 DnsQClass::IN => 1,
                 DnsQClass::CS => 2,
                 DnsQClass::CH => 3,
                 DnsQClass::HS => 4,
                 DnsQClass::ANY => 255,
+                DnsQClass::Other(value) => value,
             }
         }
     }
-}
