@@ -15,7 +15,7 @@ pub use prelude::*;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize the resolver with Redis
-    let resolver = DnsResolver::new("redis://127.0.0.1/", FORWARD_DNS_SERVER)
+    let resolver = DnsResolver::new(&get_redis_url(), FORWARD_DNS_SERVER)
         .await
         .expect("Failed to create resolver");
 
@@ -133,4 +133,8 @@ async fn main() -> Result<()> {
 
     std::thread::park();
     Ok(())
+}
+
+fn get_redis_url() -> String {
+    std::env::var("REDIS_URL").unwrap_or("redis://127.0.0.1/".to_string())
 }
