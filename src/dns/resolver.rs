@@ -143,18 +143,17 @@ impl DnsResolver {
                             .min()
                             .unwrap_or(300);
 
-                        let cache_key = format!(
-                            "dns:{}:{}:{}",
-                            packet.questions[0].name,
-                            Into::<u16>::into(packet.questions[0].qtype),
-                            Into::<u16>::into(packet.questions[0].qclass)
+                        let cache_key = get_cache_key(
+                            &packet.questions[0].name,
+                            packet.questions[0].qtype,
+                            packet.questions[0].qclass,
                         );
 
-                        if let Err(e) = self
+                        if !self
                             .cache_dns_response(&cache_key, dns_response.answers.clone(), min_ttl)
                             .await
                         {
-                            eprintln!("Failed to cache DNS response: {}", e);
+                            eprintln!("Failed to cache DNS response");
                         }
 
                         Ok(dns_response.to_wire())
@@ -192,14 +191,17 @@ impl DnsResolver {
         key: &str,
         answers: Vec<DnsResourceRecord>,
         ttl: u32,
-    ) -> Result<()> {
+    ) -> bool {
         let cache_entry = CacheEntry::new(answers, ttl);
 
         if let Ok(json) = serde_json::to_string(&cache_entry) {
             if let Ok(mut redis) = self.redis_client.get_async_connection().await {
-                redis.set_ex(key, json, ttl as usize).await?;
+                return redis
+                    .set_ex::<_, _, ()>(key, json, ttl as usize)
+                    .await
+                    .is_ok();
             }
         }
-        Ok(())
+        true
     }
 }

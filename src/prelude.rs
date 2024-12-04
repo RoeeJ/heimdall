@@ -1,8 +1,10 @@
 pub use crate::dns::{
     decode_domain_name,
-
     // Utility functions
     encode_domain_name,
+    get_cache_key,
+    get_cache_value,
+
     DnsAdditional,
     DnsAnswer,
     DnsAuthority,

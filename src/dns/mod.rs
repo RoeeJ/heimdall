@@ -9,6 +9,7 @@ mod types;
 mod util;
 
 // Also keep individual exports for flexibility
+pub use conversion::*;
 pub use header::*;
 pub use packet::*;
 pub use question::*;

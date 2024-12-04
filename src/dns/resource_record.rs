@@ -102,15 +102,15 @@ impl RData {
         match record_type {
             DnsQType::A => {
                 let mut octets = [0u8; 4];
-                for i in 0..4 {
-                    octets[i] = reader.read::<u8>(8)?;
+                for octet in octets.iter_mut() {
+                    *octet = reader.read::<u8>(8)?;
                 }
                 Ok(RData::A(Ipv4Addr::from(octets)))
             }
             DnsQType::AAAA => {
                 let mut octets = [0u8; 16];
-                for i in 0..16 {
-                    octets[i] = reader.read::<u8>(8)?;
+                for octet in octets.iter_mut() {
+                    *octet = reader.read::<u8>(8)?;
                 }
                 Ok(RData::AAAA(Ipv6Addr::from(octets)))
             }
