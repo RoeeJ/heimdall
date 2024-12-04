@@ -1,34 +1,33 @@
 pub use crate::dns::{
-    // Core DNS types
-    DnsPacket,
-    DnsHeader,
-    DnsQuestion,
-    DnsAnswer,
-    DnsAuthority,
-    DnsAdditional,
-    DnsResourceRecord,
-    RData,
-    
-    // Enums
-    DnsQType,
-    DnsQClass,
-    DnsQr,
-    DnsOpcode,
-    DnsResponseCode,
-    EdnsOptionCode,
-    
-    // Traits
-    DnsWireFormat,
-    
+    decode_domain_name,
+
     // Utility functions
     encode_domain_name,
-    decode_domain_name,
-    
+    DnsAdditional,
+    DnsAnswer,
+    DnsAuthority,
+    DnsHeader,
+    DnsOpcode,
+    // Core DNS types
+    DnsPacket,
+    DnsQClass,
+    // Enums
+    DnsQType,
+    DnsQr,
+    DnsQuestion,
     // Resolver
     DnsResolver,
+    DnsResourceRecord,
+    DnsResponseCode,
+    // Traits
+    DnsWireFormat,
+
+    EdnsOptionCode,
+
+    RData,
 };
 
 // Common external types
-pub use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+pub use bitstream_io::{BigEndian, BitRead, BitReader, BitWrite, BitWriter};
 pub use std::io::{self, Cursor};
-pub use bitstream_io::{BitRead, BitReader, BitWrite, BitWriter, BigEndian}; 
+pub use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};

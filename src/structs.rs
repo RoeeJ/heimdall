@@ -1,5 +1,4 @@
-
-use crate::enums::{DnsOpcode, DnsQClass, DnsQType, DnsQr, DnsResponseCode};
+use crate::dns::{DnsOpcode, DnsQClass, DnsQType, DnsQr, DnsResponseCode};
 
 #[derive(Debug)]
 pub struct DnsPacket {

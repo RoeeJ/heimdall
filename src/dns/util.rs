@@ -16,33 +16,35 @@ pub fn encode_domain_name(name: &str) -> Vec<u8> {
 }
 
 // Helper function to decode domain names from DNS wire format
-pub fn decode_domain_name(reader: &mut BitReader<Cursor<&[u8]>, BigEndian>) -> Result<String, std::io::Error> {
+pub fn decode_domain_name(
+    reader: &mut BitReader<Cursor<&[u8]>, BigEndian>,
+) -> Result<String, std::io::Error> {
     let mut name = Vec::new();
-    
+
     // Read first byte to check for root domain
     let first = reader.read::<u8>(8)?;
     if first == 0 {
         return Ok(".".to_string());
     }
-    
+
     // Process first label
     if (first & 0xC0) == 0xC0 {
         reader.read::<u8>(8)?; // Skip second byte of pointer
         return Ok(".".to_string()); // Return root for compressed root
     }
-    
+
     if first > 63 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            "Label too long"
+            "Label too long",
         ));
     }
-    
+
     // Read first label
     for _ in 0..first {
         name.push(reader.read::<u8>(8)?);
     }
-    
+
     // Read remaining labels
     loop {
         let len = reader.read::<u8>(8)?;
@@ -58,7 +60,7 @@ pub fn decode_domain_name(reader: &mut BitReader<Cursor<&[u8]>, BigEndian>) -> R
         if len > 63 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "Label too long"
+                "Label too long",
             ));
         }
 
@@ -68,8 +70,10 @@ pub fn decode_domain_name(reader: &mut BitReader<Cursor<&[u8]>, BigEndian>) -> R
         }
     }
 
-    String::from_utf8(name).map_err(|_| std::io::Error::new(
-        std::io::ErrorKind::InvalidData,
-        "Invalid UTF-8 in domain name"
-    ))
+    String::from_utf8(name).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Invalid UTF-8 in domain name",
+        )
+    })
 }

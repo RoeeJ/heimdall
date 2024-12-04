@@ -1,8 +1,6 @@
 use crate::prelude::*;
 use std::net::IpAddr;
-use trust_dns_client::rr::{
-    RData as TrustDnsRData, Record as TrustDnsRecord,
-};
+use trust_dns_client::rr::{RData as TrustDnsRData, Record as TrustDnsRecord};
 
 pub trait FromTrustDns {
     type Source;

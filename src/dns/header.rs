@@ -1,6 +1,6 @@
 use super::types::*;
 use super::DnsWireFormat;
-use bitstream_io::{BitRead, BitReader, BigEndian};
+use bitstream_io::{BigEndian, BitRead, BitReader};
 use std::io::Cursor;
 
 #[derive(Debug, Clone)]
@@ -43,10 +43,10 @@ impl DnsHeader {
 impl DnsWireFormat for DnsHeader {
     fn to_wire(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(12);
-        
+
         // First 16 bits: ID
         bytes.extend_from_slice(&self.id.to_be_bytes());
-        
+
         // Second 16 bits: Various flags
         let flags: u16 = (Into::<u8>::into(self.qr) as u16) << 15
             | (Into::<u8>::into(self.opcode) as u16) << 11
@@ -56,15 +56,15 @@ impl DnsWireFormat for DnsHeader {
             | (self.ra as u16) << 7
             | (self.z as u16) << 4
             | Into::<u8>::into(self.rcode) as u16;
-        
+
         bytes.extend_from_slice(&flags.to_be_bytes());
-        
+
         // Add count fields
         bytes.extend_from_slice(&self.qdcount.to_be_bytes());
         bytes.extend_from_slice(&self.ancount.to_be_bytes());
         bytes.extend_from_slice(&self.nscount.to_be_bytes());
         bytes.extend_from_slice(&self.arcount.to_be_bytes());
-        
+
         bytes
     }
 
@@ -85,4 +85,4 @@ impl DnsWireFormat for DnsHeader {
             arcount: reader.read::<u16>(16)?,
         })
     }
-} 
+}

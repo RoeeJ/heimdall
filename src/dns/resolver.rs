@@ -118,9 +118,10 @@ impl DnsResolver {
                     DnsPacket::from_wire(&mut BitReader::new(Cursor::new(&response)))
                 {
                     let mut dns_response = packet.create_response();
-                    
+
                     // Fix the answer records to maintain the correct name
-                    let fixed_answers: Vec<DnsResourceRecord> = response_packet.answers
+                    let fixed_answers: Vec<DnsResourceRecord> = response_packet
+                        .answers
                         .into_iter()
                         .map(|mut rr| {
                             // Use the question name if the record name is "."
@@ -149,11 +150,10 @@ impl DnsResolver {
                             Into::<u16>::into(packet.questions[0].qclass)
                         );
 
-                        if let Err(e) = self.cache_dns_response(
-                            &cache_key,
-                            dns_response.answers.clone(),
-                            min_ttl
-                        ).await {
+                        if let Err(e) = self
+                            .cache_dns_response(&cache_key, dns_response.answers.clone(), min_ttl)
+                            .await
+                        {
                             eprintln!("Failed to cache DNS response: {}", e);
                         }
 
@@ -187,9 +187,14 @@ impl DnsResolver {
         Ok(buf)
     }
 
-    async fn cache_dns_response(&self, key: &str, answers: Vec<DnsResourceRecord>, ttl: u32) -> Result<()> {
+    async fn cache_dns_response(
+        &self,
+        key: &str,
+        answers: Vec<DnsResourceRecord>,
+        ttl: u32,
+    ) -> Result<()> {
         let cache_entry = CacheEntry::new(answers, ttl);
-        
+
         if let Ok(json) = serde_json::to_string(&cache_entry) {
             if let Ok(mut redis) = self.redis_client.get_async_connection().await {
                 redis.set_ex(key, json, ttl as usize).await?;

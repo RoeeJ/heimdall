@@ -41,7 +41,11 @@ async fn main() -> Result<()> {
     let content = response.text().await?;
     for line in content.lines() {
         let line = line.trim().to_lowercase();
-        if !line.is_empty() && !line.starts_with("//") && !line.starts_with('!') && !line.starts_with('*') {
+        if !line.is_empty()
+            && !line.starts_with("//")
+            && !line.starts_with('!')
+            && !line.starts_with('*')
+        {
             public_suffixes.insert(line);
         }
     }
