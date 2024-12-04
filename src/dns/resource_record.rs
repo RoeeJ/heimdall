@@ -77,9 +77,9 @@ impl From<u16> for EdnsOptionCode {
     }
 }
 
-impl Into<u16> for EdnsOptionCode {
-    fn into(self) -> u16 {
-        match self {
+impl From<EdnsOptionCode> for u16 {
+    fn from(val: EdnsOptionCode) -> Self {
+        match val {
             EdnsOptionCode::Cookie => 10,
             EdnsOptionCode::Other(code) => code,
         }
@@ -407,8 +407,7 @@ impl DnsResourceRecord {
         // - Rest must be zero
         let ttl = ((extended_rcode as u32) << 24)  // Extended RCODE in highest byte
             | ((version as u32) << 16)             // Version in next byte
-            | (if dnssec_ok { 1 } else { 0 } << 15) // DO bit
-            | 0; // Rest must be zero
+            | (if dnssec_ok { 1 } else { 0 } << 15); // Rest must be zero
 
         DnsResourceRecord {
             name: String::from("."),
@@ -439,8 +438,7 @@ impl DnsResourceRecord {
 
         let ttl = ((extended_rcode as u32) << 24)
             | ((version as u32) << 16)
-            | (if dnssec_ok { 1 } else { 0 } << 15)
-            | 0;
+            | (if dnssec_ok { 1 } else { 0 } << 15);
 
         DnsResourceRecord {
             name: String::from("."),

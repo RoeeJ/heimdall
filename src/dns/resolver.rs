@@ -69,7 +69,7 @@ impl DnsResolver {
         // Check all domain parts
         let parts: Vec<&str> = check_domain.split('.').collect();
         for i in 0..parts.len() {
-            let wildcard = format!("{}", parts[i..].join("."));
+            let wildcard = parts[i..].join(".").to_string();
             if blocklist.contains(&wildcard) {
                 return true;
             }

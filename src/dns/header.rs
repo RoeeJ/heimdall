@@ -20,6 +20,12 @@ pub struct DnsHeader {
     pub arcount: u16,
 }
 
+impl Default for DnsHeader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DnsHeader {
     pub fn new() -> Self {
         DnsHeader {

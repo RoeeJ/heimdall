@@ -5,7 +5,6 @@ pub mod structs;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_basic_setup() {

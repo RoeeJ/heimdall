@@ -75,9 +75,9 @@ impl From<u8> for DnsOpcode {
     }
 }
 
-impl Into<u8> for DnsOpcode {
-    fn into(self) -> u8 {
-        self as u8
+impl From<DnsOpcode> for u8 {
+    fn from(val: DnsOpcode) -> Self {
+        val as u8
     }
 }
 
@@ -93,9 +93,9 @@ impl From<u8> for DnsResponseCode {
     }
 }
 
-impl Into<u8> for DnsResponseCode {
-    fn into(self) -> u8 {
-        self as u8
+impl From<DnsResponseCode> for u8 {
+    fn from(val: DnsResponseCode) -> Self {
+        val as u8
     }
 }
 
@@ -109,9 +109,9 @@ impl From<u8> for DnsQr {
     }
 }
 
-impl Into<u8> for DnsQr {
-    fn into(self) -> u8 {
-        self as u8
+impl From<DnsQr> for u8 {
+    fn from(val: DnsQr) -> Self {
+        val as u8
     }
 }
 
@@ -146,9 +146,9 @@ impl From<u16> for DnsQType {
     }
 }
 
-impl Into<u16> for DnsQType {
-    fn into(self) -> u16 {
-        match self {
+impl From<DnsQType> for u16 {
+    fn from(val: DnsQType) -> Self {
+        match val {
             DnsQType::A => 1,
             DnsQType::NS => 2,
             DnsQType::MD => 3,
@@ -190,9 +190,9 @@ impl From<u16> for DnsQClass {
     }
 }
 
-impl Into<u16> for DnsQClass {
-    fn into(self) -> u16 {
-        match self {
+impl From<DnsQClass> for u16 {
+    fn from(val: DnsQClass) -> Self {
+        match val {
             DnsQClass::IN => 1,
             DnsQClass::CS => 2,
             DnsQClass::CH => 3,

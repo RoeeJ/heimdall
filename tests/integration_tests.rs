@@ -1,5 +1,4 @@
 use heimdall::prelude::*;
-use tokio_test;
 
 #[tokio::test]
 async fn test_dns_resolution() {
