@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
 fn bench_packet_parsing(c: &mut Criterion) {
     // TODO: Add benchmark when zero-copy parsing is implemented

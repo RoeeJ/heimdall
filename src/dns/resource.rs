@@ -12,7 +12,7 @@ pub struct DNSResource {
     pub rclass: DNSResourceClass,
     pub ttl: u32,
     pub rdlength: u16,
-    pub rdata: Vec<u8>,  // Raw resource data for now
+    pub rdata: Vec<u8>, // Raw resource data for now
 }
 
 impl PacketComponent for DNSResource {
@@ -35,18 +35,18 @@ impl PacketComponent for DNSResource {
     ) -> Result<(), super::ParseError> {
         // Read the name (labels)
         self.labels = self.read_labels(reader)?;
-        
+
         // Read type, class, TTL, and data length
         self.rtype = reader.read_var::<u16>(16)?.into();
         self.rclass = reader.read_var::<u16>(16)?.into();
         self.ttl = reader.read_var::<u32>(32)?;
         self.rdlength = reader.read_var::<u16>(16)?;
-        
+
         // Read the resource data
         if self.rdlength > 0 {
             self.rdata = vec![0u8; self.rdlength as usize];
             match reader.read_bytes(&mut self.rdata) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
                     // If we can't read the full rdata, just set it to empty
                     // This is more forgiving for malformed packets
@@ -58,7 +58,7 @@ impl PacketComponent for DNSResource {
         } else {
             self.rdata = Vec::new();
         }
-        
+
         Ok(())
     }
 }

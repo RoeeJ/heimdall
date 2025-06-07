@@ -3,9 +3,10 @@ use tokio::net::UdpSocket;
 use tracing::{debug, error, info, trace, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+pub mod cache;
+pub mod config;
 pub mod dns;
 pub mod error;
-pub mod config;
 pub mod resolver;
 
 use config::DnsConfig;
@@ -25,32 +26,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration
     let config = DnsConfig::from_env();
     info!("Heimdall DNS Server starting up");
-    info!("Configuration: bind_addr={}, upstream_servers={:?}", 
-        config.bind_addr, config.upstream_servers);
-    
+    info!(
+        "Configuration: bind_addr={}, upstream_servers={:?}",
+        config.bind_addr, config.upstream_servers
+    );
+
     // Create resolver
     let resolver = DnsResolver::new(config.clone()).await?;
-    
+
     // Bind server socket
     let sock = UdpSocket::bind(config.bind_addr).await?;
     info!("DNS server listening on {}", config.bind_addr);
 
     // Pre-allocate buffer outside loop for efficiency
     let mut buf = vec![0; 4096];
-    
+
     loop {
         let (read_bytes, src_addr) = sock.recv_from(&mut buf).await?;
-        
+
         // Parse the DNS packet
         match DNSPacket::parse(&buf[..read_bytes]) {
             Ok(packet) => {
-                debug!("Received DNS query from {}: id={}, questions={}", 
-                    src_addr, packet.header.id, packet.header.qdcount);
+                debug!(
+                    "Received DNS query from {}: id={}, questions={}",
+                    src_addr, packet.header.id, packet.header.qdcount
+                );
                 trace!("Full packet header: {:?}", packet.header);
-                
+
                 // Log the domain being queried
                 for question in &packet.questions {
-                    let domain = question.labels
+                    let domain = question
+                        .labels
                         .iter()
                         .filter(|l| !l.is_empty())
                         .cloned()
@@ -60,12 +66,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         info!("Query from {}: {} {:?}", src_addr, domain, question.qtype);
                     }
                 }
-                
+
                 // Resolve the query using upstream servers
                 let response = match resolver.resolve(packet.clone(), packet.header.id).await {
                     Ok(response) => {
-                        debug!("Successfully resolved query id={}, answers={}", 
-                            response.header.id, response.header.ancount);
+                        debug!(
+                            "Successfully resolved query id={}, answers={}",
+                            response.header.id, response.header.ancount
+                        );
                         response
                     }
                     Err(e) => {
@@ -73,7 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         resolver.create_servfail_response(&packet)
                     }
                 };
-                
+
                 // Send response back to client
                 match response.serialize() {
                     Ok(serialized) => {

@@ -1,4 +1,4 @@
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub enum DNSResourceType {
     #[default]
     Unknown,
@@ -28,7 +28,7 @@ pub enum DNSResourceType {
     OPT,
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub enum DNSResourceClass {
     #[default]
     Unknown,
@@ -88,7 +88,7 @@ impl From<u16> for DNSResourceType {
             252 => DNSResourceType::AXFR,
             253 => DNSResourceType::MAILB,
             257 => DNSResourceType::CAA,
-            
+
             _ => DNSResourceType::Unknown,
         }
     }
