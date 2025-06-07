@@ -4,7 +4,7 @@ pub mod header;
 pub mod question;
 pub mod resource;
 
-use bitstream_io::{BigEndian, BitReader, BitWrite, BitWriter};
+use bitstream_io::{BigEndian, BitReader, BitWriter};
 use common::PacketComponent;
 use header::DNSHeader;
 use question::DNSQuestion;
@@ -78,14 +78,11 @@ impl DNSPacket {
         self.header.write(&mut writer)?;
 
         for question in self.questions.iter() {
-            for label in question.labels.iter() {
-                writer.write_var::<u8>(8, label.len() as u8)?;
-                writer.write_bytes(&label.as_bytes())?;
-            }
-            writer.write_var::<u16>(16, question.qtype.into())?;
-            writer.write_var::<u16>(16, question.qclass.into())?;
+            question.write(&mut writer)?;
         }
 
+        // TODO: Serialize answers, authorities, and additional sections
+        
         Ok(buf)
     }
 
@@ -111,7 +108,6 @@ impl DNSPacket {
 }
 
 mod test {
-    use super::*;
 
     #[test]
     fn test_dns_packet() {

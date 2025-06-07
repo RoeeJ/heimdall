@@ -4,26 +4,33 @@ use tokio::net::UdpSocket;
 pub mod dns;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port = 1053;
-    let mut sock = UdpSocket::bind(format!("0.0.0.0:{}", port)).await.unwrap();
-    println!("Listening on 0.0.0.0:{}", port);
+    let sock = UdpSocket::bind(format!("127.0.0.1:{}", port)).await?;
+    println!("Listening on 127.0.0.1:{}", port);
 
+    // Pre-allocate buffer outside loop for efficiency
     let mut buf = vec![0; 4096];
+    
     loop {
-        let (read_bytes, addr) = sock.recv_from(&mut buf).await.unwrap();
-        std::fs::write("packet.bin", &buf[..read_bytes]).unwrap();
-        let packet = DNSPacket::parse(&buf[..read_bytes]);
-        match packet {
+        let (read_bytes, src_addr) = sock.recv_from(&mut buf).await?;
+        
+        // Parse the DNS packet
+        match DNSPacket::parse(&buf[..read_bytes]) {
             Ok(packet) => {
-                match packet.generate_response().serialize() {
+                // TODO: Implement proper DNS resolution
+                eprintln!("Received DNS query from {}: {:?}", src_addr, packet.header);
+                
+                // For now, generate a basic response
+                let response = packet.generate_response();
+                match response.serialize() {
                     Ok(serialized) => {
-                        sock.send_to(&serialized, addr).await.unwrap();
+                        sock.send_to(&serialized, src_addr).await?;
                     }
-                    Err(e) => println!("Error serializing packet: {:?}", e),
-                };
+                    Err(e) => eprintln!("Failed to serialize response: {:?}", e),
+                }
             }
-            Err(e) => println!("Error parsing packet: {:?}", e),
+            Err(e) => eprintln!("Failed to parse packet from {}: {:?}", src_addr, e),
         }
     }
 }

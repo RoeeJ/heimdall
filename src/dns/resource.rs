@@ -12,19 +12,7 @@ pub struct DNSResource {
     pub rclass: DNSResourceClass,
     pub ttl: u32,
     pub rdlength: u16,
-    pub rdata: DNSResourceData,
-}
-
-#[derive(Clone, Debug, Default)]
-pub enum DNSResourceData {
-    #[default]
-    Empty,
-    A([u8; 4]),
-    AAAA([u8; 16]),
-    NS(String),
-    CNAME(String),
-    MX(u16, String),
-    TXT(Vec<String>),
+    pub rdata: Vec<u8>,  // Raw resource data for now
 }
 
 impl PacketComponent for DNSResource {
@@ -50,10 +38,8 @@ impl PacketComponent for DNSResource {
         self.rclass = reader.read_var::<u16>(16)?.into();
         self.ttl = reader.read_var::<u32>(32)?;
         self.rdlength = reader.read_var::<u16>(16)?;
-        let mut buf = vec![0_u8; self.rdlength as usize];
-        reader.read_bytes(&mut buf)?;
-        self.rdata = buf;
-
+        self.rdata = vec![0u8; self.rdlength as usize];
+        reader.read_bytes(&mut self.rdata)?;
         Ok(())
     }
 }
