@@ -1,4 +1,4 @@
-use heimdall::dns::enums::{DNSResourceType, DNSResourceClass};
+use heimdall::dns::enums::{DNSResourceClass, DNSResourceType};
 
 #[test]
 fn test_resource_type_conversion() {
@@ -68,7 +68,7 @@ fn test_resource_type_roundtrip() {
         DNSResourceType::TXT,
         DNSResourceType::AAAA,
     ];
-    
+
     for rt in types {
         let value: u16 = rt.into();
         let converted: DNSResourceType = value.into();
@@ -85,7 +85,7 @@ fn test_resource_class_roundtrip() {
         DNSResourceClass::CH,
         DNSResourceClass::HS,
     ];
-    
+
     for rc in classes {
         let value: u16 = rc.into();
         let converted: DNSResourceClass = value.into();
