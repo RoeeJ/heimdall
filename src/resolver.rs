@@ -130,9 +130,19 @@ impl DnsResolver {
                     // Log more details about the parsing failure
                     debug!("Failed to parse response from {}: {:?}", upstream_addr, e);
                     debug!("Response length: {} bytes", response_len);
-                    debug!("First 32 bytes: {:02x?}", &response_buf[..response_len.min(32)]);
+                    debug!("First 64 bytes: {:02x?}", &response_buf[..response_len.min(64)]);
                     DnsError::Parse(format!("Failed to parse response: {:?}", e))
                 })?;
+            
+            // Log parsed response details
+            debug!("Parsed response: questions={}, answers={}, authorities={}, additional={}",
+                response.header.qdcount, response.header.ancount, response.header.nscount, response.header.arcount);
+            
+            for (i, answer) in response.answers.iter().enumerate() {
+                debug!("Answer {}: type={:?}, class={:?}, ttl={}, rdlength={}, rdata={:02x?}",
+                    i, answer.rtype, answer.rclass, answer.ttl, answer.rdlength, 
+                    &answer.rdata[..answer.rdata.len().min(16)]);
+            }
             
             trace!("Received response: {} bytes, {} answers", 
                 response_len, response.header.ancount);
