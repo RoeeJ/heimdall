@@ -40,6 +40,7 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
 - [✅] Logging system with configurable levels (tracing)
 - [✅] Real-world testing with dig command
 - [✅] **NEW**: Support for iterative queries (RD=0)
+- [📝] **NOTE**: dig +trace has a known limitation with non-standard ports (our port 1053)
 - [⏸️] Stress testing framework - *Deferred to Phase 2*
 - [⏸️] Metrics collection (query count, response times, errors) - *Deferred to Phase 2*
 

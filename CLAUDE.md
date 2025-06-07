@@ -37,8 +37,11 @@ RUST_LOG=debug cargo run
 # Test with a single DNS query
 dig google.com @127.0.0.1 -p 1053
 
-# Test iterative queries (dig +trace)
-dig +trace google.com @127.0.0.1 -p 1053
+# Test iterative queries (use +norecurse instead of +trace due to port limitation)
+dig google.com @127.0.0.1 -p 1053 +norecurse
+
+# Note: dig +trace doesn't work properly with non-standard ports (1053)
+# This is a known limitation of dig, not Heimdall
 
 # Use the provided watch script for continuous testing
 ./watch.sh
