@@ -61,7 +61,7 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
 - [✅] Add cache hit/miss metrics
 - [✅] Configurable cache size limits
 - [✅] Negative caching for NXDOMAIN responses
-- [ ] Cache persistence option (save/restore on restart) - *Deferred to Phase 3*
+- [ ] Cache persistence option (save/restore on restart)
 
 **MILESTONE ACHIEVED**: DNS caching layer fully implemented with performance monitoring!
 - **Sub-millisecond cache hits**: Cached queries return in <1ms vs 50-100ms upstream
@@ -86,19 +86,19 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
 - **Perfect Responses**: All record types (MX, TXT, etc.) now show complete domain names
 - **RFC Compliance**: Proper length-prefixed TCP messages per DNS standards
 
-### 2.3 Advanced Performance Features
-- [ ] Connection pooling for upstream queries - *Deferred to Phase 3*
-- [ ] Parallel upstream queries for redundancy - *Deferred to Phase 3*
-- [ ] Query deduplication (coalesce identical concurrent queries) - *Deferred to Phase 3*
-- [ ] Optimized data structures for domain lookups - *Deferred to Phase 3*
-- [ ] Zero-copy packet handling where possible - *Deferred to Phase 3*
-- [ ] SIMD optimizations for packet parsing - *Deferred to Phase 3*
+### 2.3 Advanced Performance Features ✅ **MAJOR PROGRESS**
+- [✅] **COMPLETED**: Query deduplication (coalesce identical concurrent queries)
+- [✅] **COMPLETED**: Connection pooling for upstream queries with socket reuse
+- [ ] Parallel upstream queries for redundancy
+- [ ] Optimized data structures for domain lookups  
+- [ ] Zero-copy packet handling where possible
+- [ ] SIMD optimizations for packet parsing
 
 ### 2.4 Scalability
 - [✅] Concurrent packet processing with Tokio async runtime
 - [✅] Thread-safe caching with efficient concurrent data structures
-- [ ] Configurable worker thread pool - *Deferred to Phase 3*
-- [ ] Benchmark suite for performance regression testing - *Deferred to Phase 3*
+- [ ] Configurable worker thread pool
+- [ ] Benchmark suite for performance regression testing
 
 ## Phase 3: Production Readiness 🎯 **NEXT TARGET**
 **Goal**: Make Heimdall enterprise-ready with monitoring and operational features
