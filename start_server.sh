@@ -10,7 +10,7 @@ cargo build
 
 # Start the server in background with logs redirected
 echo "Starting Heimdall DNS server..."
-RUST_LOG=debug cargo run > heimdall.log 2>&1 &
+RUST_LOG=debug cargo run --bin heimdall > heimdall.log 2>&1 &
 SERVER_PID=$!
 
 # Wait a moment for server to start
