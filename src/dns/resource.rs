@@ -5,7 +5,7 @@ use super::{
     enums::{DNSResourceClass, DNSResourceType},
 };
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DNSResource {
     pub labels: Vec<String>,
     pub rtype: DNSResourceType,
