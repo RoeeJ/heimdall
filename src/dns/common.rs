@@ -9,10 +9,30 @@ pub trait PacketComponent {
         writer: &mut BitWriter<&mut Vec<u8>, E>,
     ) -> Result<(), ParseError>;
     fn read<E: Endianness>(&mut self, reader: &mut BitReader<&[u8], E>) -> Result<(), ParseError>;
+    
+    /// Read with access to the full packet buffer for compression support
+    fn read_with_buffer<E: Endianness>(
+        &mut self,
+        reader: &mut BitReader<&[u8], E>,
+        _packet_buf: &[u8],
+    ) -> Result<(), ParseError> {
+        // Default implementation just calls read for backwards compatibility
+        self.read(reader)
+    }
 
     fn read_labels<E: Endianness>(
         &mut self,
         reader: &mut BitReader<&[u8], E>,
+    ) -> Result<Vec<String>, ParseError> {
+        // Default implementation without compression support
+        // Override this method in implementations that need compression
+        self.read_labels_with_buffer(reader, None)
+    }
+
+    fn read_labels_with_buffer<E: Endianness>(
+        &mut self,
+        reader: &mut BitReader<&[u8], E>,
+        packet_buf: Option<&[u8]>,
     ) -> Result<Vec<String>, ParseError> {
         let mut labels = Vec::new();
         let mut jump_count = 0;
@@ -25,18 +45,37 @@ pub trait PacketComponent {
             if (first_byte & 0xC0) == 0xC0 {
                 // This is a compression pointer
                 let second_byte = reader.read_var::<u8>(8)?;
-                let _pointer = ((first_byte as u16 & 0x3F) << 8) | second_byte as u16;
+                let pointer = ((first_byte as u16 & 0x3F) << 8) | second_byte as u16;
 
-                trace!("Found compression pointer: 0x{:04x}", _pointer);
+                trace!("Found compression pointer: 0x{:04x}", pointer);
 
-                // For now, we'll just break out of compression
-                // A full implementation would follow the pointer
-                // but that requires access to the full packet buffer
-                labels.push(String::new());
-                break;
+                if let Some(buf) = packet_buf {
+                    // Follow the compression pointer
+                    if (pointer as usize) < buf.len() {
+                        let mut pointer_reader = BitReader::<_, E>::new(&buf[pointer as usize..]);
+                        
+                        // Read labels from the pointer location
+                        let mut pointer_labels = self.read_labels_with_buffer(&mut pointer_reader, Some(buf))?;
+                        
+                        // Remove empty terminating label if present
+                        if let Some(last) = pointer_labels.last() {
+                            if last.is_empty() {
+                                pointer_labels.pop();
+                            }
+                        }
+                        
+                        labels.extend(pointer_labels);
+                        break;
+                    } else {
+                        return Err(ParseError::InvalidLabel);
+                    }
+                } else {
+                    // No buffer provided - fall back to empty label
+                    labels.push(String::new());
+                    break;
+                }
             } else if first_byte == 0 {
                 // Null terminator - end of name
-                labels.push(String::new());
                 break;
             } else {
                 // Regular label
