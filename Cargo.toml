@@ -1,0 +1,8 @@
+[package]
+name = "heimdall"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bitstream-io = "3.1.0"
+tokio = { version = "1.44.2", features = ["full"] }
