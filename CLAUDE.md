@@ -28,11 +28,23 @@ RUST_LOG=debug cargo run
 
 ### Testing the DNS Server
 ```bash
+# Start the server in background (with logging to heimdall.log)
+./start_server.sh
+
+# Stop the server
+./stop_server.sh
+
 # Test with a single DNS query
 dig google.com @127.0.0.1 -p 1053
 
+# Test iterative queries (dig +trace)
+dig +trace google.com @127.0.0.1 -p 1053
+
 # Use the provided watch script for continuous testing
 ./watch.sh
+
+# View server logs
+tail -f heimdall.log
 ```
 
 ### Development Workflow

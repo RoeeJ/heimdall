@@ -32,16 +32,19 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
 - [✅] Implement DNS compression pointer handling
 - [⏸️] Add TCP support (required for large responses) - *Deferred to Phase 2*
 - [✅] Implement proper TTL handling
+- [✅] **NEW**: Implement iterative DNS resolution for dig +trace support
 
 ### 1.3 Testing & Reliability ✅ **COMPLETED**
 - [✅] Unit tests for all DNS packet components
 - [✅] Integration tests with real DNS queries
 - [✅] Logging system with configurable levels (tracing)
 - [✅] Real-world testing with dig command
+- [✅] **NEW**: Support for iterative queries (RD=0)
 - [⏸️] Stress testing framework - *Deferred to Phase 2*
 - [⏸️] Metrics collection (query count, response times, errors) - *Deferred to Phase 2*
 
 **MILESTONE ACHIEVED**: Basic DNS server is fully functional and successfully resolves all common record types!
+**NEW FEATURE**: Added iterative query support for tools like dig +trace
 
 ## Phase 2: Performance Optimization 🚧 **IN PROGRESS**
 **Goal**: Achieve high-performance suitable for production use

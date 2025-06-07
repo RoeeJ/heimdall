@@ -9,6 +9,15 @@ pub struct DnsConfig {
     /// Upstream DNS servers to forward queries to
     pub upstream_servers: Vec<SocketAddr>,
     
+    /// Root DNS servers for iterative queries
+    pub root_servers: Vec<SocketAddr>,
+    
+    /// Whether to enable iterative resolution
+    pub enable_iterative: bool,
+    
+    /// Maximum number of iterations for iterative queries
+    pub max_iterations: u8,
+    
     /// Timeout for upstream queries
     pub upstream_timeout: Duration,
     
@@ -34,6 +43,14 @@ impl Default for DnsConfig {
                 "8.8.8.8:53".parse().unwrap(),     // Google
                 "8.8.4.4:53".parse().unwrap(),     // Google Secondary
             ],
+            root_servers: vec![
+                "198.41.0.4:53".parse().unwrap(),     // a.root-servers.net
+                "199.9.14.201:53".parse().unwrap(),   // b.root-servers.net
+                "192.33.4.12:53".parse().unwrap(),    // c.root-servers.net
+                "199.7.91.13:53".parse().unwrap(),    // d.root-servers.net
+            ],
+            enable_iterative: true,
+            max_iterations: 16,
             upstream_timeout: Duration::from_secs(5),
             max_retries: 2,
             enable_caching: true,
@@ -67,6 +84,16 @@ impl DnsConfig {
         if let Ok(timeout_str) = std::env::var("HEIMDALL_UPSTREAM_TIMEOUT") {
             if let Ok(timeout_secs) = timeout_str.parse::<u64>() {
                 config.upstream_timeout = Duration::from_secs(timeout_secs);
+            }
+        }
+        
+        if let Ok(enable_iterative) = std::env::var("HEIMDALL_ENABLE_ITERATIVE") {
+            config.enable_iterative = enable_iterative.parse().unwrap_or(true);
+        }
+        
+        if let Ok(max_iterations) = std::env::var("HEIMDALL_MAX_ITERATIONS") {
+            if let Ok(iterations) = max_iterations.parse::<u8>() {
+                config.max_iterations = iterations;
             }
         }
         
