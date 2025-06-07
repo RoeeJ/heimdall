@@ -33,13 +33,32 @@ impl PacketComponent for DNSResource {
         &mut self,
         reader: &mut bitstream_io::BitReader<&[u8], E>,
     ) -> Result<(), super::ParseError> {
+        // Read the name (labels)
         self.labels = self.read_labels(reader)?;
+        
+        // Read type, class, TTL, and data length
         self.rtype = reader.read_var::<u16>(16)?.into();
         self.rclass = reader.read_var::<u16>(16)?.into();
         self.ttl = reader.read_var::<u32>(32)?;
         self.rdlength = reader.read_var::<u16>(16)?;
-        self.rdata = vec![0u8; self.rdlength as usize];
-        reader.read_bytes(&mut self.rdata)?;
+        
+        // Read the resource data
+        if self.rdlength > 0 {
+            self.rdata = vec![0u8; self.rdlength as usize];
+            match reader.read_bytes(&mut self.rdata) {
+                Ok(_) => {},
+                Err(e) => {
+                    // If we can't read the full rdata, just set it to empty
+                    // This is more forgiving for malformed packets
+                    self.rdata = Vec::new();
+                    self.rdlength = 0;
+                    return Err(super::ParseError::InvalidBitStream(e.to_string()));
+                }
+            }
+        } else {
+            self.rdata = Vec::new();
+        }
+        
         Ok(())
     }
 }
