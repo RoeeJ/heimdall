@@ -35,4 +35,20 @@ impl PacketComponent for DNSQuestion {
         };
         Ok(())
     }
+
+    fn read_with_buffer<E: Endianness>(
+        &mut self,
+        reader: &mut BitReader<&[u8], E>,
+        packet_buf: &[u8],
+    ) -> Result<(), ParseError> {
+        let labels = self.read_labels_with_buffer(reader, Some(packet_buf))?;
+        let qtype = reader.read_var::<u16>(16)?.into();
+        let qclass = reader.read_var::<u16>(16)?.into();
+        *self = DNSQuestion {
+            labels,
+            qtype,
+            qclass,
+        };
+        Ok(())
+    }
 }

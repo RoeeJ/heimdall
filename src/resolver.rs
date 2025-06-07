@@ -5,7 +5,8 @@ use crate::error::{DnsError, Result};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
-use tokio::net::UdpSocket;
+use tokio::net::{TcpStream, UdpSocket};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::timeout;
 use tracing::{debug, error, info, trace, warn};
 
@@ -145,6 +146,23 @@ impl DnsResolver {
                 Ok(mut response) => {
                     // Restore original query ID
                     response.header.id = original_id;
+                    
+                    // If the original query had EDNS, ensure response includes EDNS
+                    if query.supports_edns() && response.edns.is_none() {
+                        // Add EDNS to response matching client capabilities
+                        let client_buffer_size = query.max_udp_payload_size();
+                        let server_buffer_size = std::cmp::min(client_buffer_size, 4096); // Cap at 4KB
+                        
+                        response.add_edns(server_buffer_size, false); // Don't set DO flag in response unless needed
+                        debug!("Added EDNS to response: buffer_size={}", server_buffer_size);
+                    } else if let (Some(query_edns), Some(response_edns)) = (&query.edns, &mut response.edns) {
+                        // Negotiate buffer size between client and server capabilities
+                        let client_buffer_size = query_edns.payload_size();
+                        let server_buffer_size = std::cmp::min(client_buffer_size, 4096); // Cap at 4KB
+                        response_edns.set_payload_size(server_buffer_size);
+                        debug!("Negotiated EDNS buffer size: client={}, server={}", client_buffer_size, server_buffer_size);
+                    }
+                    
                     info!(
                         "Successfully resolved query from upstream {} (attempt {})",
                         upstream_addr,
@@ -213,87 +231,164 @@ impl DnsResolver {
         unreachable!("Loop should have returned")
     }
 
-    /// Send query with timeout
+    /// Send query with timeout (try UDP first, fallback to TCP if truncated)
     async fn send_query_with_timeout(
         &self,
         query_bytes: &[u8],
         upstream_addr: SocketAddr,
     ) -> Result<DNSPacket> {
         let query_future = async {
-            // Send the query
-            self.client_socket
-                .send_to(query_bytes, upstream_addr)
-                .await
-                .map_err(DnsError::Io)?;
-
-            // Wait for response
-            let mut response_buf = vec![0u8; 4096];
-            let (response_len, response_addr) = self
-                .client_socket
-                .recv_from(&mut response_buf)
-                .await
-                .map_err(DnsError::Io)?;
-
-            // Verify response came from the server we queried
-            if response_addr != upstream_addr {
-                return Err(DnsError::InvalidPacket(format!(
-                    "Response from unexpected address: {}",
-                    response_addr
-                )));
+            // Try UDP first
+            match self.send_udp_query(query_bytes, upstream_addr).await {
+                Ok(response) => {
+                    // Check if response is truncated
+                    if response.header.tc {
+                        debug!("UDP response truncated, retrying with TCP");
+                        // Fallback to TCP
+                        self.send_tcp_query(query_bytes, upstream_addr).await
+                    } else {
+                        Ok(response)
+                    }
+                }
+                Err(e) => Err(e),
             }
-
-            // Log the raw response for debugging
-            trace!(
-                "Raw response data ({} bytes): {:02x?}",
-                response_len,
-                &response_buf[..response_len.min(64)]
-            );
-
-            // Parse the response
-            let response = DNSPacket::parse(&response_buf[..response_len]).map_err(|e| {
-                // Log more details about the parsing failure
-                debug!("Failed to parse response from {}: {:?}", upstream_addr, e);
-                debug!("Response length: {} bytes", response_len);
-                debug!(
-                    "First 64 bytes: {:02x?}",
-                    &response_buf[..response_len.min(64)]
-                );
-                DnsError::Parse(format!("Failed to parse response: {:?}", e))
-            })?;
-
-            // Log parsed response details
-            debug!(
-                "Parsed response: questions={}, answers={}, authorities={}, additional={}",
-                response.header.qdcount,
-                response.header.ancount,
-                response.header.nscount,
-                response.header.arcount
-            );
-
-            for (i, answer) in response.answers.iter().enumerate() {
-                debug!(
-                    "Answer {}: type={:?}, class={:?}, ttl={}, rdlength={}, rdata={:02x?}",
-                    i,
-                    answer.rtype,
-                    answer.rclass,
-                    answer.ttl,
-                    answer.rdlength,
-                    &answer.rdata[..answer.rdata.len().min(16)]
-                );
-            }
-
-            trace!(
-                "Received response: {} bytes, {} answers",
-                response_len, response.header.ancount
-            );
-
-            Ok(response)
         };
 
         // Apply timeout
         timeout(self.config.upstream_timeout, query_future)
             .await
             .map_err(|_| DnsError::Parse("Upstream query timeout".to_string()))?
+    }
+
+    /// Send query via UDP
+    async fn send_udp_query(
+        &self,
+        query_bytes: &[u8],
+        upstream_addr: SocketAddr,
+    ) -> Result<DNSPacket> {
+        // Send the query
+        self.client_socket
+            .send_to(query_bytes, upstream_addr)
+            .await
+            .map_err(DnsError::Io)?;
+
+        // Wait for response
+        let mut response_buf = vec![0u8; 4096];
+        let (response_len, response_addr) = self
+            .client_socket
+            .recv_from(&mut response_buf)
+            .await
+            .map_err(DnsError::Io)?;
+
+        // Verify response came from the server we queried
+        if response_addr != upstream_addr {
+            return Err(DnsError::InvalidPacket(format!(
+                "Response from unexpected address: {}",
+                response_addr
+            )));
+        }
+
+        // Log the raw response for debugging
+        trace!(
+            "Raw UDP response data ({} bytes): {:02x?}",
+            response_len,
+            &response_buf[..response_len.min(64)]
+        );
+
+        // Parse the response
+        let response = DNSPacket::parse(&response_buf[..response_len]).map_err(|e| {
+            // Log more details about the parsing failure
+            debug!("Failed to parse UDP response from {}: {:?}", upstream_addr, e);
+            debug!("Response length: {} bytes", response_len);
+            debug!(
+                "First 64 bytes: {:02x?}",
+                &response_buf[..response_len.min(64)]
+            );
+            DnsError::Parse(format!("Failed to parse response: {:?}", e))
+        })?;
+
+        self.log_response_details(&response, response_len, "UDP");
+        Ok(response)
+    }
+
+    /// Send query via TCP
+    async fn send_tcp_query(
+        &self,
+        query_bytes: &[u8],
+        upstream_addr: SocketAddr,
+    ) -> Result<DNSPacket> {
+        // Connect to upstream server
+        let mut stream = TcpStream::connect(upstream_addr).await.map_err(DnsError::Io)?;
+
+        // Send length-prefixed query
+        let query_length = query_bytes.len() as u16;
+        stream.write_all(&query_length.to_be_bytes()).await.map_err(DnsError::Io)?;
+        stream.write_all(query_bytes).await.map_err(DnsError::Io)?;
+        stream.flush().await.map_err(DnsError::Io)?;
+
+        // Read response length
+        let mut length_buf = [0u8; 2];
+        stream.read_exact(&mut length_buf).await.map_err(DnsError::Io)?;
+        let response_length = u16::from_be_bytes(length_buf) as usize;
+
+        // Read response data
+        let mut response_buf = vec![0; response_length];
+        stream.read_exact(&mut response_buf).await.map_err(DnsError::Io)?;
+
+        // Log the raw response for debugging
+        trace!(
+            "Raw TCP response data ({} bytes): {:02x?}",
+            response_length,
+            &response_buf[..response_length.min(64)]
+        );
+
+        // Parse the response
+        let response = DNSPacket::parse(&response_buf).map_err(|e| {
+            // Log more details about the parsing failure
+            debug!("Failed to parse TCP response from {}: {:?}", upstream_addr, e);
+            debug!("Response length: {} bytes", response_length);
+            debug!(
+                "First 64 bytes: {:02x?}",
+                &response_buf[..response_length.min(64)]
+            );
+            DnsError::Parse(format!("Failed to parse response: {:?}", e))
+        })?;
+
+        self.log_response_details(&response, response_length, "TCP");
+        Ok(response)
+    }
+
+    /// Log response details for debugging
+    fn log_response_details(&self, response: &DNSPacket, response_len: usize, protocol: &str) {
+        debug!(
+            "Parsed {} response: questions={}, answers={}, authorities={}, additional={}",
+            protocol,
+            response.header.qdcount,
+            response.header.ancount,
+            response.header.nscount,
+            response.header.arcount
+        );
+
+        for (i, answer) in response.answers.iter().enumerate() {
+            let rdata_display = match &answer.parsed_rdata {
+                Some(parsed) => format!("parsed={}", parsed),
+                None => format!("raw={:02x?}", &answer.rdata[..answer.rdata.len().min(16)])
+            };
+            debug!(
+                "Answer {}: type={:?}, class={:?}, ttl={}, rdlength={}, {}",
+                i,
+                answer.rtype,
+                answer.rclass,
+                answer.ttl,
+                answer.rdlength,
+                rdata_display
+            );
+        }
+
+        trace!(
+            "Received {} response: {} bytes, {} answers",
+            protocol, response_len, response.header.ancount
+        );
     }
 
     /// Create a SERVFAIL response for when resolution fails
