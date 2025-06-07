@@ -39,7 +39,53 @@ impl From<std::io::Error> for ParseError {
 
 impl DNSPacket {
     pub fn valid(&self) -> bool {
-        false
+        // Basic validation checks
+        
+        // Check header counts match actual sections
+        if self.header.qdcount as usize != self.questions.len() {
+            return false;
+        }
+        if self.header.ancount as usize != self.answers.len() {
+            return false;
+        }
+        if self.header.nscount as usize != self.authorities.len() {
+            return false;
+        }
+        if self.header.arcount as usize != self.resources.len() {
+            return false;
+        }
+        
+        // Check that questions have valid labels
+        for question in &self.questions {
+            if question.labels.is_empty() {
+                return false;
+            }
+            
+            // Check for valid domain name structure
+            let total_length: usize = question.labels.iter().map(|l| l.len() + 1).sum();
+            if total_length > 255 { // DNS names can't exceed 255 octets
+                return false;
+            }
+            
+            // Check individual label lengths
+            for label in &question.labels {
+                if label.len() > 63 { // Individual labels can't exceed 63 octets
+                    return false;
+                }
+            }
+        }
+        
+        // Check opcode is valid (0-2 are standard)
+        if self.header.opcode > 2 {
+            return false;
+        }
+        
+        // Check rcode is valid (0-5 are standard response codes)
+        if self.header.rcode > 5 {
+            return false;
+        }
+        
+        true
     }
 
     pub fn parse(buf: &[u8]) -> Result<Self, ParseError> {
@@ -79,13 +125,29 @@ impl DNSPacket {
     pub fn serialize(&self) -> Result<Vec<u8>, ParseError> {
         let mut buf = Vec::new();
         let mut writer: BitWriter<&mut Vec<u8>, BigEndian> = BitWriter::new(&mut buf);
+        
+        // Write header
         self.header.write(&mut writer)?;
 
+        // Write questions
         for question in self.questions.iter() {
             question.write(&mut writer)?;
         }
 
-        // TODO: Serialize answers, authorities, and additional sections
+        // Write answers
+        for answer in self.answers.iter() {
+            answer.write(&mut writer)?;
+        }
+        
+        // Write authorities
+        for authority in self.authorities.iter() {
+            authority.write(&mut writer)?;
+        }
+        
+        // Write additional resources
+        for resource in self.resources.iter() {
+            resource.write(&mut writer)?;
+        }
         
         Ok(buf)
     }
@@ -118,6 +180,6 @@ mod test {
     #[test]
     fn test_dns_packet() {
         let packet = DNSPacket::default();
-        assert_eq!(packet.valid(), false); // Currently always returns false
+        assert_eq!(packet.valid(), true); // Default packet should be valid
     }
 }
