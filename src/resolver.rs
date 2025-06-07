@@ -8,6 +8,10 @@ use std::time::Duration;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::timeout;
+use tokio::sync::{broadcast, Mutex};
+use dashmap::DashMap;
+use std::sync::Arc;
+use std::collections::HashMap;
 use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -29,17 +33,88 @@ impl QueryMode {
 
 static QUERY_ID_COUNTER: AtomicU16 = AtomicU16::new(1);
 
+/// In-flight query tracking for deduplication
+#[derive(Debug)]
+struct InFlightQuery {
+    /// Broadcast sender to notify all waiting clients
+    sender: broadcast::Sender<Result<DNSPacket>>,
+    /// Number of clients waiting for this query
+    waiting_count: std::sync::atomic::AtomicU32,
+}
+
+/// Connection pool for reusing UDP sockets to upstream servers
+#[derive(Debug)]
+struct ConnectionPool {
+    udp_sockets: Arc<Mutex<HashMap<SocketAddr, Vec<UdpSocket>>>>,
+    max_connections_per_server: usize,
+}
+
+impl ConnectionPool {
+    fn new(max_connections_per_server: usize) -> Self {
+        Self {
+            udp_sockets: Arc::new(Mutex::new(HashMap::new())),
+            max_connections_per_server,
+        }
+    }
+
+    /// Get a UDP socket for the given server, reusing existing connections when possible
+    async fn get_udp_socket(&self, server_addr: SocketAddr) -> Result<UdpSocket> {
+        let mut pool = self.udp_sockets.lock().await;
+        
+        // Try to get an existing socket for this server
+        if let Some(sockets) = pool.get_mut(&server_addr) {
+            if let Some(socket) = sockets.pop() {
+                debug!("Reusing pooled UDP socket for {}", server_addr);
+                return Ok(socket);
+            }
+        }
+
+        // No available socket, create a new one
+        debug!("Creating new UDP socket for {}", server_addr);
+        let socket = UdpSocket::bind("0.0.0.0:0").await.map_err(|e| DnsError::Io(e.to_string()))?;
+        socket.connect(server_addr).await.map_err(|e| DnsError::Io(e.to_string()))?;
+        
+        Ok(socket)
+    }
+
+    /// Return a UDP socket to the pool for reuse
+    async fn return_udp_socket(&self, server_addr: SocketAddr, socket: UdpSocket) {
+        let mut pool = self.udp_sockets.lock().await;
+        
+        let sockets = pool.entry(server_addr).or_insert_with(Vec::new);
+        
+        // Only pool the socket if we haven't exceeded the limit
+        if sockets.len() < self.max_connections_per_server {
+            debug!("Returning UDP socket to pool for {}", server_addr);
+            sockets.push(socket);
+        } else {
+            debug!("Connection pool full for {}, dropping socket", server_addr);
+            // Socket will be dropped and closed automatically
+        }
+    }
+
+    /// Get pool statistics for monitoring
+    async fn stats(&self) -> HashMap<SocketAddr, usize> {
+        let pool = self.udp_sockets.lock().await;
+        pool.iter().map(|(&addr, sockets)| (addr, sockets.len())).collect()
+    }
+}
+
 #[derive(Debug)]
 pub struct DnsResolver {
     config: DnsConfig,
     client_socket: UdpSocket,
     cache: Option<DnsCache>,
+    /// In-flight queries for deduplication (query_key -> broadcast channel)
+    in_flight_queries: Arc<DashMap<CacheKey, InFlightQuery>>,
+    /// Connection pool for upstream queries
+    connection_pool: ConnectionPool,
 }
 
 impl DnsResolver {
     pub async fn new(config: DnsConfig) -> Result<Self> {
         // Bind to a random port for upstream queries
-        let client_socket = UdpSocket::bind("0.0.0.0:0").await.map_err(DnsError::Io)?;
+        let client_socket = UdpSocket::bind("0.0.0.0:0").await.map_err(|e| DnsError::Io(e.to_string()))?;
 
         // Initialize cache if enabled
         let cache = if config.enable_caching {
@@ -64,6 +139,8 @@ impl DnsResolver {
             config,
             client_socket,
             cache,
+            in_flight_queries: Arc::new(DashMap::new()),
+            connection_pool: ConnectionPool::new(5), // Pool up to 5 connections per server
         })
     }
 
@@ -82,25 +159,189 @@ impl DnsResolver {
                     );
                     return Ok(cached_response);
                 }
+
+                // Check if this query is already in-flight (query deduplication)
+                if let Some(in_flight) = self.in_flight_queries.get(&cache_key) {
+                    // Increment waiting count for metrics
+                    in_flight.waiting_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    
+                    debug!(
+                        "Query deduplication: joining in-flight query for {} {:?}",
+                        cache_key.domain, cache_key.record_type
+                    );
+                    
+                    // Subscribe to the broadcast channel to get the result
+                    let mut receiver = in_flight.sender.subscribe();
+                    
+                    // Drop the reference to avoid holding the lock
+                    drop(in_flight);
+                    
+                    // Wait for the result
+                    match receiver.recv().await {
+                        Ok(result) => {
+                            match result {
+                                Ok(mut response) => {
+                                    // Restore original query ID
+                                    response.header.id = original_id;
+                                    debug!(
+                                        "Query deduplication: received response for {} {:?}",
+                                        cache_key.domain, cache_key.record_type
+                                    );
+                                    return Ok(response);
+                                }
+                                Err(e) => return Err(e),
+                            }
+                        }
+                        Err(_) => {
+                            // Channel was closed, fall through to normal resolution
+                            debug!(
+                                "Query deduplication: channel closed for {} {:?}, falling back to normal resolution",
+                                cache_key.domain, cache_key.record_type
+                            );
+                        }
+                    }
+                }
             }
         }
 
-        let query_mode = QueryMode::from_packet(&query);
-
-        let result = match query_mode {
-            QueryMode::Recursive => self.resolve_recursively(query.clone(), original_id).await,
-            QueryMode::Iterative => {
-                if self.config.enable_iterative {
-                    self.resolve_iteratively(query.clone(), original_id).await
-                } else {
-                    // Fall back to recursive if iterative is disabled
-                    self.resolve_recursively(query.clone(), original_id).await
+        // If we reach here, it's not a cache hit and not in-flight, so we need to resolve
+        if !query.questions.is_empty() {
+            let cache_key = CacheKey::from_question(&query.questions[0]);
+            self.resolve_with_deduplication(query, original_id, cache_key).await
+        } else {
+            // No questions, resolve directly without deduplication
+            let query_mode = QueryMode::from_packet(&query);
+            match query_mode {
+                QueryMode::Recursive => self.resolve_recursively(query, original_id).await,
+                QueryMode::Iterative => {
+                    if self.config.enable_iterative {
+                        self.resolve_iteratively(query, original_id).await
+                    } else {
+                        self.resolve_recursively(query, original_id).await
+                    }
                 }
             }
+        }
+    }
+
+    /// Resolve a query with deduplication support
+    async fn resolve_with_deduplication(
+        &self,
+        query: DNSPacket,
+        original_id: u16,
+        cache_key: CacheKey,
+    ) -> Result<DNSPacket> {
+        // Create a broadcast channel for this query
+        let (sender, _receiver) = broadcast::channel(16); // Buffer for up to 16 waiting clients
+        
+        let in_flight = InFlightQuery {
+            sender: sender.clone(),
+            waiting_count: std::sync::atomic::AtomicU32::new(1), // Start with 1 (this request)
         };
 
+        // Try to insert our in-flight query  
+        if let None = self.in_flight_queries.insert(cache_key.clone(), in_flight) {
+            // We're the first to request this query, so we need to resolve it
+                debug!(
+                    "Query deduplication: initiating query for {} {:?}",
+                    cache_key.domain, cache_key.record_type
+                );
+
+                let query_mode = QueryMode::from_packet(&query);
+                let result = match query_mode {
+                    QueryMode::Recursive => self.resolve_recursively(query.clone(), original_id).await,
+                    QueryMode::Iterative => {
+                        if self.config.enable_iterative {
+                            self.resolve_iteratively(query.clone(), original_id).await
+                        } else {
+                            self.resolve_recursively(query.clone(), original_id).await
+                        }
+                    }
+                };
+
+                // Remove the in-flight query entry
+                if let Some((_key, in_flight_entry)) = self.in_flight_queries.remove(&cache_key) {
+                    let waiting_count = in_flight_entry.waiting_count.load(std::sync::atomic::Ordering::Relaxed);
+                    if waiting_count > 1 {
+                        debug!(
+                            "Query deduplication: broadcasting result to {} waiting clients for {} {:?}",
+                            waiting_count - 1, cache_key.domain, cache_key.record_type
+                        );
+                    }
+
+                    // Broadcast the result to all waiting clients
+                    let _ = sender.send(result.clone());
+                }
+
+                // Handle caching for the resolved result
+                self.process_result(&result, &query);
+                
+                result
+        } else {
+                // Another request beat us to it, so we need to wait for the result
+                debug!(
+                    "Query deduplication: joining existing in-flight query for {} {:?}",
+                    cache_key.domain, cache_key.record_type
+                );
+
+                // Increment waiting count for the existing entry
+                if let Some(existing) = self.in_flight_queries.get(&cache_key) {
+                    existing.waiting_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    
+                    let mut receiver = existing.sender.subscribe();
+                    drop(existing); // Drop the reference
+                    
+                    // Wait for the result
+                    match receiver.recv().await {
+                        Ok(result) => {
+                            match result {
+                                Ok(mut response) => {
+                                    response.header.id = original_id;
+                                    Ok(response)
+                                }
+                                Err(e) => Err(e),
+                            }
+                        }
+                        Err(_) => {
+                            // Channel was closed, fall back to normal resolution
+                            debug!(
+                                "Query deduplication: channel closed for {} {:?}, falling back",
+                                cache_key.domain, cache_key.record_type
+                            );
+                            let query_mode = QueryMode::from_packet(&query);
+                            match query_mode {
+                                QueryMode::Recursive => self.resolve_recursively(query, original_id).await,
+                                QueryMode::Iterative => {
+                                    if self.config.enable_iterative {
+                                        self.resolve_iteratively(query, original_id).await
+                                    } else {
+                                        self.resolve_recursively(query, original_id).await
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Entry disappeared, fall back to normal resolution
+                    let query_mode = QueryMode::from_packet(&query);
+                    match query_mode {
+                        QueryMode::Recursive => self.resolve_recursively(query, original_id).await,
+                        QueryMode::Iterative => {
+                            if self.config.enable_iterative {
+                                self.resolve_iteratively(query, original_id).await
+                            } else {
+                                self.resolve_recursively(query, original_id).await
+                            }
+                        }
+                    }
+                }
+        }
+    }
+
+    /// Process result and handle caching (moved from the main resolve method)
+    fn process_result(&self, result: &Result<DNSPacket>, query: &DNSPacket) {
         // Cache the result if successful and caching is enabled
-        if let (Ok(response), Some(cache)) = (&result, &self.cache) {
+        if let (Ok(response), Some(cache)) = (result, &self.cache) {
             if !query.questions.is_empty() {
                 let cache_key = CacheKey::from_question(&query.questions[0]);
                 cache.put(cache_key, response.clone());
@@ -119,8 +360,6 @@ impl DnsResolver {
                 }
             }
         }
-
-        result
     }
 
     /// Resolve a DNS query by forwarding it to upstream servers (recursive)
@@ -260,33 +499,24 @@ impl DnsResolver {
             .map_err(|_| DnsError::Parse("Upstream query timeout".to_string()))?
     }
 
-    /// Send query via UDP
+    /// Send query via UDP using connection pooling
     async fn send_udp_query(
         &self,
         query_bytes: &[u8],
         upstream_addr: SocketAddr,
     ) -> Result<DNSPacket> {
+        // Get a socket from the connection pool
+        let socket = self.connection_pool.get_udp_socket(upstream_addr).await?;
+
         // Send the query
-        self.client_socket
-            .send_to(query_bytes, upstream_addr)
-            .await
-            .map_err(DnsError::Io)?;
+        socket.send(query_bytes).await.map_err(|e| DnsError::Io(e.to_string()))?;
 
         // Wait for response
         let mut response_buf = vec![0u8; 4096];
-        let (response_len, response_addr) = self
-            .client_socket
-            .recv_from(&mut response_buf)
-            .await
-            .map_err(DnsError::Io)?;
+        let response_len = socket.recv(&mut response_buf).await.map_err(|e| DnsError::Io(e.to_string()))?;
 
-        // Verify response came from the server we queried
-        if response_addr != upstream_addr {
-            return Err(DnsError::InvalidPacket(format!(
-                "Response from unexpected address: {}",
-                response_addr
-            )));
-        }
+        // Return the socket to the pool for reuse
+        self.connection_pool.return_udp_socket(upstream_addr, socket).await;
 
         // Log the raw response for debugging
         trace!(
@@ -318,22 +548,22 @@ impl DnsResolver {
         upstream_addr: SocketAddr,
     ) -> Result<DNSPacket> {
         // Connect to upstream server
-        let mut stream = TcpStream::connect(upstream_addr).await.map_err(DnsError::Io)?;
+        let mut stream = TcpStream::connect(upstream_addr).await.map_err(|e| DnsError::Io(e.to_string()))?;
 
         // Send length-prefixed query
         let query_length = query_bytes.len() as u16;
-        stream.write_all(&query_length.to_be_bytes()).await.map_err(DnsError::Io)?;
-        stream.write_all(query_bytes).await.map_err(DnsError::Io)?;
-        stream.flush().await.map_err(DnsError::Io)?;
+        stream.write_all(&query_length.to_be_bytes()).await.map_err(|e| DnsError::Io(e.to_string()))?;
+        stream.write_all(query_bytes).await.map_err(|e| DnsError::Io(e.to_string()))?;
+        stream.flush().await.map_err(|e| DnsError::Io(e.to_string()))?;
 
         // Read response length
         let mut length_buf = [0u8; 2];
-        stream.read_exact(&mut length_buf).await.map_err(DnsError::Io)?;
+        stream.read_exact(&mut length_buf).await.map_err(|e| DnsError::Io(e.to_string()))?;
         let response_length = u16::from_be_bytes(length_buf) as usize;
 
         // Read response data
         let mut response_buf = vec![0; response_length];
-        stream.read_exact(&mut response_buf).await.map_err(DnsError::Io)?;
+        stream.read_exact(&mut response_buf).await.map_err(|e| DnsError::Io(e.to_string()))?;
 
         // Log the raw response for debugging
         trace!(
@@ -685,5 +915,10 @@ impl DnsResolver {
     /// Get cache statistics
     pub fn cache_stats(&self) -> Option<&crate::cache::CacheStats> {
         self.cache.as_ref().map(|cache| cache.stats())
+    }
+
+    /// Get connection pool statistics
+    pub async fn connection_pool_stats(&self) -> HashMap<SocketAddr, usize> {
+        self.connection_pool.stats().await
     }
 }

@@ -1,9 +1,9 @@
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum DnsError {
     #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(String),
 
     #[error("Parse error: {0}")]
     Parse(String),
@@ -28,6 +28,12 @@ pub enum DnsError {
 
     #[error("Unsupported DNS feature: {0}")]
     Unsupported(String),
+}
+
+impl From<std::io::Error> for DnsError {
+    fn from(err: std::io::Error) -> Self {
+        DnsError::Io(err.to_string())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, DnsError>;
