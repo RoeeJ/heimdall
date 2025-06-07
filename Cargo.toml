@@ -2,6 +2,7 @@
 name = "heimdall"
 version = "0.1.0"
 edition = "2024"
+default-run = "heimdall"
 
 [dependencies]
 tokio = { version = "1.44.2", features = ["full"] }
@@ -13,9 +14,19 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 parking_lot = "0.12"
 thiserror = "2.0"
+clap = "4.0"
+sysinfo = "0.30"
 
 [dev-dependencies]
 criterion = "0.5"
+
+[[bin]]
+name = "heimdall"
+path = "src/main.rs"
+
+[[bin]]
+name = "stress_test"
+path = "src/bin/stress_test.rs"
 
 [[bench]]
 name = "dns_parsing"
