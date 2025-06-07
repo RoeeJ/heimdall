@@ -21,8 +21,8 @@ impl PacketComponent for DNSResource {
         writer: &mut bitstream_io::BitWriter<&mut Vec<u8>, E>,
     ) -> Result<(), super::ParseError> {
         self.write_labels(writer, &self.labels)?;
-        writer.write_var::<u16>(16, self.rtype as u16)?;
-        writer.write_var::<u16>(16, self.rclass as u16)?;
+        writer.write_var::<u16>(16, self.rtype.into())?;
+        writer.write_var::<u16>(16, self.rclass.into())?;
         writer.write_var::<u32>(32, self.ttl)?;
         writer.write_var::<u16>(16, self.rdlength)?;
         writer.write_bytes(&self.rdata)?;
