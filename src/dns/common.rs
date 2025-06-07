@@ -1,4 +1,5 @@
 use bitstream_io::{BitRead, BitReader, BitWrite, BitWriter, Endianness};
+use tracing::trace;
 
 use super::ParseError;
 
@@ -16,6 +17,7 @@ pub trait PacketComponent {
         let mut labels = Vec::new();
         loop {
             let label_len = reader.read_var::<u8>(8)?;
+            trace!("Reading label with length: {}", label_len);
             if label_len == 0 {
                 labels.push(String::new());
                 break;
@@ -23,6 +25,7 @@ pub trait PacketComponent {
             let mut buf = vec![0; label_len as usize];
             reader.read_bytes(&mut buf)?;
             let label = String::from_utf8(buf).map_err(|_| ParseError::InvalidLabel)?;
+            trace!("Read label: {}", label);
             labels.push(label);
         }
 

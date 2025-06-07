@@ -1,6 +1,7 @@
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum DNSResourceType {
     #[default]
+    Unknown,
     A,
     NS,
     MD,
@@ -27,9 +28,10 @@ pub enum DNSResourceType {
     OPT,
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum DNSResourceClass {
     #[default]
+    Unknown,
     IN,
     CS,
     CH,
@@ -43,18 +45,19 @@ impl From<u16> for DNSResourceClass {
             2 => DNSResourceClass::CS,
             3 => DNSResourceClass::CH,
             4 => DNSResourceClass::HS,
-            _ => DNSResourceClass::IN,
+            _ => DNSResourceClass::Unknown,
         }
     }
 }
 
-impl Into<u16> for DNSResourceClass {
-    fn into(self) -> u16 {
-        match self {
+impl From<DNSResourceClass> for u16 {
+    fn from(value: DNSResourceClass) -> Self {
+        match value {
             DNSResourceClass::IN => 1,
             DNSResourceClass::CS => 2,
             DNSResourceClass::CH => 3,
             DNSResourceClass::HS => 4,
+            DNSResourceClass::Unknown => 0,
         }
     }
 }
@@ -86,17 +89,14 @@ impl From<u16> for DNSResourceType {
             253 => DNSResourceType::MAILB,
             257 => DNSResourceType::CAA,
             
-            x => {
-                eprintln!("Unrecognized type: {}", x);
-                return DNSResourceType::default();
-            }
+            _ => DNSResourceType::Unknown,
         }
     }
 }
 
-impl Into<u16> for DNSResourceType {
-    fn into(self) -> u16 {
-        match self {
+impl From<DNSResourceType> for u16 {
+    fn from(value: DNSResourceType) -> Self {
+        match value {
             DNSResourceType::A => 1,
             DNSResourceType::NS => 2,
             DNSResourceType::MD => 3,
@@ -120,6 +120,7 @@ impl Into<u16> for DNSResourceType {
             DNSResourceType::OPT => 41,
             DNSResourceType::AXFR => 252,
             DNSResourceType::MAILB => 253,
+            DNSResourceType::Unknown => 0,
         }
     }
 }

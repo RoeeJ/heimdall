@@ -6,7 +6,7 @@ use super::{
     enums::{DNSResourceClass, DNSResourceType},
 };
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DNSQuestion {
     pub labels: Vec<String>,
     pub qtype: DNSResourceType,
@@ -19,8 +19,8 @@ impl PacketComponent for DNSQuestion {
         writer: &mut BitWriter<&mut Vec<u8>, E>,
     ) -> Result<(), ParseError> {
         self.write_labels(writer, &self.labels)?;
-        writer.write_var::<u16>(16, self.qtype as u16)?;
-        writer.write_var::<u16>(16, self.qclass as u16)?;
+        writer.write_var::<u16>(16, self.qtype.into())?;
+        writer.write_var::<u16>(16, self.qclass.into())?;
         Ok(())
     }
 
