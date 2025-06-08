@@ -1,66 +1,66 @@
 {
   "version": "0.1.0",
   "benchmarks": {
+    "dns_parsing_zerocopy": {
+      "mean_time_ns": 44.458,
+      "std_dev_ns": 4.4458,
+      "name": "dns_parsing_zerocopy",
+      "timestamp": "2025-06-08T19:54:03.542041+00:00"
+    },
     "simd_compression_search": {
-      "mean_time_ns": 293.34,
-      "std_dev_ns": 29.334,
+      "mean_time_ns": 15.125,
+      "std_dev_ns": 1.5125000000000002,
       "name": "simd_compression_search",
-      "timestamp": "2025-06-08T19:05:42.554450+00:00"
-    },
-    "serialization_regular": {
-      "mean_time_ns": 1331.67,
-      "std_dev_ns": 133.167,
-      "name": "serialization_regular",
-      "timestamp": "2025-06-08T19:05:42.554716+00:00"
-    },
-    "dns_parsing_regular": {
-      "mean_time_ns": 6507.09,
-      "std_dev_ns": 650.7090000000001,
-      "name": "dns_parsing_regular",
-      "timestamp": "2025-06-08T19:05:42.553697+00:00"
-    },
-    "buffer_pool": {
-      "mean_time_ns": 95.83,
-      "std_dev_ns": 9.583,
-      "name": "buffer_pool",
-      "timestamp": "2025-06-08T19:05:42.554738+00:00"
+      "timestamp": "2025-06-08T19:54:03.544508+00:00"
     },
     "cache_misses": {
-      "mean_time_ns": 192.09,
-      "std_dev_ns": 9.604500000000002,
+      "mean_time_ns": 15.792,
+      "std_dev_ns": 0.7896000000000001,
       "name": "cache_misses",
-      "timestamp": "2025-06-08T19:05:42.554329+00:00"
-    },
-    "buffer_allocation": {
-      "mean_time_ns": 26.67,
-      "std_dev_ns": 2.6670000000000003,
-      "name": "buffer_allocation",
-      "timestamp": "2025-06-08T19:05:42.554739+00:00"
-    },
-    "cache_hits": {
-      "mean_time_ns": 194.17,
-      "std_dev_ns": 9.7085,
-      "name": "cache_hits",
-      "timestamp": "2025-06-08T19:05:42.554327+00:00"
+      "timestamp": "2025-06-08T19:54:03.544361+00:00"
     },
     "simd_pattern_search": {
-      "mean_time_ns": 653.75,
-      "std_dev_ns": 65.375,
+      "mean_time_ns": 37.125,
+      "std_dev_ns": 3.7125000000000004,
       "name": "simd_pattern_search",
-      "timestamp": "2025-06-08T19:05:42.554451+00:00"
+      "timestamp": "2025-06-08T19:54:03.544509+00:00"
+    },
+    "cache_hits": {
+      "mean_time_ns": 126.042,
+      "std_dev_ns": 6.3021,
+      "name": "cache_hits",
+      "timestamp": "2025-06-08T19:54:03.544360+00:00"
+    },
+    "serialization_regular": {
+      "mean_time_ns": 176.209,
+      "std_dev_ns": 17.620900000000002,
+      "name": "serialization_regular",
+      "timestamp": "2025-06-08T19:54:03.544798+00:00"
     },
     "serialization_zerocopy": {
-      "mean_time_ns": 1241.25,
-      "std_dev_ns": 124.125,
+      "mean_time_ns": 108.75,
+      "std_dev_ns": 10.875,
       "name": "serialization_zerocopy",
-      "timestamp": "2025-06-08T19:05:42.554717+00:00"
+      "timestamp": "2025-06-08T19:54:03.544798+00:00"
     },
-    "dns_parsing_zerocopy": {
-      "mean_time_ns": 806.67,
-      "std_dev_ns": 80.667,
-      "name": "dns_parsing_zerocopy",
-      "timestamp": "2025-06-08T19:05:42.553707+00:00"
+    "buffer_pool": {
+      "mean_time_ns": 12.208,
+      "std_dev_ns": 1.2208,
+      "name": "buffer_pool",
+      "timestamp": "2025-06-08T19:54:03.544814+00:00"
+    },
+    "buffer_allocation": {
+      "mean_time_ns": 0.542,
+      "std_dev_ns": 0.054200000000000005,
+      "name": "buffer_allocation",
+      "timestamp": "2025-06-08T19:54:03.544815+00:00"
+    },
+    "dns_parsing_regular": {
+      "mean_time_ns": 213.041,
+      "std_dev_ns": 21.304100000000002,
+      "name": "dns_parsing_regular",
+      "timestamp": "2025-06-08T19:54:03.542023+00:00"
     }
   },
-  "created_at": "2025-06-08T19:05:42.554745+00:00"
+  "created_at": "2025-06-08T19:54:03.544818+00:00"
 }

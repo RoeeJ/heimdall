@@ -1,0 +1,164 @@
+name: Nightly Tests
+
+on:
+  schedule:
+    # Run nightly tests at 1 AM UTC
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  nightly-rust:
+    name: Nightly Rust Tests
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Don't fail the workflow if nightly fails
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install nightly Rust
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: rustfmt, clippy, miri
+
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: nightly
+        cache-on-failure: true
+
+    - name: Run tests with nightly
+      run: cargo test --all-features
+
+    - name: Run clippy with nightly
+      run: cargo clippy --all-features -- -D warnings
+
+    - name: Run Miri (unsafe code checking)
+      run: |
+        # Run Miri on specific modules that use unsafe code
+        cargo miri test --package heimdall dns::simd
+
+  extended-tests:
+    name: Extended Test Suite
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: extended
+        cache-on-failure: true
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y dnsutils netcat-openbsd valgrind
+
+    - name: Build release binaries
+      run: cargo build --release --all-targets
+
+    - name: Extended stress test
+      timeout-minutes: 15
+      run: |
+        # Start the DNS server
+        ./target/release/heimdall &
+        SERVER_PID=$!
+        sleep 3
+        
+        # Run extended stress tests
+        ./target/release/stress_test --scenario heavy --server 127.0.0.1:1053
+        
+        # Cleanup
+        kill $SERVER_PID
+
+    - name: Memory leak detection
+      run: |
+        # Start server with Valgrind
+        timeout 60s valgrind --leak-check=full --error-exitcode=1 ./target/release/heimdall &
+        VALGRIND_PID=$!
+        sleep 5
+        
+        # Send some queries
+        for i in {1..10}; do
+          dig google.com @127.0.0.1 -p 1053 +short || true
+          sleep 1
+        done
+        
+        # Stop and check results
+        kill $VALGRIND_PID || true
+        wait $VALGRIND_PID
+
+    - name: Endurance test
+      timeout-minutes: 30
+      run: |
+        ./target/release/heimdall &
+        SERVER_PID=$!
+        sleep 3
+        
+        # Run endurance test
+        ./target/release/stress_test --scenario endurance --server 127.0.0.1:1053
+        
+        kill $SERVER_PID
+
+  compatibility-tests:
+    name: Compatibility Tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-20.04, ubuntu-22.04, ubuntu-24.04]
+        rust: [1.70.0, stable]  # Test MSRV and latest stable
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust ${{ matrix.rust }}
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust }}
+
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: compat-${{ matrix.os }}-${{ matrix.rust }}
+        cache-on-failure: true
+
+    - name: Test compilation
+      run: cargo check --all-targets
+
+    - name: Run tests
+      run: cargo test
+
+  report:
+    name: Nightly Report
+    runs-on: ubuntu-latest
+    needs: [nightly-rust, extended-tests, compatibility-tests]
+    if: always()
+    
+    steps:
+    - name: Generate nightly report
+      run: |
+        echo "## Nightly Test Report - $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Test Suite | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|------------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Nightly Rust | ${{ needs.nightly-rust.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Extended Tests | ${{ needs.extended-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Compatibility | ${{ needs.compatibility-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [[ "${{ needs.extended-tests.result }}" == "failure" || 
+              "${{ needs.compatibility-tests.result }}" == "failure" ]]; then
+          echo "⚠️ Some nightly tests failed - investigation may be needed" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "✅ All critical nightly tests passed" >> $GITHUB_STEP_SUMMARY
+        fi

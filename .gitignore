@@ -1,3 +1,35 @@
+# Rust build artifacts
 /target
+**/*.rs.bk
+Cargo.lock
+
+# Application logs and runtime files
 heimdall.log
 heimdall.pid
+*.log
+
+# Test artifacts
+packet.bin
+*.bin
+
+# Benchmark results (keep baseline.json tracked)
+/target/criterion
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Docker artifacts
+.dockerignore
+
+# CI/CD artifacts
+coverage/
+*.profdata
+lcov.info
