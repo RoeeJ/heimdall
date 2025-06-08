@@ -58,11 +58,11 @@ jobs:
             REASON="Scheduled weekly baseline update"
           fi
           
-          git commit -m "Update performance baseline: $REASON
-
-🤖 Generated with [Claude Code](https://claude.ai/code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
+          git commit -m "Update performance baseline: $REASON" \
+                     -m "" \
+                     -m "Generated with Claude Code" \
+                     -m "" \
+                     -m "Co-Authored-By: Claude <noreply@anthropic.com>"
           
           git push
           echo "✅ Performance baseline updated and committed"

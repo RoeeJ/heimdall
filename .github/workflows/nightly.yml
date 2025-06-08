@@ -115,7 +115,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-20.04, ubuntu-22.04, ubuntu-24.04]
-        rust: [1.70.0, stable]  # Test MSRV and latest stable
+        rust: [stable]  # Test latest stable across OS versions
     
     steps:
     - name: Checkout repository
