@@ -1,10 +1,11 @@
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use heimdall::config::DnsConfig;
 use heimdall::dns::DNSPacket;
 use heimdall::dns::enums::{DNSResourceClass, DNSResourceType};
 use heimdall::dns::question::DNSQuestion;
 use heimdall::resolver::DnsResolver;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
 
@@ -14,10 +15,11 @@ fn create_query_packet(domain: &str) -> DNSPacket {
     packet.header.rd = true;
     packet.header.qdcount = 1;
 
-    let mut question = DNSQuestion::default();
-    question.labels = domain.split('.').map(|s| s.to_string()).collect();
-    question.qtype = DNSResourceType::A;
-    question.qclass = DNSResourceClass::IN;
+    let question = DNSQuestion {
+        labels: domain.split('.').map(|s| s.to_string()).collect(),
+        qtype: DNSResourceType::A,
+        qclass: DNSResourceClass::IN,
+    };
 
     packet.questions.push(question);
     packet
@@ -35,16 +37,20 @@ fn benchmark_parallel_vs_sequential(c: &mut Criterion) {
     ];
 
     // Config with parallel queries enabled
-    let mut parallel_config = DnsConfig::default();
-    parallel_config.upstream_servers = servers.clone();
-    parallel_config.enable_parallel_queries = true;
-    parallel_config.enable_caching = false; // Disable caching for fair comparison
+    let parallel_config = DnsConfig {
+        upstream_servers: servers.clone(),
+        enable_parallel_queries: true,
+        enable_caching: false, // Disable caching for fair comparison
+        ..Default::default()
+    };
 
     // Config with parallel queries disabled
-    let mut sequential_config = DnsConfig::default();
-    sequential_config.upstream_servers = servers;
-    sequential_config.enable_parallel_queries = false;
-    sequential_config.enable_caching = false;
+    let sequential_config = DnsConfig {
+        upstream_servers: servers,
+        enable_parallel_queries: false,
+        enable_caching: false,
+        ..Default::default()
+    };
 
     let query = create_query_packet("example.com");
 
@@ -53,9 +59,11 @@ fn benchmark_parallel_vs_sequential(c: &mut Criterion) {
         let resolver = rt
             .block_on(DnsResolver::new(parallel_config.clone()))
             .unwrap();
-        b.to_async(&rt).iter(|| async {
-            let response = resolver.resolve(black_box(query.clone()), 1234).await;
-            black_box(response);
+        b.iter(|| {
+            rt.block_on(async {
+                let response = resolver.resolve(black_box(query.clone()), 1234).await;
+                let _ = black_box(response);
+            })
         });
     });
 
@@ -64,9 +72,11 @@ fn benchmark_parallel_vs_sequential(c: &mut Criterion) {
         let resolver = rt
             .block_on(DnsResolver::new(sequential_config.clone()))
             .unwrap();
-        b.to_async(&rt).iter(|| async {
-            let response = resolver.resolve(black_box(query.clone()), 1234).await;
-            black_box(response);
+        b.iter(|| {
+            rt.block_on(async {
+                let response = resolver.resolve(black_box(query.clone()), 1234).await;
+                let _ = black_box(response);
+            })
         });
     });
 
@@ -78,26 +88,28 @@ fn benchmark_query_deduplication(c: &mut Criterion) {
 
     c.bench_function("concurrent_identical_queries", |b| {
         let config = DnsConfig::default();
-        let resolver = rt.block_on(DnsResolver::new(config)).unwrap();
+        let resolver = Arc::new(rt.block_on(DnsResolver::new(config)).unwrap());
         let query = create_query_packet("test.example.com");
 
-        b.to_async(&rt).iter(|| async {
-            // Launch 10 identical queries concurrently
-            let mut handles = vec![];
-            for i in 0..10 {
-                let resolver_clone = &resolver;
-                let query_clone = query.clone();
-                let handle =
-                    tokio::spawn(
-                        async move { resolver_clone.resolve(query_clone, 1234 + i).await },
-                    );
-                handles.push(handle);
-            }
+        b.iter(|| {
+            rt.block_on(async {
+                // Launch 10 identical queries concurrently
+                let mut handles = vec![];
+                for i in 0..10 {
+                    let resolver_clone = Arc::clone(&resolver);
+                    let query_clone = query.clone();
+                    let handle =
+                        tokio::spawn(
+                            async move { resolver_clone.resolve(query_clone, 1234 + i).await },
+                        );
+                    handles.push(handle);
+                }
 
-            // Wait for all to complete
-            for handle in handles {
-                let _ = handle.await;
-            }
+                // Wait for all to complete
+                for handle in handles {
+                    let _ = handle.await;
+                }
+            })
         });
     });
 }
@@ -116,11 +128,13 @@ fn benchmark_connection_pooling(c: &mut Criterion) {
 
     group.bench_function("with_connection_pool", |b| {
         let mut query_idx = 0;
-        b.to_async(&rt).iter(|| async {
-            let query = &queries[query_idx % queries.len()];
-            query_idx += 1;
-            let response = resolver.resolve(black_box(query.clone()), 1234).await;
-            black_box(response);
+        b.iter(|| {
+            rt.block_on(async {
+                let query = &queries[query_idx % queries.len()];
+                query_idx += 1;
+                let response = resolver.resolve(black_box(query.clone()), 1234).await;
+                let _ = black_box(response);
+            })
         });
     });
 
@@ -135,13 +149,17 @@ fn benchmark_cache_performance(c: &mut Criterion) {
     let mut group = c.benchmark_group("cache_performance");
 
     // Config with caching enabled
-    let mut cached_config = DnsConfig::default();
-    cached_config.enable_caching = true;
-    cached_config.max_cache_size = 10000;
+    let cached_config = DnsConfig {
+        enable_caching: true,
+        max_cache_size: 10000,
+        ..Default::default()
+    };
 
     // Config with caching disabled
-    let mut uncached_config = DnsConfig::default();
-    uncached_config.enable_caching = false;
+    let uncached_config = DnsConfig {
+        enable_caching: false,
+        ..Default::default()
+    };
 
     let query = create_query_packet("cached.example.com");
 
@@ -156,9 +174,11 @@ fn benchmark_cache_performance(c: &mut Criterion) {
             let _ = resolver.resolve(query.clone(), 1234).await;
         });
 
-        b.to_async(&rt).iter(|| async {
-            let response = resolver.resolve(black_box(query.clone()), 1234).await;
-            black_box(response);
+        b.iter(|| {
+            rt.block_on(async {
+                let response = resolver.resolve(black_box(query.clone()), 1234).await;
+                let _ = black_box(response);
+            })
         });
     });
 
@@ -167,9 +187,11 @@ fn benchmark_cache_performance(c: &mut Criterion) {
         let resolver = rt
             .block_on(DnsResolver::new(uncached_config.clone()))
             .unwrap();
-        b.to_async(&rt).iter(|| async {
-            let response = resolver.resolve(black_box(query.clone()), 1234).await;
-            black_box(response);
+        b.iter(|| {
+            rt.block_on(async {
+                let response = resolver.resolve(black_box(query.clone()), 1234).await;
+                let _ = black_box(response);
+            })
         });
     });
 

@@ -25,12 +25,12 @@ fn test_parse_dns_header() {
     let packet = DNSPacket::parse(GOOGLE_COM_QUERY).expect("Failed to parse packet");
 
     assert_eq!(packet.header.id, 0x1234);
-    assert_eq!(packet.header.qr, false); // Query
+    assert!(!packet.header.qr); // Query
     assert_eq!(packet.header.opcode, 0); // Standard query
-    assert_eq!(packet.header.aa, false);
-    assert_eq!(packet.header.tc, false);
-    assert_eq!(packet.header.rd, true); // Recursion desired
-    assert_eq!(packet.header.ra, false);
+    assert!(!packet.header.aa);
+    assert!(!packet.header.tc);
+    assert!(packet.header.rd); // Recursion desired
+    assert!(!packet.header.ra);
     assert_eq!(packet.header.z, 0);
     assert_eq!(packet.header.rcode, 0);
     assert_eq!(packet.header.qdcount, 1);
@@ -57,8 +57,8 @@ fn test_generate_response() {
     let response = packet.generate_response();
 
     // Response should have QR bit set and RA bit set
-    assert_eq!(response.header.qr, true);
-    assert_eq!(response.header.ra, true);
+    assert!(response.header.qr);
+    assert!(response.header.ra);
 
     // Everything else should be copied
     assert_eq!(response.header.id, packet.header.id);

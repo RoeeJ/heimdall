@@ -1,6 +1,5 @@
 use clap::{Arg, Command};
 use serde::{Deserialize, Serialize};
-use serde_json;
 use std::collections::HashMap;
 use std::fs;
 use std::process;
@@ -76,7 +75,7 @@ fn main() {
     println!("==========================================");
     println!("Iterations per benchmark: {}", iterations);
     println!("Max allowed regression: {:.1}%", max_regression);
-    println!("");
+    println!();
 
     // Run all benchmarks
     let current_results = run_benchmarks(iterations);
@@ -285,7 +284,10 @@ fn benchmark_simd_operations(iterations: usize) -> HashMap<String, BenchmarkResu
         },
     );
 
-    println!("✅ ({:.0}ns compression, {:.0}ns pattern)", compression_ns, pattern_ns);
+    println!(
+        "✅ ({:.0}ns compression, {:.0}ns pattern)",
+        compression_ns, pattern_ns
+    );
     results
 }
 
@@ -397,8 +399,7 @@ fn create_test_packet() -> Vec<u8> {
         0x00, 0x00, // Authority: 0
         0x00, 0x00, // Additional: 0
         // Question: example.com
-        0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e',
-        0x03, b'c', b'o', b'm',
+        0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm',
         0x00, // End of name
         0x00, 0x01, // Type: A
         0x00, 0x01, // Class: IN
@@ -455,7 +456,7 @@ fn analyze_performance(
     println!("======================");
     println!("Baseline version: {}", baseline.version);
     println!("Current version: {}", env!("CARGO_PKG_VERSION"));
-    println!("");
+    println!();
 
     let mut regressions = Vec::new();
     let mut improvements = Vec::new();
@@ -480,29 +481,36 @@ fn analyze_performance(
 
             println!(
                 "{} {}: {:.1}ns -> {:.1}ns ({:+.1}%)",
-                status, name, baseline_result.mean_time_ns, current_result.mean_time_ns, change_percent
+                status,
+                name,
+                baseline_result.mean_time_ns,
+                current_result.mean_time_ns,
+                change_percent
             );
         } else {
             println!("🆕 NEW {}: {:.1}ns", name, current_result.mean_time_ns);
         }
     }
 
-    println!("");
+    println!();
     println!("📈 Summary:");
     println!("  🎉 Improvements: {}", improvements.len());
     println!("  ⚖️  Stable: {}", stable.len());
     println!("  ⚠️  Regressions: {}", regressions.len());
 
     if !regressions.is_empty() {
-        println!("");
+        println!();
         println!("❌ PERFORMANCE REGRESSION DETECTED!");
-        println!("The following benchmarks have regressed beyond {:.1}%:", max_regression);
+        println!(
+            "The following benchmarks have regressed beyond {:.1}%:",
+            max_regression
+        );
         for (name, regression) in &regressions {
             println!("  • {}: {:.1}% slower", name, regression);
         }
         process::exit(1);
     } else {
-        println!("");
+        println!();
         println!("✅ PERFORMANCE REGRESSION TEST PASSED!");
         println!("All benchmarks are within acceptable bounds.");
     }

@@ -18,26 +18,26 @@ use resolver::DnsResolver;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration first to get runtime settings
     let config = DnsConfig::from_env();
-    
+
     // Build custom Tokio runtime with configurable thread pool
     let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();
-    
+
     // Configure worker threads if specified
     if config.worker_threads > 0 {
         runtime_builder.worker_threads(config.worker_threads);
     }
-    
+
     // Configure blocking threads if specified
     if config.blocking_threads > 0 {
         runtime_builder.max_blocking_threads(config.blocking_threads);
     }
-    
+
     // Enable all features and build runtime
     let runtime = runtime_builder
         .enable_all()
         .thread_name("heimdall-worker")
         .build()?;
-    
+
     // Run the async main function on our custom runtime
     runtime.block_on(async_main(config))
 }
@@ -59,7 +59,11 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
     );
     info!(
         "Runtime configuration: worker_threads={}, blocking_threads={}, max_concurrent_queries={}",
-        if config.worker_threads > 0 { config.worker_threads.to_string() } else { "default".to_string() },
+        if config.worker_threads > 0 {
+            config.worker_threads.to_string()
+        } else {
+            "default".to_string()
+        },
         config.blocking_threads,
         config.max_concurrent_queries
     );
@@ -71,8 +75,16 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
     let query_semaphore = Arc::new(Semaphore::new(config.max_concurrent_queries));
 
     // Start UDP and TCP servers concurrently
-    let udp_task = tokio::spawn(run_udp_server(config.clone(), resolver.clone(), query_semaphore.clone()));
-    let tcp_task = tokio::spawn(run_tcp_server(config.clone(), resolver.clone(), query_semaphore.clone()));
+    let udp_task = tokio::spawn(run_udp_server(
+        config.clone(),
+        resolver.clone(),
+        query_semaphore.clone(),
+    ));
+    let tcp_task = tokio::spawn(run_tcp_server(
+        config.clone(),
+        resolver.clone(),
+        query_semaphore.clone(),
+    ));
 
     info!("DNS server listening on {} (UDP and TCP)", config.bind_addr);
 
@@ -108,7 +120,10 @@ async fn run_udp_server(
         let permit = match query_semaphore.clone().try_acquire_owned() {
             Ok(permit) => permit,
             Err(_) => {
-                warn!("Max concurrent queries reached, dropping query from {}", src_addr);
+                warn!(
+                    "Max concurrent queries reached, dropping query from {}",
+                    src_addr
+                );
                 continue;
             }
         };
@@ -166,7 +181,8 @@ async fn run_tcp_server(
 
         // Handle each TCP connection in a separate task
         tokio::spawn(async move {
-            if let Err(e) = handle_tcp_connection(stream, src_addr, resolver, query_semaphore).await {
+            if let Err(e) = handle_tcp_connection(stream, src_addr, resolver, query_semaphore).await
+            {
                 warn!("TCP connection error from {}: {:?}", src_addr, e);
             }
         });
@@ -203,7 +219,10 @@ async fn handle_tcp_connection(
         let _permit = match query_semaphore.clone().try_acquire_owned() {
             Ok(permit) => permit,
             Err(_) => {
-                warn!("Max concurrent queries reached, closing TCP connection from {}", src_addr);
+                warn!(
+                    "Max concurrent queries reached, closing TCP connection from {}",
+                    src_addr
+                );
                 break;
             }
         };

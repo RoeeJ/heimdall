@@ -110,6 +110,7 @@ impl ConnectionPool {
 #[derive(Debug)]
 pub struct DnsResolver {
     config: DnsConfig,
+    #[allow(dead_code)]
     client_socket: UdpSocket,
     cache: Option<DnsCache>,
     /// In-flight queries for deduplication (query_key -> broadcast channel)
@@ -252,7 +253,11 @@ impl DnsResolver {
         };
 
         // Try to insert our in-flight query
-        if let None = self.in_flight_queries.insert(cache_key.clone(), in_flight) {
+        if self
+            .in_flight_queries
+            .insert(cache_key.clone(), in_flight)
+            .is_none()
+        {
             // We're the first to request this query, so we need to resolve it
             debug!(
                 "Query deduplication: initiating query for {} {:?}",
@@ -1028,10 +1033,11 @@ impl DnsResolver {
         ns_query.header.qdcount = 1;
 
         // Add question for A record
-        let mut question = crate::dns::question::DNSQuestion::default();
-        question.labels = ns_name.split('.').map(|s| s.to_string()).collect();
-        question.qtype = crate::dns::enums::DNSResourceType::A;
-        question.qclass = crate::dns::enums::DNSResourceClass::IN;
+        let question = crate::dns::question::DNSQuestion {
+            labels: ns_name.split('.').map(|s| s.to_string()).collect(),
+            qtype: crate::dns::enums::DNSResourceType::A,
+            qclass: crate::dns::enums::DNSResourceClass::IN,
+        };
         ns_query.questions.push(question);
 
         // Resolve using upstream servers
@@ -1039,17 +1045,17 @@ impl DnsResolver {
             Ok(response) => {
                 // Extract first A record
                 for answer in &response.answers {
-                    if answer.rtype == crate::dns::enums::DNSResourceType::A && answer.rdlength == 4
+                    if answer.rtype == crate::dns::enums::DNSResourceType::A
+                        && answer.rdlength == 4
+                        && answer.rdata.len() >= 4
                     {
-                        if answer.rdata.len() >= 4 {
-                            let ip = std::net::Ipv4Addr::new(
-                                answer.rdata[0],
-                                answer.rdata[1],
-                                answer.rdata[2],
-                                answer.rdata[3],
-                            );
-                            return Ok(SocketAddr::new(ip.into(), 53));
-                        }
+                        let ip = std::net::Ipv4Addr::new(
+                            answer.rdata[0],
+                            answer.rdata[1],
+                            answer.rdata[2],
+                            answer.rdata[3],
+                        );
+                        return Ok(SocketAddr::new(ip.into(), 53));
                     }
                 }
                 Err(DnsError::Parse(format!(

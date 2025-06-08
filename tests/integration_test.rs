@@ -8,6 +8,7 @@ async fn test_dns_server_responds_to_query() {
     // This test requires the server to be running
     // It can be skipped in CI by checking for an environment variable
     if std::env::var("SKIP_INTEGRATION_TESTS").is_ok() {
+        println!("Integration test skipped (SKIP_INTEGRATION_TESTS set)");
         return;
     }
 
@@ -43,31 +44,53 @@ async fn test_dns_server_responds_to_query() {
     // Wait for response with timeout
     let mut response_buf = vec![0u8; 512];
     let result = timeout(
-        Duration::from_secs(1),
+        Duration::from_secs(5), // Increased timeout for CI environment
         client_socket.recv_from(&mut response_buf),
     )
     .await;
 
     match result {
         Ok(Ok((len, from))) => {
+            println!("Received {} bytes from {}", len, from);
             assert_eq!(from, server_addr);
-            assert!(len >= 12); // At least header size
+            assert!(len >= 12, "Response too short: {} bytes", len);
 
             // Check that it's a response (QR bit set)
-            assert_eq!(response_buf[2] & 0x80, 0x80);
+            let qr_bit = response_buf[2] & 0x80;
+            assert_eq!(
+                qr_bit, 0x80,
+                "QR bit not set in response: got {:02x}",
+                response_buf[2]
+            );
 
             // Check transaction ID matches
-            assert_eq!(response_buf[0], 0x12);
-            assert_eq!(response_buf[1], 0x34);
+            assert_eq!(
+                response_buf[0], 0x12,
+                "Transaction ID mismatch: expected 0x12, got 0x{:02x}",
+                response_buf[0]
+            );
+            assert_eq!(
+                response_buf[1], 0x34,
+                "Transaction ID mismatch: expected 0x34, got 0x{:02x}",
+                response_buf[1]
+            );
+
+            println!("Integration test passed: DNS server responded correctly");
         }
         Ok(Err(e)) => panic!("Failed to receive response: {}", e),
-        Err(_) => panic!("Timeout waiting for DNS response"),
+        Err(_) => {
+            panic!(
+                "Timeout waiting for DNS response from {}. Server may not be running or may be overloaded.",
+                server_addr
+            );
+        }
     }
 }
 
 #[tokio::test]
 async fn test_dns_server_handles_invalid_packet() {
     if std::env::var("SKIP_INTEGRATION_TESTS").is_ok() {
+        println!("Integration test skipped (SKIP_INTEGRATION_TESTS set)");
         return;
     }
 

@@ -7,7 +7,6 @@ use heimdall::dns::{DNSPacket, DNSPacketRef, PacketBufferPool};
 use heimdall::resolver::DnsResolver;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio;
 
 fn create_test_packet() -> Vec<u8> {
     vec![
@@ -214,10 +213,11 @@ async fn test_query_deduplication() {
     query.header.rd = true;
     query.header.qdcount = 1;
 
-    let mut question = DNSQuestion::default();
-    question.labels = vec!["example".to_string(), "com".to_string()];
-    question.qtype = DNSResourceType::A;
-    question.qclass = DNSResourceClass::IN;
+    let question = DNSQuestion {
+        labels: vec!["example".to_string(), "com".to_string()],
+        qtype: DNSResourceType::A,
+        qclass: DNSResourceClass::IN,
+    };
     query.questions.push(question);
 
     // Launch multiple identical queries concurrently
@@ -266,25 +266,30 @@ async fn test_parallel_vs_sequential_queries() {
         "1.1.1.1:53".parse().unwrap(),
     ];
 
-    let mut parallel_config = DnsConfig::default();
-    parallel_config.upstream_servers = servers.clone();
-    parallel_config.enable_parallel_queries = true;
-    parallel_config.enable_caching = false;
+    let parallel_config = DnsConfig {
+        upstream_servers: servers.clone(),
+        enable_parallel_queries: true,
+        enable_caching: false,
+        ..Default::default()
+    };
 
-    let mut sequential_config = DnsConfig::default();
-    sequential_config.upstream_servers = servers;
-    sequential_config.enable_parallel_queries = false;
-    sequential_config.enable_caching = false;
+    let sequential_config = DnsConfig {
+        upstream_servers: servers,
+        enable_parallel_queries: false,
+        enable_caching: false,
+        ..Default::default()
+    };
 
     let mut query = DNSPacket::default();
     query.header.id = 1234;
     query.header.rd = true;
     query.header.qdcount = 1;
 
-    let mut question = DNSQuestion::default();
-    question.labels = vec!["google".to_string(), "com".to_string()];
-    question.qtype = DNSResourceType::A;
-    question.qclass = DNSResourceClass::IN;
+    let question = DNSQuestion {
+        labels: vec!["google".to_string(), "com".to_string()],
+        qtype: DNSResourceType::A,
+        qclass: DNSResourceClass::IN,
+    };
     query.questions.push(question);
 
     // Test parallel resolution
@@ -318,14 +323,15 @@ async fn test_connection_pooling_stats() {
         query.header.rd = true;
         query.header.qdcount = 1;
 
-        let mut question = DNSQuestion::default();
-        question.labels = vec![
-            format!("test{}", i),
-            "example".to_string(),
-            "com".to_string(),
-        ];
-        question.qtype = DNSResourceType::A;
-        question.qclass = DNSResourceClass::IN;
+        let question = DNSQuestion {
+            labels: vec![
+                format!("test{}", i),
+                "example".to_string(),
+                "com".to_string(),
+            ],
+            qtype: DNSResourceType::A,
+            qclass: DNSResourceClass::IN,
+        };
         query.questions.push(question);
 
         let _ = resolver.resolve(query, 5000 + i).await;
