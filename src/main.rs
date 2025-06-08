@@ -1,9 +1,9 @@
 use dns::DNSPacket;
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tracing::{debug, error, info, trace, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use std::sync::Arc;
 
 pub mod cache;
 pub mod config;
@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start UDP and TCP servers concurrently
     let udp_task = tokio::spawn(run_udp_server(config.clone(), resolver.clone()));
     let tcp_task = tokio::spawn(run_tcp_server(config.clone(), resolver.clone()));
-    
+
     info!("DNS server listening on {} (UDP and TCP)", config.bind_addr);
 
     // Wait for either server to exit (which shouldn't happen)
@@ -80,13 +80,14 @@ async fn run_udp_server(
                         if response_data.len() > max_udp_size as usize {
                             warn!(
                                 "Response too large for UDP ({}>{} bytes), client should retry with TCP",
-                                response_data.len(), max_udp_size
+                                response_data.len(),
+                                max_udp_size
                             );
                             // TODO: Set TC (truncated) flag in response
                         }
                     }
                 }
-                
+
                 if let Err(e) = sock.send_to(&response_data, src_addr).await {
                     error!("Failed to send UDP response to {}: {:?}", src_addr, e);
                 }
@@ -109,7 +110,7 @@ async fn run_tcp_server(
     loop {
         let (stream, src_addr) = listener.accept().await?;
         let resolver = resolver.clone();
-        
+
         // Handle each TCP connection in a separate task
         tokio::spawn(async move {
             if let Err(e) = handle_tcp_connection(stream, src_addr, resolver).await {
@@ -125,11 +126,11 @@ async fn handle_tcp_connection(
     resolver: Arc<DnsResolver>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut length_buf = [0u8; 2];
-    
+
     loop {
         // Read the 2-byte length prefix
         match stream.read_exact(&mut length_buf).await {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                 // Client closed connection
                 debug!("TCP connection closed by client {}", src_addr);
@@ -137,13 +138,13 @@ async fn handle_tcp_connection(
             }
             Err(e) => return Err(e.into()),
         }
-        
+
         let message_length = u16::from_be_bytes(length_buf) as usize;
-        
+
         // Read the DNS message
         let mut message_buf = vec![0; message_length];
         stream.read_exact(&mut message_buf).await?;
-        
+
         // Parse and handle the DNS query
         match handle_dns_query(&message_buf, &resolver).await {
             Ok(response_data) => {
@@ -160,7 +161,7 @@ async fn handle_tcp_connection(
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -170,10 +171,11 @@ async fn handle_dns_query(
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     // Parse the DNS packet
     let packet = DNSPacket::parse(buf)?;
-    
+
     debug!(
         "Received DNS query: id={}, questions={}, edns={}",
-        packet.header.id, packet.header.qdcount,
+        packet.header.id,
+        packet.header.qdcount,
         if packet.supports_edns() { "yes" } else { "no" }
     );
     trace!("Full packet header: {:?}", packet.header);

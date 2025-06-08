@@ -6,7 +6,7 @@ use heimdall::dns::question::DNSQuestion;
 #[test]
 fn test_question_read_write_roundtrip() {
     let original = DNSQuestion {
-        labels: vec!["example".to_string(), "com".to_string(), "".to_string()],
+        labels: vec!["example".to_string(), "com".to_string()],
         qtype: DNSResourceType::A,
         qclass: DNSResourceClass::IN,
     };
@@ -57,12 +57,11 @@ fn test_question_with_subdomain() {
     let mut parsed = DNSQuestion::default();
     parsed.read(&mut reader).expect("Failed to read question");
 
-    assert_eq!(parsed.labels.len(), 5);
+    assert_eq!(parsed.labels.len(), 4);
     assert_eq!(parsed.labels[0], "mail");
     assert_eq!(parsed.labels[1], "subdomain");
     assert_eq!(parsed.labels[2], "example");
     assert_eq!(parsed.labels[3], "org");
-    assert_eq!(parsed.labels[4], "");
     assert_eq!(parsed.qtype, DNSResourceType::MX);
 }
 

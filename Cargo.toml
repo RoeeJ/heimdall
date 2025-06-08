@@ -16,6 +16,7 @@ parking_lot = "0.12"
 thiserror = "2.0"
 clap = "4.0"
 sysinfo = "0.30"
+futures = "0.3"
 
 [dev-dependencies]
 criterion = "0.5"

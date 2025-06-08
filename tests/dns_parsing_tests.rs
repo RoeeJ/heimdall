@@ -46,7 +46,7 @@ fn test_parse_dns_question() {
     assert_eq!(packet.questions.len(), 1);
 
     let question = &packet.questions[0];
-    assert_eq!(question.labels, vec!["google", "com", ""]);
+    assert_eq!(question.labels, vec!["google", "com"]);
     assert_eq!(question.qtype, DNSResourceType::A);
     assert_eq!(question.qclass, DNSResourceClass::IN);
 }
@@ -114,13 +114,10 @@ fn test_multiple_questions() {
     assert_eq!(packet.header.qdcount, 2);
     assert_eq!(packet.questions.len(), 2);
 
-    assert_eq!(packet.questions[0].labels, vec!["www", "google", "com", ""]);
+    assert_eq!(packet.questions[0].labels, vec!["www", "google", "com"]);
     assert_eq!(packet.questions[0].qtype, DNSResourceType::A);
 
-    assert_eq!(
-        packet.questions[1].labels,
-        vec!["mail", "google", "com", ""]
-    );
+    assert_eq!(packet.questions[1].labels, vec!["mail", "google", "com"]);
     assert_eq!(packet.questions[1].qtype, DNSResourceType::MX);
 }
 

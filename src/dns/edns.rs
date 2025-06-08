@@ -150,11 +150,7 @@ impl EdnsOpt {
     /// - TTL: Extended RCODE (8 bits) | Version (8 bits) | Flags (16 bits)
     /// - RDLENGTH: Length of option data
     /// - RDATA: Option data
-    pub fn parse_from_resource(
-        class: u16,
-        ttl: u32, 
-        rdata: &[u8]
-    ) -> Result<Self, ParseError> {
+    pub fn parse_from_resource(class: u16, ttl: u32, rdata: &[u8]) -> Result<Self, ParseError> {
         let udp_payload_size = class;
         let extended_rcode = ((ttl >> 24) & 0xFF) as u8;
         let version = ((ttl >> 16) & 0xFF) as u8;
@@ -198,9 +194,9 @@ impl EdnsOpt {
     /// Serialize EDNS OPT record to resource record format
     pub fn to_resource_format(&self) -> (u16, u32, Vec<u8>) {
         let class = self.udp_payload_size;
-        let ttl = ((self.extended_rcode as u32) << 24) 
-                | ((self.version as u32) << 16) 
-                | (self.flags as u32);
+        let ttl = ((self.extended_rcode as u32) << 24)
+            | ((self.version as u32) << 16)
+            | (self.flags as u32);
 
         // Serialize options to RDATA
         let mut rdata = Vec::new();
@@ -222,11 +218,11 @@ impl EdnsOpt {
     /// Get a human-readable description of EDNS flags
     pub fn flags_description(&self) -> String {
         let mut flags = Vec::new();
-        
+
         if self.do_flag() {
             flags.push("DO".to_string());
         }
-        
+
         if flags.is_empty() {
             "none".to_string()
         } else {
@@ -271,11 +267,11 @@ mod tests {
     fn test_do_flag() {
         let mut opt = EdnsOpt::new();
         assert!(!opt.do_flag());
-        
+
         opt.set_do_flag(true);
         assert!(opt.do_flag());
         assert_eq!(opt.flags & 0x8000, 0x8000);
-        
+
         opt.set_do_flag(false);
         assert!(!opt.do_flag());
         assert_eq!(opt.flags & 0x8000, 0);
@@ -288,7 +284,7 @@ mod tests {
         opt.add_option(3, vec![0x01, 0x02, 0x03]); // NSID option
 
         let (class, ttl, rdata) = opt.to_resource_format();
-        
+
         assert_eq!(class, 1232);
         assert_eq!(ttl & 0xFFFF, 0x8000); // DO flag set
         assert!(!rdata.is_empty());
@@ -309,13 +305,13 @@ mod tests {
         opt.add_option(10, vec![5, 6]); // Cookie
 
         assert_eq!(opt.options.len(), 2);
-        
+
         let client_subnet = opt.find_option(8).unwrap();
         assert_eq!(client_subnet.data, vec![1, 2, 3, 4]);
-        
+
         let cookie = opt.find_option(10).unwrap();
         assert_eq!(cookie.data, vec![5, 6]);
-        
+
         assert!(opt.find_option(99).is_none());
     }
 }

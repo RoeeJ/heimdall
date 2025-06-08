@@ -6,11 +6,7 @@ use heimdall::dns::{
 };
 
 fn create_query(domain: &str, qtype: DNSResourceType) -> DNSPacket {
-    let labels: Vec<String> = domain
-        .split('.')
-        .map(|s| s.to_string())
-        .chain(std::iter::once("".to_string()))
-        .collect();
+    let labels: Vec<String> = domain.split('.').map(|s| s.to_string()).collect();
 
     DNSPacket {
         header: DNSHeader {
@@ -36,6 +32,7 @@ fn create_query(domain: &str, qtype: DNSResourceType) -> DNSPacket {
         answers: vec![],
         authorities: vec![],
         resources: vec![],
+        edns: None,
     }
 }
 
@@ -165,10 +162,8 @@ fn test_complex_domain_names() {
         let parsed = DNSPacket::parse(&serialized).expect("Should parse complex domain");
 
         // Verify domain name is preserved
-        let original_domain =
-            query.questions[0].labels[..query.questions[0].labels.len() - 1].join(".");
-        let parsed_domain =
-            parsed.questions[0].labels[..parsed.questions[0].labels.len() - 1].join(".");
+        let original_domain = query.questions[0].labels.join(".");
+        let parsed_domain = parsed.questions[0].labels.join(".");
         assert_eq!(
             original_domain, parsed_domain,
             "Domain name should be preserved through serialization"

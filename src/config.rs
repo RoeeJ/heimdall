@@ -32,6 +32,9 @@ pub struct DnsConfig {
 
     /// Default TTL for cached responses
     pub default_ttl: u32,
+
+    /// Whether to enable parallel queries to upstream servers
+    pub enable_parallel_queries: bool,
 }
 
 impl Default for DnsConfig {
@@ -56,6 +59,7 @@ impl Default for DnsConfig {
             enable_caching: true,
             max_cache_size: 10000,
             default_ttl: 300, // 5 minutes
+            enable_parallel_queries: true,
         }
     }
 }
@@ -111,6 +115,10 @@ impl DnsConfig {
             if let Ok(ttl) = default_ttl.parse::<u32>() {
                 config.default_ttl = ttl;
             }
+        }
+
+        if let Ok(enable_parallel) = std::env::var("HEIMDALL_ENABLE_PARALLEL_QUERIES") {
+            config.enable_parallel_queries = enable_parallel.parse().unwrap_or(true);
         }
 
         config

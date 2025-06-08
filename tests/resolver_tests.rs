@@ -25,13 +25,14 @@ fn create_test_query() -> DNSPacket {
             arcount: 0,
         },
         questions: vec![DNSQuestion {
-            labels: vec!["example".to_string(), "com".to_string(), "".to_string()],
+            labels: vec!["example".to_string(), "com".to_string()],
             qtype: DNSResourceType::A,
             qclass: DNSResourceClass::IN,
         }],
         answers: vec![],
         authorities: vec![],
         resources: vec![],
+        edns: None,
     }
 }
 
