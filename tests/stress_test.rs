@@ -390,7 +390,12 @@ impl DNSStressTester {
                     }
                 } else {
                     // If we can't find the specific process, get system averages
-                    cpu_usage = system.global_cpu_info().cpu_usage();
+                    // Use overall CPU usage (average of all CPUs)
+                    let cpus = system.cpus();
+                    if !cpus.is_empty() {
+                        cpu_usage =
+                            cpus.iter().map(|cpu| cpu.cpu_usage()).sum::<f32>() / cpus.len() as f32;
+                    }
                     memory_usage_mb =
                         (system.total_memory() - system.available_memory()) / 1024 / 1024;
                 }
@@ -419,17 +424,32 @@ impl DNSStressTester {
 
     /// Find the Heimdall DNS server process
     fn find_heimdall_process(system: &mut System) -> Option<Pid> {
-        system.refresh_processes();
+        system.refresh_all();
 
         for (pid, process) in system.processes() {
-            let name = process.name();
-            let cmd = process.cmd().join(" ");
+            // Convert process name to string
+            let name = process.name().to_string_lossy();
 
-            // Look for heimdall process or cargo run with heimdall
-            if name.contains("heimdall")
-                || cmd.contains("heimdall")
-                || (name.contains("cargo") && cmd.contains("run"))
-            {
+            // Get command line
+            let cmd: String = process
+                .cmd()
+                .iter()
+                .map(|arg| arg.to_string_lossy().to_string())
+                .collect::<Vec<String>>()
+                .join(" ");
+
+            // Check for heimdall in process name
+            if name.contains("heimdall") || name.contains("Heimdall") {
+                return Some(*pid);
+            }
+
+            // Check for heimdall in command line
+            if cmd.contains("heimdall") || cmd.contains("Heimdall") {
+                return Some(*pid);
+            }
+
+            // Check for cargo run
+            if (name.contains("cargo") || name.contains("Cargo")) && cmd.contains("run") {
                 return Some(*pid);
             }
         }
