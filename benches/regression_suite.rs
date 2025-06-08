@@ -1,4 +1,4 @@
-use criterion::{Criterion, black_box};
+use criterion::Criterion;
 use heimdall::cache::{CacheKey, DnsCache};
 use heimdall::dns::enums::{DNSResourceClass, DNSResourceType};
 use heimdall::dns::simd::SimdParser;
@@ -6,6 +6,7 @@ use heimdall::dns::{DNSPacket, DNSPacketRef, PacketBufferPool};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
+use std::hint::black_box;
 
 /// Baseline performance metrics for regression testing
 #[derive(Debug, Clone, Serialize, Deserialize)]

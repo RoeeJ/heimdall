@@ -1,8 +1,9 @@
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use heimdall::cache::{CacheKey, DnsCache};
 use heimdall::dns::enums::{DNSResourceClass, DNSResourceType};
 use heimdall::dns::simd::SimdParser;
 use heimdall::dns::{DNSPacket, DNSPacketRef, PacketBufferPool};
+use std::hint::black_box;
 use std::time::Duration;
 
 fn create_test_packet() -> Vec<u8> {
