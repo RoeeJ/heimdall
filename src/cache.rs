@@ -4,15 +4,25 @@ use crate::dns::{
 };
 use dashmap::DashMap;
 use parking_lot::Mutex;
+use std::collections::{HashMap, hash_map::DefaultHasher};
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tracing::{debug, trace};
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CacheKey {
     pub domain: String,
     pub record_type: DNSResourceType,
     pub record_class: DNSResourceClass,
+    /// Pre-computed hash for faster lookups
+    hash: u64,
+}
+
+impl Hash for CacheKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash);
+    }
 }
 
 impl CacheKey {
@@ -21,23 +31,57 @@ impl CacheKey {
         record_type: DNSResourceType,
         record_class: DNSResourceClass,
     ) -> Self {
+        let normalized_domain = domain.to_lowercase(); // DNS is case-insensitive
+
+        // Pre-compute hash for faster lookups
+        let mut hasher = DefaultHasher::new();
+        normalized_domain.hash(&mut hasher);
+        record_type.hash(&mut hasher);
+        record_class.hash(&mut hasher);
+        let hash = hasher.finish();
+
         Self {
-            domain: domain.to_lowercase(), // DNS is case-insensitive
+            domain: normalized_domain,
             record_type,
             record_class,
+            hash,
         }
     }
 
     pub fn from_question(question: &crate::dns::question::DNSQuestion) -> Self {
-        let domain = question
-            .labels
-            .iter()
-            .filter(|l| !l.is_empty())
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(".");
+        // Optimized domain construction - avoid intermediate vector allocation
+        let mut domain = String::with_capacity(256); // Pre-allocate reasonable capacity
+        let mut first = true;
+
+        for label in question.labels.iter() {
+            if !label.is_empty() {
+                if !first {
+                    domain.push('.');
+                }
+                domain.push_str(label);
+                first = false;
+            }
+        }
 
         Self::new(domain, question.qtype, question.qclass)
+    }
+
+    /// Fast domain comparison for prefix matching
+    pub fn domain_matches_suffix(&self, suffix: &str) -> bool {
+        if self.domain.len() < suffix.len() {
+            return false;
+        }
+
+        let suffix_lower = suffix.to_lowercase();
+
+        // Check if domain ends with suffix
+        if self.domain.ends_with(&suffix_lower) {
+            // Ensure it's a proper domain boundary (not partial match)
+            let prefix_len = self.domain.len() - suffix_lower.len();
+            prefix_len == 0 || self.domain.chars().nth(prefix_len - 1) == Some('.')
+        } else {
+            false
+        }
     }
 }
 
@@ -99,6 +143,68 @@ impl CacheEntry {
     }
 }
 
+/// Simple domain trie for efficient domain prefix matching
+#[derive(Debug)]
+struct DomainTrie {
+    children: HashMap<String, DomainTrie>,
+    is_terminal: bool,
+    cache_keys: Vec<CacheKey>,
+}
+
+impl DomainTrie {
+    fn new() -> Self {
+        Self {
+            children: HashMap::new(),
+            is_terminal: false,
+            cache_keys: Vec::new(),
+        }
+    }
+
+    /// Insert a domain into the trie (in reverse order for efficient suffix matching)
+    fn insert(&mut self, domain: &str, cache_key: CacheKey) {
+        let parts: Vec<&str> = domain.split('.').rev().collect(); // Reverse for suffix matching
+        let mut current = self;
+
+        for part in parts {
+            current = current
+                .children
+                .entry(part.to_string())
+                .or_insert_with(DomainTrie::new);
+        }
+
+        current.is_terminal = true;
+        current.cache_keys.push(cache_key);
+    }
+
+    /// Find all cache keys that match a domain suffix
+    fn find_matching_keys(&self, domain: &str) -> Vec<&CacheKey> {
+        let parts: Vec<&str> = domain.split('.').rev().collect();
+        let mut current = self;
+        let mut results = Vec::new();
+
+        // Traverse the trie following the domain path
+        for part in parts {
+            if let Some(child) = current.children.get(part) {
+                current = child;
+                // Collect all cache keys at this level
+                results.extend(&current.cache_keys);
+            } else {
+                break;
+            }
+        }
+
+        results
+    }
+
+    /// Remove expired cache keys from the trie
+    fn cleanup_expired(&mut self) {
+        self.cache_keys.clear(); // Will be repopulated as cache is rebuilt
+        for child in self.children.values_mut() {
+            child.cleanup_expired();
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct CacheStats {
     pub hits: AtomicU64,
@@ -153,6 +259,7 @@ pub struct DnsCache {
     negative_ttl: u32,
     stats: CacheStats,
     insertion_order: Mutex<Vec<CacheKey>>, // For LRU eviction
+    domain_trie: Mutex<DomainTrie>,        // For efficient domain lookups
 }
 
 impl DnsCache {
@@ -163,6 +270,7 @@ impl DnsCache {
             negative_ttl,
             stats: CacheStats::new(),
             insertion_order: Mutex::new(Vec::new()),
+            domain_trie: Mutex::new(DomainTrie::new()),
         }
     }
 
@@ -219,6 +327,12 @@ impl DnsCache {
             let mut order = self.insertion_order.lock();
             order.retain(|k| k != &key); // Remove if already present
             order.push(key.clone());
+        }
+
+        // Update domain trie for efficient lookups
+        {
+            let mut trie = self.domain_trie.lock();
+            trie.insert(&key.domain, key.clone());
         }
 
         debug!(
@@ -320,7 +434,27 @@ impl DnsCache {
         let count = self.cache.len();
         self.cache.clear();
         self.insertion_order.lock().clear();
+        self.domain_trie.lock().cleanup_expired();
         debug!("Cleared {} cache entries", count);
+    }
+
+    /// Find related cache entries by domain suffix (for wildcard matching)
+    pub fn find_related_entries(&self, domain: &str) -> Vec<CacheKey> {
+        let trie = self.domain_trie.lock();
+        let matching_keys = trie.find_matching_keys(domain);
+
+        // Filter out expired entries
+        matching_keys
+            .into_iter()
+            .filter(|key| {
+                if let Some(entry) = self.cache.get(key) {
+                    !entry.is_expired()
+                } else {
+                    false
+                }
+            })
+            .cloned()
+            .collect()
     }
 
     /// Get current cache size

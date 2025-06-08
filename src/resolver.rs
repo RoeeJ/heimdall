@@ -2,16 +2,16 @@ use crate::cache::{CacheKey, DnsCache};
 use crate::config::DnsConfig;
 use crate::dns::DNSPacket;
 use crate::error::{DnsError, Result};
+use dashmap::DashMap;
+use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
-use tokio::net::{TcpStream, UdpSocket};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpStream, UdpSocket};
+use tokio::sync::{Mutex, broadcast};
 use tokio::time::timeout;
-use tokio::sync::{broadcast, Mutex};
-use dashmap::DashMap;
-use std::sync::Arc;
-use std::collections::HashMap;
 use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -60,7 +60,7 @@ impl ConnectionPool {
     /// Get a UDP socket for the given server, reusing existing connections when possible
     async fn get_udp_socket(&self, server_addr: SocketAddr) -> Result<UdpSocket> {
         let mut pool = self.udp_sockets.lock().await;
-        
+
         // Try to get an existing socket for this server
         if let Some(sockets) = pool.get_mut(&server_addr) {
             if let Some(socket) = sockets.pop() {
@@ -71,18 +71,23 @@ impl ConnectionPool {
 
         // No available socket, create a new one
         debug!("Creating new UDP socket for {}", server_addr);
-        let socket = UdpSocket::bind("0.0.0.0:0").await.map_err(|e| DnsError::Io(e.to_string()))?;
-        socket.connect(server_addr).await.map_err(|e| DnsError::Io(e.to_string()))?;
-        
+        let socket = UdpSocket::bind("0.0.0.0:0")
+            .await
+            .map_err(|e| DnsError::Io(e.to_string()))?;
+        socket
+            .connect(server_addr)
+            .await
+            .map_err(|e| DnsError::Io(e.to_string()))?;
+
         Ok(socket)
     }
 
     /// Return a UDP socket to the pool for reuse
     async fn return_udp_socket(&self, server_addr: SocketAddr, socket: UdpSocket) {
         let mut pool = self.udp_sockets.lock().await;
-        
+
         let sockets = pool.entry(server_addr).or_insert_with(Vec::new);
-        
+
         // Only pool the socket if we haven't exceeded the limit
         if sockets.len() < self.max_connections_per_server {
             debug!("Returning UDP socket to pool for {}", server_addr);
@@ -96,7 +101,9 @@ impl ConnectionPool {
     /// Get pool statistics for monitoring
     async fn stats(&self) -> HashMap<SocketAddr, usize> {
         let pool = self.udp_sockets.lock().await;
-        pool.iter().map(|(&addr, sockets)| (addr, sockets.len())).collect()
+        pool.iter()
+            .map(|(&addr, sockets)| (addr, sockets.len()))
+            .collect()
     }
 }
 
@@ -114,7 +121,9 @@ pub struct DnsResolver {
 impl DnsResolver {
     pub async fn new(config: DnsConfig) -> Result<Self> {
         // Bind to a random port for upstream queries
-        let client_socket = UdpSocket::bind("0.0.0.0:0").await.map_err(|e| DnsError::Io(e.to_string()))?;
+        let client_socket = UdpSocket::bind("0.0.0.0:0")
+            .await
+            .map_err(|e| DnsError::Io(e.to_string()))?;
 
         // Initialize cache if enabled
         let cache = if config.enable_caching {
@@ -163,19 +172,21 @@ impl DnsResolver {
                 // Check if this query is already in-flight (query deduplication)
                 if let Some(in_flight) = self.in_flight_queries.get(&cache_key) {
                     // Increment waiting count for metrics
-                    in_flight.waiting_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    
+                    in_flight
+                        .waiting_count
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
                     debug!(
                         "Query deduplication: joining in-flight query for {} {:?}",
                         cache_key.domain, cache_key.record_type
                     );
-                    
+
                     // Subscribe to the broadcast channel to get the result
                     let mut receiver = in_flight.sender.subscribe();
-                    
+
                     // Drop the reference to avoid holding the lock
                     drop(in_flight);
-                    
+
                     // Wait for the result
                     match receiver.recv().await {
                         Ok(result) => {
@@ -207,7 +218,8 @@ impl DnsResolver {
         // If we reach here, it's not a cache hit and not in-flight, so we need to resolve
         if !query.questions.is_empty() {
             let cache_key = CacheKey::from_question(&query.questions[0]);
-            self.resolve_with_deduplication(query, original_id, cache_key).await
+            self.resolve_with_deduplication(query, original_id, cache_key)
+                .await
         } else {
             // No questions, resolve directly without deduplication
             let query_mode = QueryMode::from_packet(&query);
@@ -233,108 +245,114 @@ impl DnsResolver {
     ) -> Result<DNSPacket> {
         // Create a broadcast channel for this query
         let (sender, _receiver) = broadcast::channel(16); // Buffer for up to 16 waiting clients
-        
+
         let in_flight = InFlightQuery {
             sender: sender.clone(),
             waiting_count: std::sync::atomic::AtomicU32::new(1), // Start with 1 (this request)
         };
 
-        // Try to insert our in-flight query  
+        // Try to insert our in-flight query
         if let None = self.in_flight_queries.insert(cache_key.clone(), in_flight) {
             // We're the first to request this query, so we need to resolve it
-                debug!(
-                    "Query deduplication: initiating query for {} {:?}",
-                    cache_key.domain, cache_key.record_type
-                );
+            debug!(
+                "Query deduplication: initiating query for {} {:?}",
+                cache_key.domain, cache_key.record_type
+            );
 
-                let query_mode = QueryMode::from_packet(&query);
-                let result = match query_mode {
-                    QueryMode::Recursive => self.resolve_recursively(query.clone(), original_id).await,
-                    QueryMode::Iterative => {
-                        if self.config.enable_iterative {
-                            self.resolve_iteratively(query.clone(), original_id).await
-                        } else {
-                            self.resolve_recursively(query.clone(), original_id).await
-                        }
+            let query_mode = QueryMode::from_packet(&query);
+            let result = match query_mode {
+                QueryMode::Recursive => self.resolve_recursively(query.clone(), original_id).await,
+                QueryMode::Iterative => {
+                    if self.config.enable_iterative {
+                        self.resolve_iteratively(query.clone(), original_id).await
+                    } else {
+                        self.resolve_recursively(query.clone(), original_id).await
                     }
-                };
+                }
+            };
 
-                // Remove the in-flight query entry
-                if let Some((_key, in_flight_entry)) = self.in_flight_queries.remove(&cache_key) {
-                    let waiting_count = in_flight_entry.waiting_count.load(std::sync::atomic::Ordering::Relaxed);
-                    if waiting_count > 1 {
-                        debug!(
-                            "Query deduplication: broadcasting result to {} waiting clients for {} {:?}",
-                            waiting_count - 1, cache_key.domain, cache_key.record_type
-                        );
-                    }
-
-                    // Broadcast the result to all waiting clients
-                    let _ = sender.send(result.clone());
+            // Remove the in-flight query entry
+            if let Some((_key, in_flight_entry)) = self.in_flight_queries.remove(&cache_key) {
+                let waiting_count = in_flight_entry
+                    .waiting_count
+                    .load(std::sync::atomic::Ordering::Relaxed);
+                if waiting_count > 1 {
+                    debug!(
+                        "Query deduplication: broadcasting result to {} waiting clients for {} {:?}",
+                        waiting_count - 1,
+                        cache_key.domain,
+                        cache_key.record_type
+                    );
                 }
 
-                // Handle caching for the resolved result
-                self.process_result(&result, &query);
-                
-                result
-        } else {
-                // Another request beat us to it, so we need to wait for the result
-                debug!(
-                    "Query deduplication: joining existing in-flight query for {} {:?}",
-                    cache_key.domain, cache_key.record_type
-                );
+                // Broadcast the result to all waiting clients
+                let _ = sender.send(result.clone());
+            }
 
-                // Increment waiting count for the existing entry
-                if let Some(existing) = self.in_flight_queries.get(&cache_key) {
-                    existing.waiting_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    
-                    let mut receiver = existing.sender.subscribe();
-                    drop(existing); // Drop the reference
-                    
-                    // Wait for the result
-                    match receiver.recv().await {
-                        Ok(result) => {
-                            match result {
-                                Ok(mut response) => {
-                                    response.header.id = original_id;
-                                    Ok(response)
-                                }
-                                Err(e) => Err(e),
-                            }
+            // Handle caching for the resolved result
+            self.process_result(&result, &query);
+
+            result
+        } else {
+            // Another request beat us to it, so we need to wait for the result
+            debug!(
+                "Query deduplication: joining existing in-flight query for {} {:?}",
+                cache_key.domain, cache_key.record_type
+            );
+
+            // Increment waiting count for the existing entry
+            if let Some(existing) = self.in_flight_queries.get(&cache_key) {
+                existing
+                    .waiting_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+                let mut receiver = existing.sender.subscribe();
+                drop(existing); // Drop the reference
+
+                // Wait for the result
+                match receiver.recv().await {
+                    Ok(result) => match result {
+                        Ok(mut response) => {
+                            response.header.id = original_id;
+                            Ok(response)
                         }
-                        Err(_) => {
-                            // Channel was closed, fall back to normal resolution
-                            debug!(
-                                "Query deduplication: channel closed for {} {:?}, falling back",
-                                cache_key.domain, cache_key.record_type
-                            );
-                            let query_mode = QueryMode::from_packet(&query);
-                            match query_mode {
-                                QueryMode::Recursive => self.resolve_recursively(query, original_id).await,
-                                QueryMode::Iterative => {
-                                    if self.config.enable_iterative {
-                                        self.resolve_iteratively(query, original_id).await
-                                    } else {
-                                        self.resolve_recursively(query, original_id).await
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    // Entry disappeared, fall back to normal resolution
-                    let query_mode = QueryMode::from_packet(&query);
-                    match query_mode {
-                        QueryMode::Recursive => self.resolve_recursively(query, original_id).await,
-                        QueryMode::Iterative => {
-                            if self.config.enable_iterative {
-                                self.resolve_iteratively(query, original_id).await
-                            } else {
+                        Err(e) => Err(e),
+                    },
+                    Err(_) => {
+                        // Channel was closed, fall back to normal resolution
+                        debug!(
+                            "Query deduplication: channel closed for {} {:?}, falling back",
+                            cache_key.domain, cache_key.record_type
+                        );
+                        let query_mode = QueryMode::from_packet(&query);
+                        match query_mode {
+                            QueryMode::Recursive => {
                                 self.resolve_recursively(query, original_id).await
                             }
+                            QueryMode::Iterative => {
+                                if self.config.enable_iterative {
+                                    self.resolve_iteratively(query, original_id).await
+                                } else {
+                                    self.resolve_recursively(query, original_id).await
+                                }
+                            }
                         }
                     }
                 }
+            } else {
+                // Entry disappeared, fall back to normal resolution
+                let query_mode = QueryMode::from_packet(&query);
+                match query_mode {
+                    QueryMode::Recursive => self.resolve_recursively(query, original_id).await,
+                    QueryMode::Iterative => {
+                        if self.config.enable_iterative {
+                            self.resolve_iteratively(query, original_id).await
+                        } else {
+                            self.resolve_recursively(query, original_id).await
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -377,31 +395,127 @@ impl DnsResolver {
             original_id, upstream_id, query.header.qdcount
         );
 
-        // Try each upstream server
+        // Use parallel queries if we have multiple upstream servers
+        if self.config.upstream_servers.len() > 1 && self.config.enable_parallel_queries {
+            match self
+                .resolve_with_parallel_queries(&query, original_id)
+                .await
+            {
+                Ok(response) => return Ok(response),
+                Err(e) => {
+                    warn!(
+                        "Parallel queries failed, falling back to sequential: {:?}",
+                        e
+                    );
+                    // Fall through to sequential resolution
+                }
+            }
+        }
+
+        // Sequential fallback (original behavior)
+        self.resolve_sequentially(&query, original_id).await
+    }
+
+    /// Resolve using parallel queries to multiple upstream servers
+    async fn resolve_with_parallel_queries(
+        &self,
+        query: &DNSPacket,
+        original_id: u16,
+    ) -> Result<DNSPacket> {
+        use futures::future::FutureExt;
+        use tokio::time::timeout;
+
+        debug!(
+            "Starting parallel queries to {} upstream servers",
+            self.config.upstream_servers.len()
+        );
+
+        // Create futures for each upstream server
+        let query_futures: Vec<_> = self
+            .config
+            .upstream_servers
+            .iter()
+            .enumerate()
+            .map(|(idx, &upstream_addr)| {
+                let query = query.clone();
+                async move {
+                    debug!(
+                        "Parallel query {}: starting query to {}",
+                        idx, upstream_addr
+                    );
+                    let start_time = std::time::Instant::now();
+
+                    match self.query_upstream(&query, upstream_addr).await {
+                        Ok(mut response) => {
+                            let elapsed = start_time.elapsed();
+                            debug!(
+                                "Parallel query {}: SUCCESS from {} in {:?}",
+                                idx, upstream_addr, elapsed
+                            );
+
+                            // Restore original query ID
+                            response.header.id = original_id;
+
+                            // Handle EDNS response setup
+                            self.setup_edns_response(&query, &mut response);
+
+                            Ok((response, upstream_addr, elapsed))
+                        }
+                        Err(e) => {
+                            let elapsed = start_time.elapsed();
+                            debug!(
+                                "Parallel query {}: FAILED from {} in {:?}: {:?}",
+                                idx, upstream_addr, elapsed, e
+                            );
+                            Err(e)
+                        }
+                    }
+                }
+                .boxed()
+            })
+            .collect();
+
+        // Race all queries with a timeout
+        let parallel_timeout =
+            std::cmp::min(self.config.upstream_timeout, Duration::from_millis(2000));
+
+        match timeout(parallel_timeout, futures::future::select_ok(query_futures)).await {
+            Ok(Ok(((response, upstream_addr, elapsed), _remaining_futures))) => {
+                info!(
+                    "Parallel query SUCCESS: {} responded in {:?} (faster than others)",
+                    upstream_addr, elapsed
+                );
+                Ok(response)
+            }
+            Ok(Err(e)) => {
+                warn!("All parallel queries failed: {:?}", e);
+                Err(e)
+            }
+            Err(_) => {
+                warn!(
+                    "All parallel queries timed out after {:?}",
+                    parallel_timeout
+                );
+                Err(DnsError::Parse(
+                    "All parallel queries timed out".to_string(),
+                ))
+            }
+        }
+    }
+
+    /// Sequential resolution (original behavior)
+    async fn resolve_sequentially(&self, query: &DNSPacket, original_id: u16) -> Result<DNSPacket> {
         let mut last_error = None;
 
         for (attempt, &upstream_addr) in self.config.upstream_servers.iter().enumerate() {
-            match self.query_upstream(&query, upstream_addr).await {
+            match self.query_upstream(query, upstream_addr).await {
                 Ok(mut response) => {
                     // Restore original query ID
                     response.header.id = original_id;
-                    
-                    // If the original query had EDNS, ensure response includes EDNS
-                    if query.supports_edns() && response.edns.is_none() {
-                        // Add EDNS to response matching client capabilities
-                        let client_buffer_size = query.max_udp_payload_size();
-                        let server_buffer_size = std::cmp::min(client_buffer_size, 4096); // Cap at 4KB
-                        
-                        response.add_edns(server_buffer_size, false); // Don't set DO flag in response unless needed
-                        debug!("Added EDNS to response: buffer_size={}", server_buffer_size);
-                    } else if let (Some(query_edns), Some(response_edns)) = (&query.edns, &mut response.edns) {
-                        // Negotiate buffer size between client and server capabilities
-                        let client_buffer_size = query_edns.payload_size();
-                        let server_buffer_size = std::cmp::min(client_buffer_size, 4096); // Cap at 4KB
-                        response_edns.set_payload_size(server_buffer_size);
-                        debug!("Negotiated EDNS buffer size: client={}, server={}", client_buffer_size, server_buffer_size);
-                    }
-                    
+
+                    // Handle EDNS response setup
+                    self.setup_edns_response(query, &mut response);
+
                     info!(
                         "Successfully resolved query from upstream {} (attempt {})",
                         upstream_addr,
@@ -424,6 +538,27 @@ impl DnsResolver {
         // All upstream servers failed
         error!("All upstream servers failed to resolve query");
         Err(last_error.unwrap_or(DnsError::Parse("No upstream servers available".to_string())))
+    }
+
+    /// Setup EDNS response based on query capabilities
+    fn setup_edns_response(&self, query: &DNSPacket, response: &mut DNSPacket) {
+        if query.supports_edns() && response.edns.is_none() {
+            // Add EDNS to response matching client capabilities
+            let client_buffer_size = query.max_udp_payload_size();
+            let server_buffer_size = std::cmp::min(client_buffer_size, 4096); // Cap at 4KB
+
+            response.add_edns(server_buffer_size, false); // Don't set DO flag in response unless needed
+            debug!("Added EDNS to response: buffer_size={}", server_buffer_size);
+        } else if let (Some(query_edns), Some(response_edns)) = (&query.edns, &mut response.edns) {
+            // Negotiate buffer size between client and server capabilities
+            let client_buffer_size = query_edns.payload_size();
+            let server_buffer_size = std::cmp::min(client_buffer_size, 4096); // Cap at 4KB
+            response_edns.set_payload_size(server_buffer_size);
+            debug!(
+                "Negotiated EDNS buffer size: client={}, server={}",
+                client_buffer_size, server_buffer_size
+            );
+        }
     }
 
     /// Query a specific upstream server
@@ -509,14 +644,22 @@ impl DnsResolver {
         let socket = self.connection_pool.get_udp_socket(upstream_addr).await?;
 
         // Send the query
-        socket.send(query_bytes).await.map_err(|e| DnsError::Io(e.to_string()))?;
+        socket
+            .send(query_bytes)
+            .await
+            .map_err(|e| DnsError::Io(e.to_string()))?;
 
         // Wait for response
         let mut response_buf = vec![0u8; 4096];
-        let response_len = socket.recv(&mut response_buf).await.map_err(|e| DnsError::Io(e.to_string()))?;
+        let response_len = socket
+            .recv(&mut response_buf)
+            .await
+            .map_err(|e| DnsError::Io(e.to_string()))?;
 
         // Return the socket to the pool for reuse
-        self.connection_pool.return_udp_socket(upstream_addr, socket).await;
+        self.connection_pool
+            .return_udp_socket(upstream_addr, socket)
+            .await;
 
         // Log the raw response for debugging
         trace!(
@@ -528,7 +671,10 @@ impl DnsResolver {
         // Parse the response
         let response = DNSPacket::parse(&response_buf[..response_len]).map_err(|e| {
             // Log more details about the parsing failure
-            debug!("Failed to parse UDP response from {}: {:?}", upstream_addr, e);
+            debug!(
+                "Failed to parse UDP response from {}: {:?}",
+                upstream_addr, e
+            );
             debug!("Response length: {} bytes", response_len);
             debug!(
                 "First 64 bytes: {:02x?}",
@@ -548,22 +694,39 @@ impl DnsResolver {
         upstream_addr: SocketAddr,
     ) -> Result<DNSPacket> {
         // Connect to upstream server
-        let mut stream = TcpStream::connect(upstream_addr).await.map_err(|e| DnsError::Io(e.to_string()))?;
+        let mut stream = TcpStream::connect(upstream_addr)
+            .await
+            .map_err(|e| DnsError::Io(e.to_string()))?;
 
         // Send length-prefixed query
         let query_length = query_bytes.len() as u16;
-        stream.write_all(&query_length.to_be_bytes()).await.map_err(|e| DnsError::Io(e.to_string()))?;
-        stream.write_all(query_bytes).await.map_err(|e| DnsError::Io(e.to_string()))?;
-        stream.flush().await.map_err(|e| DnsError::Io(e.to_string()))?;
+        stream
+            .write_all(&query_length.to_be_bytes())
+            .await
+            .map_err(|e| DnsError::Io(e.to_string()))?;
+        stream
+            .write_all(query_bytes)
+            .await
+            .map_err(|e| DnsError::Io(e.to_string()))?;
+        stream
+            .flush()
+            .await
+            .map_err(|e| DnsError::Io(e.to_string()))?;
 
         // Read response length
         let mut length_buf = [0u8; 2];
-        stream.read_exact(&mut length_buf).await.map_err(|e| DnsError::Io(e.to_string()))?;
+        stream
+            .read_exact(&mut length_buf)
+            .await
+            .map_err(|e| DnsError::Io(e.to_string()))?;
         let response_length = u16::from_be_bytes(length_buf) as usize;
 
         // Read response data
         let mut response_buf = vec![0; response_length];
-        stream.read_exact(&mut response_buf).await.map_err(|e| DnsError::Io(e.to_string()))?;
+        stream
+            .read_exact(&mut response_buf)
+            .await
+            .map_err(|e| DnsError::Io(e.to_string()))?;
 
         // Log the raw response for debugging
         trace!(
@@ -575,7 +738,10 @@ impl DnsResolver {
         // Parse the response
         let response = DNSPacket::parse(&response_buf).map_err(|e| {
             // Log more details about the parsing failure
-            debug!("Failed to parse TCP response from {}: {:?}", upstream_addr, e);
+            debug!(
+                "Failed to parse TCP response from {}: {:?}",
+                upstream_addr, e
+            );
             debug!("Response length: {} bytes", response_length);
             debug!(
                 "First 64 bytes: {:02x?}",
@@ -602,16 +768,11 @@ impl DnsResolver {
         for (i, answer) in response.answers.iter().enumerate() {
             let rdata_display = match &answer.parsed_rdata {
                 Some(parsed) => format!("parsed={}", parsed),
-                None => format!("raw={:02x?}", &answer.rdata[..answer.rdata.len().min(16)])
+                None => format!("raw={:02x?}", &answer.rdata[..answer.rdata.len().min(16)]),
             };
             debug!(
                 "Answer {}: type={:?}, class={:?}, ttl={}, rdlength={}, {}",
-                i,
-                answer.rtype,
-                answer.rclass,
-                answer.ttl,
-                answer.rdlength,
-                rdata_display
+                i, answer.rtype, answer.rclass, answer.ttl, answer.rdlength, rdata_display
             );
         }
 

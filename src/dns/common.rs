@@ -9,7 +9,7 @@ pub trait PacketComponent {
         writer: &mut BitWriter<&mut Vec<u8>, E>,
     ) -> Result<(), ParseError>;
     fn read<E: Endianness>(&mut self, reader: &mut BitReader<&[u8], E>) -> Result<(), ParseError>;
-    
+
     /// Read with access to the full packet buffer for compression support
     fn read_with_buffer<E: Endianness>(
         &mut self,
@@ -53,17 +53,18 @@ pub trait PacketComponent {
                     // Follow the compression pointer
                     if (pointer as usize) < buf.len() {
                         let mut pointer_reader = BitReader::<_, E>::new(&buf[pointer as usize..]);
-                        
+
                         // Read labels from the pointer location
-                        let mut pointer_labels = self.read_labels_with_buffer(&mut pointer_reader, Some(buf))?;
-                        
+                        let mut pointer_labels =
+                            self.read_labels_with_buffer(&mut pointer_reader, Some(buf))?;
+
                         // Remove empty terminating label if present
                         if let Some(last) = pointer_labels.last() {
                             if last.is_empty() {
                                 pointer_labels.pop();
                             }
                         }
-                        
+
                         labels.extend(pointer_labels);
                         break;
                     } else {
