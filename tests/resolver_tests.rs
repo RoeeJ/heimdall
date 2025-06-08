@@ -82,7 +82,7 @@ fn test_servfail_response() {
     let resolver = rt.block_on(async { DnsResolver::new(config).await.unwrap() });
 
     let servfail = resolver.create_servfail_response(&query);
-    assert_eq!(servfail.header.qr, true); // Response
+    assert!(servfail.header.qr); // Response
     assert_eq!(servfail.header.rcode, 2); // SERVFAIL
     assert_eq!(servfail.header.ancount, 0); // No answers
 }
@@ -96,7 +96,7 @@ fn test_nxdomain_response() {
     let resolver = rt.block_on(async { DnsResolver::new(config).await.unwrap() });
 
     let nxdomain = resolver.create_nxdomain_response(&query);
-    assert_eq!(nxdomain.header.qr, true); // Response
+    assert!(nxdomain.header.qr); // Response
     assert_eq!(nxdomain.header.rcode, 3); // NXDOMAIN
     assert_eq!(nxdomain.header.ancount, 0); // No answers
 }

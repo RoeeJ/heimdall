@@ -81,12 +81,12 @@ fn test_header_default_values() {
     let header = DNSHeader::default();
 
     assert_eq!(header.id, 0);
-    assert_eq!(header.qr, false);
+    assert!(!header.qr);
     assert_eq!(header.opcode, 0);
-    assert_eq!(header.aa, false);
-    assert_eq!(header.tc, false);
-    assert_eq!(header.rd, false);
-    assert_eq!(header.ra, false);
+    assert!(!header.aa);
+    assert!(!header.tc);
+    assert!(!header.rd);
+    assert!(!header.ra);
     assert_eq!(header.z, 0);
     assert_eq!(header.rcode, 0);
     assert_eq!(header.qdcount, 0);

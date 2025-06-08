@@ -69,7 +69,7 @@ impl Default for DnsConfig {
             max_cache_size: 10000,
             default_ttl: 300, // 5 minutes
             enable_parallel_queries: true,
-            worker_threads: 0, // 0 = use Tokio default (number of CPU cores)
+            worker_threads: 0,     // 0 = use Tokio default (number of CPU cores)
             blocking_threads: 512, // Tokio default
             max_concurrent_queries: 10000,
         }

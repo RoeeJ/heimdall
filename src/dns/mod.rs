@@ -235,10 +235,10 @@ impl<'a> DNSPacketRef<'a> {
 
         // Use SIMD for quick domain name validation in questions section
         let questions_data = self.questions_slice();
-        if !questions_data.is_empty() {
-            if !simd::SimdParser::validate_domain_name_simd(questions_data) {
-                return false;
-            }
+        if !questions_data.is_empty()
+            && !simd::SimdParser::validate_domain_name_simd(questions_data)
+        {
+            return false;
         }
 
         true
@@ -536,7 +536,7 @@ impl DNSPacket {
             let name = question
                 .labels
                 .iter()
-                .filter(|l| l.len() > 0)
+                .filter(|l| !l.is_empty())
                 .map(|l| l.as_str())
                 .collect::<Vec<_>>()
                 .join(".");
@@ -653,14 +653,16 @@ impl DNSPacket {
                 let (class, ttl, rdata) = edns.to_resource_format();
 
                 // Create OPT pseudo-resource record
-                let mut opt_record = DNSResource::default();
-                opt_record.labels = vec![]; // Root domain (empty)
-                opt_record.rtype = enums::DNSResourceType::OPT;
-                opt_record.rclass = enums::DNSResourceClass::from(class);
-                opt_record.raw_class = Some(class);
-                opt_record.ttl = ttl;
-                opt_record.rdlength = rdata.len() as u16;
-                opt_record.rdata = rdata;
+                let opt_record = DNSResource {
+                    labels: vec![], // Root domain (empty)
+                    rtype: enums::DNSResourceType::OPT,
+                    rclass: enums::DNSResourceClass::from(class),
+                    raw_class: Some(class),
+                    ttl,
+                    rdlength: rdata.len() as u16,
+                    rdata,
+                    ..Default::default()
+                };
 
                 opt_record
                     .write(&mut writer)
@@ -740,6 +742,6 @@ mod test {
     #[test]
     fn test_dns_packet() {
         let packet = DNSPacket::default();
-        assert_eq!(packet.valid(), true); // Default packet should be valid
+        assert!(packet.valid()); // Default packet should be valid
     }
 }

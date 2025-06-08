@@ -163,7 +163,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!("  Query types: {:?}", config.query_types);
     println!("  Test domains: {:?}", config.test_domains);
-    println!("");
+    println!();
 
     // Run the stress test
     let mut tester = DNSStressTester::new(config).with_resource_monitoring(true);

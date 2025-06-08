@@ -1,4 +1,4 @@
-use criterion::{black_box, Criterion, BenchmarkId};
+use criterion::{Criterion, black_box};
 use heimdall::cache::{CacheKey, DnsCache};
 use heimdall::dns::enums::{DNSResourceClass, DNSResourceType};
 use heimdall::dns::simd::SimdParser;
@@ -6,7 +6,6 @@ use heimdall::dns::{DNSPacket, DNSPacketRef, PacketBufferPool};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::time::Duration;
 
 /// Baseline performance metrics for regression testing
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,20 +61,21 @@ impl DnsRegressionTester {
 
     fn load_baseline(file_path: &str) -> Option<PerformanceBaseline> {
         match fs::read_to_string(file_path) {
-            Ok(content) => {
-                match serde_json::from_str::<PerformanceBaseline>(&content) {
-                    Ok(baseline) => {
-                        println!("Loaded performance baseline version: {}", baseline.version);
-                        Some(baseline)
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to parse baseline file {}: {}", file_path, e);
-                        None
-                    }
+            Ok(content) => match serde_json::from_str::<PerformanceBaseline>(&content) {
+                Ok(baseline) => {
+                    println!("Loaded performance baseline version: {}", baseline.version);
+                    Some(baseline)
                 }
-            }
+                Err(e) => {
+                    eprintln!("Failed to parse baseline file {}: {}", file_path, e);
+                    None
+                }
+            },
             Err(_) => {
-                println!("No baseline file found at {}, creating new baseline", file_path);
+                println!(
+                    "No baseline file found at {}, creating new baseline",
+                    file_path
+                );
                 None
             }
         }
@@ -214,7 +214,8 @@ impl DnsRegressionTester {
         group.bench_function("checksum_calculation", |b| {
             b.iter(|| {
                 for _ in 0..iterations {
-                    let _checksum = SimdParser::calculate_packet_checksum_simd(black_box(&test_data));
+                    let _checksum =
+                        SimdParser::calculate_packet_checksum_simd(black_box(&test_data));
                 }
             })
         });
@@ -309,7 +310,10 @@ impl DnsRegressionTester {
                         change_percent
                     );
                 } else {
-                    println!("{}: NEW BENCHMARK (baseline: {:.2}ns)", bench_name, current.mean_time_ns);
+                    println!(
+                        "{}: NEW BENCHMARK (baseline: {:.2}ns)",
+                        bench_name, current.mean_time_ns
+                    );
                 }
             }
 
@@ -331,7 +335,7 @@ impl DnsRegressionTester {
                 for (name, regression) in &regressions {
                     println!("  ❌ {}: {:.1}% slower", name, regression);
                 }
-                
+
                 println!("\n❌ REGRESSION TEST FAILED!");
                 println!("Some benchmarks have regressed beyond the acceptable threshold.");
                 std::process::exit(1);
@@ -374,6 +378,7 @@ impl DnsRegressionTester {
 
     // Mock implementation to extract results from criterion - in a real implementation
     // you'd need to hook into criterion's measurement collection
+    #[allow(dead_code)]
     fn record_benchmark_result(&mut self, name: String, mean_ns: f64, std_dev_ns: f64) {
         let result = BenchmarkResult {
             mean_time_ns: mean_ns,
@@ -395,8 +400,7 @@ fn create_test_dns_packet() -> Vec<u8> {
         0x00, 0x00, // Authority: 0
         0x00, 0x00, // Additional: 0
         // Question: example.com
-        0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e',
-        0x03, b'c', b'o', b'm',
+        0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm',
         0x00, // End of name
         0x00, 0x01, // Type: A
         0x00, 0x01, // Class: IN
@@ -404,14 +408,13 @@ fn create_test_dns_packet() -> Vec<u8> {
 }
 
 // CLI for running regression tests independently
-#[cfg(feature = "regression_cli")]
+// Note: This function is unused but kept for future CLI integration
+#[allow(dead_code)]
 pub fn main() {
     let config = RegressionTestConfig::default();
     let mut tester = DnsRegressionTester::new(config);
-    
-    let mut criterion = Criterion::default()
-        .measurement_time(Duration::from_secs(10))
-        .sample_size(100);
-    
+
+    let mut criterion = Criterion::default().sample_size(100);
+
     tester.run_regression_tests(&mut criterion);
 }

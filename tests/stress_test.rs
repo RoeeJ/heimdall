@@ -59,10 +59,13 @@ impl Default for StressTestConfig {
 /// System resource metrics during stress testing
 #[derive(Debug, Clone)]
 pub struct ResourceMetrics {
+    #[allow(dead_code)]
     pub timestamp: Instant,
     pub cpu_usage: f32,
     pub memory_usage_mb: u64,
+    #[allow(dead_code)]
     pub total_memory_mb: u64,
+    #[allow(dead_code)]
     pub memory_usage_percent: f32,
 }
 
@@ -79,6 +82,12 @@ pub struct StressTestMetrics {
     pub start_time: Instant,
     pub end_time: parking_lot::Mutex<Option<Instant>>,
     pub resource_samples: parking_lot::Mutex<Vec<ResourceMetrics>>,
+}
+
+impl Default for StressTestMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StressTestMetrics {
@@ -254,10 +263,11 @@ impl DNSStressTester {
         packet.header.qdcount = 1;
 
         // Create question
-        let mut question = DNSQuestion::default();
-        question.labels = domain.split('.').map(|s| s.to_string()).collect();
-        question.qtype = query_type;
-        question.qclass = DNSResourceClass::IN;
+        let question = DNSQuestion {
+            labels: domain.split('.').map(|s| s.to_string()).collect(),
+            qtype: query_type,
+            qclass: DNSResourceClass::IN,
+        };
         packet.questions.push(question);
 
         // Add EDNS if enabled
@@ -431,7 +441,7 @@ impl DNSStressTester {
     pub async fn run(&mut self) -> &StressTestMetrics {
         println!("Starting DNS stress test...");
         println!("Config: {:?}", self.config);
-        println!("");
+        println!();
 
         // Start resource monitoring
         let resource_monitor = self.start_resource_monitoring().await;
@@ -559,7 +569,7 @@ mod tests {
         let metrics = tester.run().await;
 
         // Verify basic metrics
-        assert!(metrics.total_queries_sent.load(Ordering::Relaxed) == 10);
+        assert_eq!(metrics.total_queries_sent.load(Ordering::Relaxed), 10);
         // Note: success rate may be 0 if no server is running, which is expected in unit tests
         println!("Success rate: {:.2}%", metrics.success_rate() * 100.0);
     }
@@ -577,7 +587,7 @@ mod tests {
         let mut tester = DNSStressTester::new(config);
         let metrics = tester.run().await;
 
-        assert!(metrics.total_queries_sent.load(Ordering::Relaxed) == 5);
+        assert_eq!(metrics.total_queries_sent.load(Ordering::Relaxed), 5);
     }
 
     #[tokio::test]

@@ -213,6 +213,12 @@ pub struct CacheStats {
     pub expired_evictions: AtomicU64,
 }
 
+impl Default for CacheStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CacheStats {
     pub fn new() -> Self {
         Self {
