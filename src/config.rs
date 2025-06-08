@@ -35,6 +35,15 @@ pub struct DnsConfig {
 
     /// Whether to enable parallel queries to upstream servers
     pub enable_parallel_queries: bool,
+
+    /// Number of worker threads for the Tokio runtime (0 = use default)
+    pub worker_threads: usize,
+
+    /// Number of blocking threads for the Tokio runtime (0 = use default)
+    pub blocking_threads: usize,
+
+    /// Max number of concurrent DNS queries to handle
+    pub max_concurrent_queries: usize,
 }
 
 impl Default for DnsConfig {
@@ -60,6 +69,9 @@ impl Default for DnsConfig {
             max_cache_size: 10000,
             default_ttl: 300, // 5 minutes
             enable_parallel_queries: true,
+            worker_threads: 0, // 0 = use Tokio default (number of CPU cores)
+            blocking_threads: 512, // Tokio default
+            max_concurrent_queries: 10000,
         }
     }
 }
@@ -119,6 +131,24 @@ impl DnsConfig {
 
         if let Ok(enable_parallel) = std::env::var("HEIMDALL_ENABLE_PARALLEL_QUERIES") {
             config.enable_parallel_queries = enable_parallel.parse().unwrap_or(true);
+        }
+
+        if let Ok(worker_threads) = std::env::var("HEIMDALL_WORKER_THREADS") {
+            if let Ok(threads) = worker_threads.parse::<usize>() {
+                config.worker_threads = threads;
+            }
+        }
+
+        if let Ok(blocking_threads) = std::env::var("HEIMDALL_BLOCKING_THREADS") {
+            if let Ok(threads) = blocking_threads.parse::<usize>() {
+                config.blocking_threads = threads;
+            }
+        }
+
+        if let Ok(max_concurrent) = std::env::var("HEIMDALL_MAX_CONCURRENT_QUERIES") {
+            if let Ok(max) = max_concurrent.parse::<usize>() {
+                config.max_concurrent_queries = max;
+            }
         }
 
         config

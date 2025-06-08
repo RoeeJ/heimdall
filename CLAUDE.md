@@ -63,6 +63,15 @@ cargo check
 
 # Run a specific test
 cargo test test_name
+
+# Run performance regression tests
+./scripts/check_performance.sh
+
+# Create new performance baseline
+./scripts/check_performance.sh --create-baseline
+
+# Test configurable runtime (2 worker threads, 5 max concurrent queries)
+HEIMDALL_WORKER_THREADS=2 HEIMDALL_MAX_CONCURRENT_QUERIES=5 cargo run
 ```
 
 ## Architecture Overview
@@ -87,7 +96,10 @@ The codebase implements a production-ready DNS server with both UDP and TCP supp
 - **Intelligent Caching**: Thread-safe cache with TTL respect and performance metrics
 - **Compression Handling**: Full DNS compression pointer parsing and reconstruction
 - **Error Handling**: Comprehensive error handling with SERVFAIL responses
-- **Performance**: Sub-millisecond cached responses, concurrent request handling
+- **High Performance**: Sub-millisecond cached responses, zero-copy optimizations
+- **Advanced Performance Features**: Query deduplication, connection pooling, parallel queries
+- **Configurable Runtime**: Custom Tokio thread pool with concurrency limiting
+- **Regression Testing**: Automated performance benchmarking and regression detection
 - **Protocol Compliance**: Proper DNS packet validation and response generation
 
 ### Packet Flow
