@@ -1,0 +1,80 @@
+name: Update Performance Baseline
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for updating baseline'
+        required: true
+        type: string
+  schedule:
+    # Update baseline weekly on Sunday at 2 AM UTC
+    - cron: '0 2 * * 0'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  update-baseline:
+    name: Update Performance Baseline
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: baseline-update
+        cache-on-failure: true
+
+    - name: Build regression test binary
+      run: cargo build --release --bin regression_test
+
+    - name: Create new performance baseline
+      run: |
+        chmod +x scripts/check_performance.sh
+        ./scripts/check_performance.sh --create-baseline --iterations 2000
+
+    - name: Commit updated baseline
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        if git diff --quiet benchmarks/baseline.json; then
+          echo "No significant changes in baseline, skipping commit"
+        else
+          git add benchmarks/baseline.json
+          
+          REASON="${{ github.event.inputs.reason }}"
+          if [ -z "$REASON" ]; then
+            REASON="Scheduled weekly baseline update"
+          fi
+          
+          git commit -m "Update performance baseline: $REASON
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+          
+          git push
+          echo "✅ Performance baseline updated and committed"
+        fi
+
+    - name: Create performance report
+      run: |
+        echo "## Performance Baseline Update" >> $GITHUB_STEP_SUMMARY
+        echo "**Reason:** ${{ github.event.inputs.reason || 'Scheduled weekly update' }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Baseline Results:" >> $GITHUB_STEP_SUMMARY
+        echo '```json' >> $GITHUB_STEP_SUMMARY
+        head -20 benchmarks/baseline.json >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY

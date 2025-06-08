@@ -1,0 +1,182 @@
+# ==============================================================================
+# Docker Compose for Heimdall DNS Server
+# ==============================================================================
+# This file provides easy deployment options for development and production.
+
+version: '3.8'
+
+services:
+  # Production deployment
+  heimdall:
+    build:
+      context: .
+      target: runtime
+      dockerfile: Dockerfile
+    container_name: heimdall-dns
+    restart: unless-stopped
+    ports:
+      - "1053:1053/udp"
+      - "1053:1053/tcp"
+    environment:
+      # Bind to all interfaces in container
+      HEIMDALL_BIND_ADDR: "0.0.0.0:1053"
+      
+      # Upstream DNS servers (Cloudflare, Google)
+      HEIMDALL_UPSTREAM_SERVERS: "1.1.1.1:53,8.8.8.8:53,8.8.4.4:53"
+      
+      # Performance tuning
+      HEIMDALL_WORKER_THREADS: "0"  # Use CPU count
+      HEIMDALL_BLOCKING_THREADS: "512"
+      HEIMDALL_MAX_CONCURRENT_QUERIES: "10000"
+      
+      # Timeouts and retries
+      HEIMDALL_UPSTREAM_TIMEOUT: "5"
+      HEIMDALL_MAX_RETRIES: "2"
+      
+      # Caching configuration
+      HEIMDALL_ENABLE_CACHING: "true"
+      HEIMDALL_MAX_CACHE_SIZE: "10000"
+      HEIMDALL_DEFAULT_TTL: "300"
+      
+      # DNS resolution options
+      HEIMDALL_ENABLE_ITERATIVE: "true"
+      HEIMDALL_MAX_ITERATIONS: "16"
+      HEIMDALL_ENABLE_PARALLEL_QUERIES: "true"
+      
+      # Logging
+      RUST_LOG: "heimdall=info,warn"
+    
+    # Resource limits for production
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '2.0'
+        reservations:
+          memory: 128M
+          cpus: '0.5'
+    
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/1053' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    
+    # Security
+    user: "1001:1001"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE  # If binding to port < 1024
+
+  # Development deployment with debugging
+  heimdall-dev:
+    build:
+      context: .
+      target: runtime-debian
+      dockerfile: Dockerfile
+    container_name: heimdall-dns-dev
+    ports:
+      - "1053:1053/udp"
+      - "1053:1053/tcp"
+    environment:
+      HEIMDALL_BIND_ADDR: "0.0.0.0:1053"
+      HEIMDALL_UPSTREAM_SERVERS: "1.1.1.1:53,8.8.8.8:53"
+      HEIMDALL_WORKER_THREADS: "2"
+      HEIMDALL_MAX_CONCURRENT_QUERIES: "1000"
+      HEIMDALL_ENABLE_CACHING: "true"
+      HEIMDALL_MAX_CACHE_SIZE: "1000"
+      RUST_LOG: "heimdall=debug,trace"
+    
+    # Development health check using dig
+    healthcheck:
+      test: ["CMD", "dig", "@localhost", "-p", "1053", "google.com", "+time=5"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # High-performance production deployment
+  heimdall-prod:
+    build:
+      context: .
+      target: runtime
+      dockerfile: Dockerfile
+    container_name: heimdall-dns-prod
+    restart: unless-stopped
+    ports:
+      - "53:1053/udp"   # Map to standard DNS port
+      - "53:1053/tcp"
+    environment:
+      HEIMDALL_BIND_ADDR: "0.0.0.0:1053"
+      HEIMDALL_UPSTREAM_SERVERS: "1.1.1.1:53,8.8.8.8:53,8.8.4.4:53,1.0.0.1:53"
+      HEIMDALL_WORKER_THREADS: "0"  # Auto-detect CPU count
+      HEIMDALL_BLOCKING_THREADS: "1024"
+      HEIMDALL_MAX_CONCURRENT_QUERIES: "50000"
+      HEIMDALL_UPSTREAM_TIMEOUT: "3"
+      HEIMDALL_MAX_RETRIES: "3"
+      HEIMDALL_ENABLE_CACHING: "true"
+      HEIMDALL_MAX_CACHE_SIZE: "100000"
+      HEIMDALL_DEFAULT_TTL: "600"
+      HEIMDALL_ENABLE_ITERATIVE: "true"
+      HEIMDALL_MAX_ITERATIONS: "20"
+      HEIMDALL_ENABLE_PARALLEL_QUERIES: "true"
+      RUST_LOG: "heimdall=info"
+    
+    # High-performance resource allocation
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '4.0'
+        reservations:
+          memory: 512M
+          cpus: '2.0'
+    
+    # Enhanced security for production
+    user: "1001:1001"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    
+    # Production health check
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 3 bash -c '</dev/tcp/localhost/1053' || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+# ==============================================================================
+# Usage Examples:
+# ==============================================================================
+
+# Development deployment:
+# docker-compose up heimdall-dev
+
+# Production deployment:
+# docker-compose up -d heimdall-prod
+
+# Standard deployment:
+# docker-compose up -d heimdall
+
+# Build and run:
+# docker-compose build && docker-compose up -d
+
+# View logs:
+# docker-compose logs -f heimdall
+
+# Stop and remove:
+# docker-compose down
+
+# Scale for load testing:
+# docker-compose up -d --scale heimdall=3
