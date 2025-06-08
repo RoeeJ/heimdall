@@ -1,4 +1,5 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 
 fn bench_packet_parsing(c: &mut Criterion) {
     // TODO: Add benchmark when zero-copy parsing is implemented

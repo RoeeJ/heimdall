@@ -1,9 +1,10 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use heimdall::config::DnsConfig;
 use heimdall::dns::DNSPacket;
 use heimdall::dns::enums::{DNSResourceClass, DNSResourceType};
 use heimdall::dns::question::DNSQuestion;
 use heimdall::resolver::DnsResolver;
+use std::hint::black_box;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
