@@ -6,8 +6,8 @@ use dashmap::DashMap;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU16, Ordering};
-use std::time::Duration;
+use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::{Mutex, broadcast};
@@ -32,6 +32,142 @@ impl QueryMode {
 }
 
 static QUERY_ID_COUNTER: AtomicU16 = AtomicU16::new(1);
+
+/// Server health status tracking
+#[derive(Debug)]
+struct ServerHealth {
+    /// Number of consecutive failures
+    consecutive_failures: AtomicU64,
+    /// Last failure time
+    last_failure: Mutex<Option<Instant>>,
+    /// Total requests sent to this server
+    total_requests: AtomicU64,
+    /// Total successful responses from this server
+    successful_responses: AtomicU64,
+    /// Average response time (exponential moving average)
+    avg_response_time: Mutex<Option<Duration>>,
+    /// Whether the server is currently marked as healthy
+    is_healthy: std::sync::atomic::AtomicBool,
+    /// Last health check time
+    last_health_check: Mutex<Option<Instant>>,
+}
+
+impl ServerHealth {
+    fn new() -> Self {
+        Self {
+            consecutive_failures: AtomicU64::new(0),
+            last_failure: Mutex::new(None),
+            total_requests: AtomicU64::new(0),
+            successful_responses: AtomicU64::new(0),
+            avg_response_time: Mutex::new(None),
+            is_healthy: std::sync::atomic::AtomicBool::new(true),
+            last_health_check: Mutex::new(None),
+        }
+    }
+
+    /// Record a successful response
+    fn record_success(&self, response_time: Duration) {
+        self.consecutive_failures.store(0, Ordering::Relaxed);
+        self.total_requests.fetch_add(1, Ordering::Relaxed);
+        self.successful_responses.fetch_add(1, Ordering::Relaxed);
+        self.is_healthy.store(true, Ordering::Relaxed);
+
+        // Update exponential moving average of response time (async-safe)
+        if let Ok(mut avg_time) = self.avg_response_time.try_lock() {
+            if let Some(current_avg) = *avg_time {
+                // EMA with alpha = 0.2 (more weight to recent responses)
+                let new_avg = Duration::from_millis(
+                    (current_avg.as_millis() as f64 * 0.8 + response_time.as_millis() as f64 * 0.2) as u64
+                );
+                *avg_time = Some(new_avg);
+            } else {
+                *avg_time = Some(response_time);
+            }
+        }
+    }
+
+    /// Record a failure
+    fn record_failure(&self) {
+        self.consecutive_failures.fetch_add(1, Ordering::Relaxed);
+        self.total_requests.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut last_failure) = self.last_failure.try_lock() {
+            *last_failure = Some(Instant::now());
+        }
+
+        // Mark as unhealthy after 3 consecutive failures
+        if self.consecutive_failures.load(Ordering::Relaxed) >= 3 {
+            self.is_healthy.store(false, Ordering::Relaxed);
+        }
+    }
+
+    /// Check if the server is currently healthy
+    fn is_healthy(&self) -> bool {
+        self.is_healthy.load(Ordering::Relaxed)
+    }
+
+    /// Check if enough time has passed for a health check retry
+    fn should_retry_health_check(&self) -> bool {
+        if self.is_healthy() {
+            return true; // Always allow healthy servers
+        }
+
+        if let Ok(last_check) = self.last_health_check.try_lock() {
+            match *last_check {
+                Some(last) => {
+                    let failures = self.consecutive_failures.load(Ordering::Relaxed);
+                    // Exponential backoff: 5s, 10s, 20s, 40s, max 60s
+                    let backoff_seconds = std::cmp::min(5 * (2_u64.pow(failures as u32 - 1)), 60);
+                    last.elapsed() >= Duration::from_secs(backoff_seconds)
+                }
+                None => true, // Never checked, allow retry
+            }
+        } else {
+            true // Can't acquire lock, be conservative and allow retry
+        }
+    }
+
+    /// Update health check timestamp
+    fn update_health_check_time(&self) {
+        if let Ok(mut last_check) = self.last_health_check.try_lock() {
+            *last_check = Some(Instant::now());
+        }
+    }
+
+    /// Get server statistics
+    fn get_stats(&self) -> ServerStats {
+        let total = self.total_requests.load(Ordering::Relaxed);
+        let successful = self.successful_responses.load(Ordering::Relaxed);
+        let success_rate = if total > 0 {
+            successful as f64 / total as f64
+        } else {
+            1.0
+        };
+
+        let avg_response_time = self.avg_response_time.try_lock()
+            .map(|guard| *guard)
+            .unwrap_or(None);
+
+        ServerStats {
+            total_requests: total,
+            successful_responses: successful,
+            success_rate,
+            consecutive_failures: self.consecutive_failures.load(Ordering::Relaxed),
+            is_healthy: self.is_healthy(),
+            avg_response_time,
+        }
+    }
+}
+
+/// Server statistics for monitoring
+#[derive(Debug, Clone)]
+pub struct ServerStats {
+    pub total_requests: u64,
+    pub successful_responses: u64,
+    pub success_rate: f64,
+    pub consecutive_failures: u64,
+    pub is_healthy: bool,
+    pub avg_response_time: Option<Duration>,
+}
 
 /// In-flight query tracking for deduplication
 #[derive(Debug)]
@@ -117,6 +253,8 @@ pub struct DnsResolver {
     in_flight_queries: Arc<DashMap<CacheKey, InFlightQuery>>,
     /// Connection pool for upstream queries
     connection_pool: ConnectionPool,
+    /// Health tracking for upstream servers
+    server_health: Arc<DashMap<SocketAddr, ServerHealth>>,
 }
 
 impl DnsResolver {
@@ -128,11 +266,32 @@ impl DnsResolver {
 
         // Initialize cache if enabled
         let cache = if config.enable_caching {
-            let cache = DnsCache::new(config.max_cache_size, config.default_ttl);
-            info!(
-                "DNS cache initialized: max_size={}, negative_ttl={}s",
-                config.max_cache_size, config.default_ttl
-            );
+            let cache = if let Some(cache_path) = &config.cache_file_path {
+                info!(
+                    "DNS cache initialized with persistence: max_size={}, negative_ttl={}s, file={}",
+                    config.max_cache_size, config.default_ttl, cache_path
+                );
+                let cache = DnsCache::with_persistence(
+                    config.max_cache_size, 
+                    config.default_ttl, 
+                    cache_path.clone()
+                );
+                
+                // Load existing cache from disk
+                if let Err(e) = cache.load_from_disk().await {
+                    warn!("Failed to load cache from disk: {}", e);
+                } else {
+                    info!("Loaded cache from disk: {}", cache_path);
+                }
+                
+                cache
+            } else {
+                info!(
+                    "DNS cache initialized: max_size={}, negative_ttl={}s",
+                    config.max_cache_size, config.default_ttl
+                );
+                DnsCache::new(config.max_cache_size, config.default_ttl)
+            };
             Some(cache)
         } else {
             info!("DNS caching disabled");
@@ -145,12 +304,20 @@ impl DnsResolver {
         );
         debug!("Upstream servers: {:?}", config.upstream_servers);
 
+        let server_health = Arc::new(DashMap::new());
+        
+        // Initialize health tracking for all upstream servers
+        for &server_addr in &config.upstream_servers {
+            server_health.insert(server_addr, ServerHealth::new());
+        }
+
         Ok(Self {
             config,
             client_socket,
             cache,
             in_flight_queries: Arc::new(DashMap::new()),
             connection_pool: ConnectionPool::new(5), // Pool up to 5 connections per server
+            server_health,
         })
     }
 
@@ -421,7 +588,7 @@ impl DnsResolver {
         self.resolve_sequentially(&query, original_id).await
     }
 
-    /// Resolve using parallel queries to multiple upstream servers
+    /// Resolve using parallel queries to multiple upstream servers with health awareness
     async fn resolve_with_parallel_queries(
         &self,
         query: &DNSPacket,
@@ -430,20 +597,35 @@ impl DnsResolver {
         use futures::future::FutureExt;
         use tokio::time::timeout;
 
+        // Get healthy servers for parallel queries
+        let servers_to_query = self.get_servers_by_health_priority();
+        
+        if servers_to_query.is_empty() {
+            error!("No healthy servers available for parallel queries");
+            return Err(DnsError::Parse("No healthy servers available".to_string()));
+        }
+
         debug!(
-            "Starting parallel queries to {} upstream servers",
-            self.config.upstream_servers.len()
+            "Starting parallel queries to {} healthy upstream servers",
+            servers_to_query.len()
         );
 
-        // Create futures for each upstream server
-        let query_futures: Vec<_> = self
-            .config
-            .upstream_servers
+        // Create futures for each healthy upstream server
+        let query_futures: Vec<_> = servers_to_query
             .iter()
             .enumerate()
-            .map(|(idx, &upstream_addr)| {
+            .filter_map(|(idx, &upstream_addr)| {
+                // Check if we should try this server
+                if let Some(health) = self.server_health.get(&upstream_addr) {
+                    if !health.should_retry_health_check() {
+                        debug!("Skipping unhealthy server {} in parallel query", upstream_addr);
+                        return None;
+                    }
+                    health.update_health_check_time();
+                }
+
                 let query = query.clone();
-                async move {
+                Some(async move {
                     debug!(
                         "Parallel query {}: starting query to {}",
                         idx, upstream_addr
@@ -453,6 +635,12 @@ impl DnsResolver {
                     match self.query_upstream(&query, upstream_addr).await {
                         Ok(mut response) => {
                             let elapsed = start_time.elapsed();
+                            
+                            // Record successful response
+                            if let Some(health) = self.server_health.get(&upstream_addr) {
+                                health.record_success(elapsed);
+                            }
+                            
                             debug!(
                                 "Parallel query {}: SUCCESS from {} in {:?}",
                                 idx, upstream_addr, elapsed
@@ -468,6 +656,12 @@ impl DnsResolver {
                         }
                         Err(e) => {
                             let elapsed = start_time.elapsed();
+                            
+                            // Record failure
+                            if let Some(health) = self.server_health.get(&upstream_addr) {
+                                health.record_failure();
+                            }
+                            
                             debug!(
                                 "Parallel query {}: FAILED from {} in {:?}: {:?}",
                                 idx, upstream_addr, elapsed, e
@@ -476,9 +670,14 @@ impl DnsResolver {
                         }
                     }
                 }
-                .boxed()
+                .boxed())
             })
             .collect();
+
+        if query_futures.is_empty() {
+            warn!("No servers available for parallel queries after health filtering");
+            return Err(DnsError::Parse("No healthy servers available for parallel queries".to_string()));
+        }
 
         // Race all queries with a timeout
         let parallel_timeout =
@@ -508,32 +707,65 @@ impl DnsResolver {
         }
     }
 
-    /// Sequential resolution (original behavior)
+    /// Sequential resolution with automatic failover
     async fn resolve_sequentially(&self, query: &DNSPacket, original_id: u16) -> Result<DNSPacket> {
         let mut last_error = None;
+        
+        // Get healthy servers first, then unhealthy ones as fallback
+        let servers_to_try = self.get_servers_by_health_priority();
+        
+        if servers_to_try.is_empty() {
+            error!("No upstream servers available");
+            return Err(DnsError::Parse("No upstream servers available".to_string()));
+        }
 
-        for (attempt, &upstream_addr) in self.config.upstream_servers.iter().enumerate() {
+        for (attempt, &upstream_addr) in servers_to_try.iter().enumerate() {
+            // Check if we should try this server
+            if let Some(health) = self.server_health.get(&upstream_addr) {
+                if !health.should_retry_health_check() {
+                    debug!("Skipping unhealthy server {} (in backoff period)", upstream_addr);
+                    continue;
+                }
+                health.update_health_check_time();
+            }
+
+            let start_time = Instant::now();
             match self.query_upstream(query, upstream_addr).await {
                 Ok(mut response) => {
+                    let response_time = start_time.elapsed();
+                    
+                    // Record successful response
+                    if let Some(health) = self.server_health.get(&upstream_addr) {
+                        health.record_success(response_time);
+                        info!(
+                            "Successfully resolved query from upstream {} (attempt {}, response_time: {:?})",
+                            upstream_addr, attempt + 1, response_time
+                        );
+                    }
+
                     // Restore original query ID
                     response.header.id = original_id;
 
                     // Handle EDNS response setup
                     self.setup_edns_response(query, &mut response);
 
-                    info!(
-                        "Successfully resolved query from upstream {} (attempt {})",
-                        upstream_addr,
-                        attempt + 1
-                    );
                     return Ok(response);
                 }
                 Err(e) => {
-                    warn!("Failed to resolve from upstream {}: {:?}", upstream_addr, e);
+                    // Record failure
+                    if let Some(health) = self.server_health.get(&upstream_addr) {
+                        health.record_failure();
+                        let stats = health.get_stats();
+                        warn!(
+                            "Failed to resolve from upstream {} (attempt {}): {:?} - Server stats: {} failures, {:.1}% success rate", 
+                            upstream_addr, attempt + 1, e, stats.consecutive_failures, stats.success_rate * 100.0
+                        );
+                    }
+                    
                     last_error = Some(e);
 
                     // If this isn't the last server, continue to next
-                    if attempt < self.config.upstream_servers.len() - 1 {
+                    if attempt < servers_to_try.len() - 1 {
                         continue;
                     }
                 }
@@ -541,8 +773,52 @@ impl DnsResolver {
         }
 
         // All upstream servers failed
-        error!("All upstream servers failed to resolve query");
+        error!("All upstream servers failed to resolve query after trying {} servers", servers_to_try.len());
         Err(last_error.unwrap_or(DnsError::Parse("No upstream servers available".to_string())))
+    }
+
+    /// Get upstream servers ordered by health priority (healthy first, then unhealthy)
+    fn get_servers_by_health_priority(&self) -> Vec<SocketAddr> {
+        let mut healthy_servers = Vec::new();
+        let mut unhealthy_servers = Vec::new();
+
+        for &server_addr in &self.config.upstream_servers {
+            if let Some(health) = self.server_health.get(&server_addr) {
+                if health.is_healthy() {
+                    healthy_servers.push(server_addr);
+                } else if health.should_retry_health_check() {
+                    unhealthy_servers.push(server_addr);
+                }
+            } else {
+                // No health data yet, treat as healthy
+                healthy_servers.push(server_addr);
+            }
+        }
+
+        // Sort healthy servers by average response time (fastest first)
+        healthy_servers.sort_by(|&a, &b| {
+            let a_health = self.server_health.get(&a);
+            let b_health = self.server_health.get(&b);
+            
+            match (a_health, b_health) {
+                (Some(a_health), Some(b_health)) => {
+                    let a_time = a_health.avg_response_time.try_lock()
+                        .map(|guard| *guard)
+                        .unwrap_or(None)
+                        .unwrap_or(Duration::from_millis(1000));
+                    let b_time = b_health.avg_response_time.try_lock()
+                        .map(|guard| *guard)
+                        .unwrap_or(None)
+                        .unwrap_or(Duration::from_millis(1000));
+                    a_time.cmp(&b_time)
+                }
+                _ => std::cmp::Ordering::Equal,
+            }
+        });
+
+        // Return healthy servers first, then unhealthy as fallback
+        healthy_servers.extend(unhealthy_servers);
+        healthy_servers
     }
 
     /// Setup EDNS response based on query capabilities
@@ -1087,5 +1363,69 @@ impl DnsResolver {
     /// Get connection pool statistics
     pub async fn connection_pool_stats(&self) -> HashMap<SocketAddr, usize> {
         self.connection_pool.stats().await
+    }
+
+    /// Save cache to disk if persistence is enabled
+    pub async fn save_cache(&self) -> Result<()> {
+        if let Some(cache) = &self.cache {
+            if cache.has_persistence() {
+                cache.save_to_disk().await.map_err(|e| {
+                    DnsError::Io(format!("Failed to save cache: {}", e))
+                })?;
+                debug!("Cache saved to disk: {}", cache.cache_file_path().unwrap_or("unknown"));
+            }
+        }
+        Ok(())
+    }
+
+    /// Check if cache persistence is enabled
+    pub fn has_cache_persistence(&self) -> bool {
+        self.cache.as_ref().map_or(false, |cache| cache.has_persistence())
+    }
+
+    /// Get server health statistics for all upstream servers
+    pub fn get_server_health_stats(&self) -> HashMap<SocketAddr, ServerStats> {
+        let mut stats = HashMap::new();
+        for server_addr in &self.config.upstream_servers {
+            if let Some(health) = self.server_health.get(server_addr) {
+                stats.insert(*server_addr, health.get_stats());
+            }
+        }
+        stats
+    }
+
+    /// Get detailed health info for debugging
+    pub fn get_health_debug_info(&self) -> String {
+        let mut info = String::new();
+        info.push_str("=== Upstream Server Health Status ===\n");
+        
+        for &server_addr in &self.config.upstream_servers {
+            if let Some(health) = self.server_health.get(&server_addr) {
+                let stats = health.get_stats();
+                info.push_str(&format!(
+                    "Server: {} - {} - Requests: {}, Success Rate: {:.1}%, Failures: {}, Avg Response: {:?}\n",
+                    server_addr,
+                    if stats.is_healthy { "HEALTHY" } else { "UNHEALTHY" },
+                    stats.total_requests,
+                    stats.success_rate * 100.0,
+                    stats.consecutive_failures,
+                    stats.avg_response_time.map_or("N/A".to_string(), |d| format!("{:?}", d))
+                ));
+            }
+        }
+        
+        info
+    }
+
+    /// Force mark a server as healthy (for testing/admin purposes)
+    pub fn reset_server_health(&self, server_addr: SocketAddr) {
+        if let Some(health) = self.server_health.get(&server_addr) {
+            health.consecutive_failures.store(0, Ordering::Relaxed);
+            health.is_healthy.store(true, Ordering::Relaxed);
+            if let Ok(mut last_failure) = health.last_failure.try_lock() {
+                *last_failure = None;
+            }
+            info!("Reset health status for server: {}", server_addr);
+        }
     }
 }
