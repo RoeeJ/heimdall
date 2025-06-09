@@ -150,12 +150,12 @@ fn test_simd_operations() {
 
     // Test compression pointer detection
     let pointers = SimdParser::find_compression_pointers_simd(&test_data);
-    assert_eq!(pointers, vec![]); // Test packet has no compression pointers
+    assert_eq!(pointers, Vec::<usize>::new()); // Test packet has no compression pointers
 
     // Test with data containing compression pointers
     let compressed_data = vec![0x03, b'w', b'w', b'w', 0xC0, 0x0C];
     let pointers = SimdParser::find_compression_pointers_simd(&compressed_data);
-    assert_eq!(pointers, vec![4]); // Pointer at position 4
+    assert_eq!(pointers, vec![4_usize]); // Pointer at position 4
 
     // Test record type pattern search
     let positions = SimdParser::find_record_type_pattern_simd(&test_data, &[0x00, 0x01]);

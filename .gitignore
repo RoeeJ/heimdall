@@ -8,6 +8,11 @@ heimdall.log
 heimdall.pid
 *.log
 
+# DNS cache files (runtime generated)
+heimdall_cache.json
+heimdall_cache.rkyv
+*.cache
+
 # Test artifacts
 packet.bin
 *.bin

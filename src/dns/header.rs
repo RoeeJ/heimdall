@@ -2,7 +2,19 @@ use bitstream_io::{BitRead, BitReader, BitWrite, BitWriter, Endianness};
 
 use super::{ParseError, common::PacketComponent};
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
+#[rkyv(derive(Debug, PartialEq))]
 pub struct DNSHeader {
     pub id: u16,
     pub qr: bool,

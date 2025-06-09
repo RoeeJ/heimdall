@@ -72,6 +72,12 @@ cargo test test_name
 
 # Test configurable runtime (2 worker threads, 5 max concurrent queries)
 HEIMDALL_WORKER_THREADS=2 HEIMDALL_MAX_CONCURRENT_QUERIES=5 cargo run
+
+# Test cache persistence (saves cache to disk every 60 seconds, rkyv format)
+HEIMDALL_CACHE_FILE_PATH="./heimdall_cache.rkyv" HEIMDALL_CACHE_SAVE_INTERVAL=60 cargo run
+
+# Test with rate limiting enabled
+HEIMDALL_ENABLE_RATE_LIMITING=true HEIMDALL_QUERIES_PER_SECOND_PER_IP=10 cargo run
 ```
 
 ## Architecture Overview

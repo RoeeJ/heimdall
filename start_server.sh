@@ -9,8 +9,11 @@ echo "Building Heimdall..."
 cargo build
 
 # Start the server in background with logs redirected
-echo "Starting Heimdall DNS server..."
-RUST_LOG=debug cargo run --bin heimdall > heimdall.log 2>&1 &
+echo "Starting Heimdall DNS server with cache persistence..."
+RUST_LOG=debug \
+HEIMDALL_CACHE_FILE_PATH="./heimdall_cache.rkyv" \
+HEIMDALL_CACHE_SAVE_INTERVAL=300 \
+cargo run --bin heimdall > heimdall.log 2>&1 &
 SERVER_PID=$!
 
 # Wait a moment for server to start

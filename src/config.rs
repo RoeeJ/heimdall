@@ -1,3 +1,4 @@
+use crate::rate_limiter::RateLimitConfig;
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -44,6 +45,15 @@ pub struct DnsConfig {
 
     /// Max number of concurrent DNS queries to handle
     pub max_concurrent_queries: usize,
+
+    /// Rate limiting configuration
+    pub rate_limit_config: RateLimitConfig,
+
+    /// Cache persistence file path (None = no persistence)
+    pub cache_file_path: Option<String>,
+
+    /// Interval to save cache to disk (in seconds, 0 = disabled)
+    pub cache_save_interval: u64,
 }
 
 impl Default for DnsConfig {
@@ -72,6 +82,9 @@ impl Default for DnsConfig {
             worker_threads: 0,     // 0 = use Tokio default (number of CPU cores)
             blocking_threads: 512, // Tokio default
             max_concurrent_queries: 10000,
+            rate_limit_config: RateLimitConfig::default(),
+            cache_file_path: None,    // No persistence by default
+            cache_save_interval: 300, // Save every 5 minutes
         }
     }
 }
@@ -148,6 +161,49 @@ impl DnsConfig {
         if let Ok(max_concurrent) = std::env::var("HEIMDALL_MAX_CONCURRENT_QUERIES") {
             if let Ok(max) = max_concurrent.parse::<usize>() {
                 config.max_concurrent_queries = max;
+            }
+        }
+
+        // Rate limiting configuration
+        if let Ok(enable_rate_limiting) = std::env::var("HEIMDALL_ENABLE_RATE_LIMITING") {
+            config.rate_limit_config.enable_rate_limiting =
+                enable_rate_limiting.parse().unwrap_or(true);
+        }
+
+        if let Ok(qps_per_ip) = std::env::var("HEIMDALL_QUERIES_PER_SECOND_PER_IP") {
+            if let Ok(qps) = qps_per_ip.parse::<u32>() {
+                config.rate_limit_config.queries_per_second_per_ip = qps;
+            }
+        }
+
+        if let Ok(burst_per_ip) = std::env::var("HEIMDALL_BURST_SIZE_PER_IP") {
+            if let Ok(burst) = burst_per_ip.parse::<u32>() {
+                config.rate_limit_config.burst_size_per_ip = burst;
+            }
+        }
+
+        if let Ok(global_qps) = std::env::var("HEIMDALL_GLOBAL_QUERIES_PER_SECOND") {
+            if let Ok(qps) = global_qps.parse::<u32>() {
+                config.rate_limit_config.global_queries_per_second = qps;
+            }
+        }
+
+        if let Ok(global_burst) = std::env::var("HEIMDALL_GLOBAL_BURST_SIZE") {
+            if let Ok(burst) = global_burst.parse::<u32>() {
+                config.rate_limit_config.global_burst_size = burst;
+            }
+        }
+
+        // Cache persistence configuration
+        if let Ok(cache_file_path) = std::env::var("HEIMDALL_CACHE_FILE_PATH") {
+            if !cache_file_path.is_empty() {
+                config.cache_file_path = Some(cache_file_path);
+            }
+        }
+
+        if let Ok(cache_save_interval) = std::env::var("HEIMDALL_CACHE_SAVE_INTERVAL") {
+            if let Ok(interval) = cache_save_interval.parse::<u64>() {
+                config.cache_save_interval = interval;
             }
         }
 
