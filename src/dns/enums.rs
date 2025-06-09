@@ -1,4 +1,18 @@
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
+#[rkyv(derive(Debug, PartialEq))]
 pub enum DNSResourceType {
     #[default]
     Unknown,
@@ -26,9 +40,25 @@ pub enum DNSResourceType {
     NSEC,
     RRSIG,
     OPT,
+    ANY,
+    IXFR,
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
+#[rkyv(derive(Debug, PartialEq))]
 pub enum DNSResourceClass {
     #[default]
     Unknown,
@@ -87,6 +117,8 @@ impl From<u16> for DNSResourceType {
             65 => DNSResourceType::HTTPS,
             252 => DNSResourceType::AXFR,
             253 => DNSResourceType::MAILB,
+            254 => DNSResourceType::IXFR,
+            255 => DNSResourceType::ANY,
             257 => DNSResourceType::CAA,
 
             _ => DNSResourceType::Unknown,
@@ -120,6 +152,8 @@ impl From<DNSResourceType> for u16 {
             DNSResourceType::OPT => 41,
             DNSResourceType::AXFR => 252,
             DNSResourceType::MAILB => 253,
+            DNSResourceType::IXFR => 254,
+            DNSResourceType::ANY => 255,
             DNSResourceType::Unknown => 0,
         }
     }

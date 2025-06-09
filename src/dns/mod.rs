@@ -15,8 +15,21 @@ use question::DNSQuestion;
 use resource::DNSResource;
 use std::sync::Arc;
 use tracing::{debug, trace};
+// Move validation usage to method implementations to avoid circular dependencies
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
+#[rkyv(derive(Debug, PartialEq))]
 pub struct DNSPacket {
     pub header: DNSHeader,
     pub questions: Vec<DNSQuestion>,
@@ -334,56 +347,31 @@ impl std::fmt::Display for ParseError {
 impl std::error::Error for ParseError {}
 
 impl DNSPacket {
+    /// Basic validation for backward compatibility
+    /// Use validate_comprehensive() for complete security validation
     pub fn valid(&self) -> bool {
-        // Basic validation checks
+        // Use fast validation to maintain performance
+        crate::validation::validate_packet_fast(self).is_ok()
+    }
 
-        // Check header counts match actual sections
-        if self.header.qdcount as usize != self.questions.len() {
-            return false;
-        }
-        if self.header.ancount as usize != self.answers.len() {
-            return false;
-        }
-        if self.header.nscount as usize != self.authorities.len() {
-            return false;
-        }
-        if self.header.arcount as usize != self.resources.len() {
-            return false;
-        }
+    /// Comprehensive validation with detailed error reporting
+    pub fn validate_comprehensive(
+        &self,
+        source_addr: Option<std::net::SocketAddr>,
+    ) -> Result<(), crate::validation::ValidationError> {
+        let validator =
+            crate::validation::DNSValidator::new(crate::validation::ValidationConfig::default());
+        validator.validate_packet(self, source_addr)
+    }
 
-        // Check that questions have valid labels
-        for question in &self.questions {
-            if question.labels.is_empty() {
-                return false;
-            }
-
-            // Check for valid domain name structure
-            let total_length: usize = question.labels.iter().map(|l| l.len() + 1).sum();
-            if total_length > 255 {
-                // DNS names can't exceed 255 octets
-                return false;
-            }
-
-            // Check individual label lengths
-            for label in &question.labels {
-                if label.len() > 63 {
-                    // Individual labels can't exceed 63 octets
-                    return false;
-                }
-            }
-        }
-
-        // Check opcode is valid (0-2 are standard)
-        if self.header.opcode > 2 {
-            return false;
-        }
-
-        // Check rcode is valid (0-5 are standard response codes)
-        if self.header.rcode > 5 {
-            return false;
-        }
-
-        true
+    /// Validate with custom configuration
+    pub fn validate_with_config(
+        &self,
+        config: crate::validation::ValidationConfig,
+        source_addr: Option<std::net::SocketAddr>,
+    ) -> Result<(), crate::validation::ValidationError> {
+        let validator = crate::validation::DNSValidator::new(config);
+        validator.validate_packet(self, source_addr)
     }
 
     pub fn parse(buf: &[u8]) -> Result<Self, ParseError> {

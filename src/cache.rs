@@ -4,13 +4,19 @@ use crate::dns::{
 };
 use dashmap::DashMap;
 use parking_lot::Mutex;
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tokio::fs;
 use tracing::{debug, trace};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Archive, RkyvDeserialize, RkyvSerialize,
+)]
+#[rkyv(derive(Debug, PartialEq))]
 pub struct CacheKey {
     pub domain: String,
     pub record_type: DNSResourceType,
@@ -143,6 +149,75 @@ impl CacheEntry {
     }
 }
 
+/// Serializable version of CacheEntry for persistence
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvDeserialize, RkyvSerialize)]
+#[rkyv(derive(Debug, PartialEq))]
+pub struct SerializableCacheEntry {
+    pub response: DNSPacket,
+    pub expiry_timestamp: u64, // Unix timestamp in seconds
+    pub original_ttl: u32,
+    pub is_negative: bool,
+}
+
+impl From<&CacheEntry> for SerializableCacheEntry {
+    fn from(entry: &CacheEntry) -> Self {
+        let expiry_timestamp = match entry.expiry.checked_duration_since(Instant::now()) {
+            Some(duration) => {
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+                    + duration.as_secs()
+            }
+            None => {
+                // Entry is already expired
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+            }
+        };
+
+        Self {
+            response: entry.response.clone(),
+            expiry_timestamp,
+            original_ttl: entry.original_ttl,
+            is_negative: entry.is_negative,
+        }
+    }
+}
+
+impl From<SerializableCacheEntry> for CacheEntry {
+    fn from(serializable: SerializableCacheEntry) -> Self {
+        let now_timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let expiry = if serializable.expiry_timestamp > now_timestamp {
+            Instant::now() + Duration::from_secs(serializable.expiry_timestamp - now_timestamp)
+        } else {
+            Instant::now() // Already expired
+        };
+
+        Self {
+            response: serializable.response,
+            expiry,
+            original_ttl: serializable.original_ttl,
+            is_negative: serializable.is_negative,
+        }
+    }
+}
+
+/// Cache persistence data structure
+#[derive(Debug, Serialize, Deserialize, Archive, RkyvDeserialize, RkyvSerialize)]
+#[rkyv(derive(Debug, PartialEq))]
+pub struct CacheSnapshot {
+    pub entries: Vec<(CacheKey, SerializableCacheEntry)>,
+    pub snapshot_timestamp: u64,
+    pub version: u32,
+}
+
 /// Simple domain trie for efficient domain prefix matching
 #[derive(Debug)]
 struct DomainTrie {
@@ -266,6 +341,7 @@ pub struct DnsCache {
     stats: CacheStats,
     insertion_order: Mutex<Vec<CacheKey>>, // For LRU eviction
     domain_trie: Mutex<DomainTrie>,        // For efficient domain lookups
+    cache_file_path: Option<String>,       // Optional cache persistence file
 }
 
 impl DnsCache {
@@ -277,6 +353,19 @@ impl DnsCache {
             stats: CacheStats::new(),
             insertion_order: Mutex::new(Vec::new()),
             domain_trie: Mutex::new(DomainTrie::new()),
+            cache_file_path: None,
+        }
+    }
+
+    pub fn with_persistence(max_size: usize, negative_ttl: u32, cache_file_path: String) -> Self {
+        Self {
+            cache: DashMap::new(),
+            max_size,
+            negative_ttl,
+            stats: CacheStats::new(),
+            insertion_order: Mutex::new(Vec::new()),
+            domain_trie: Mutex::new(DomainTrie::new()),
+            cache_file_path: Some(cache_file_path),
         }
     }
 
@@ -491,6 +580,162 @@ impl DnsCache {
             stats.evictions.load(Ordering::Relaxed),
             stats.expired_evictions.load(Ordering::Relaxed)
         )
+    }
+
+    /// Save cache to disk using rkyv for zero-copy deserialization
+    pub async fn save_to_disk(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let cache_path = match &self.cache_file_path {
+            Some(path) => path,
+            None => return Ok(()), // No persistence configured
+        };
+
+        // Create snapshot of current cache
+        let mut entries = Vec::new();
+        for item in self.cache.iter() {
+            let key = item.key().clone();
+            let entry = item.value();
+
+            // Skip expired entries
+            if !entry.is_expired() {
+                let serializable_entry = SerializableCacheEntry::from(entry);
+                entries.push((key, serializable_entry));
+            }
+        }
+
+        let snapshot = CacheSnapshot {
+            entries,
+            snapshot_timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            version: 2, // Version 2 for rkyv format
+        };
+
+        // Serialize to rkyv format (binary)
+        let serialized_data = rkyv::to_bytes::<rkyv::rancor::Error>(&snapshot)
+            .map_err(|e| format!("rkyv serialization failed: {}", e))?;
+
+        // Create parent directory if it doesn't exist
+        if let Some(parent) = std::path::Path::new(cache_path).parent() {
+            fs::create_dir_all(parent).await?;
+        }
+
+        // Write to temporary file first, then rename for atomic operation
+        let temp_path = format!("{}.tmp", cache_path);
+        fs::write(&temp_path, &serialized_data).await?;
+        fs::rename(&temp_path, cache_path).await?;
+
+        debug!(
+            "Saved {} cache entries to {} ({} bytes, rkyv format)",
+            snapshot.entries.len(),
+            cache_path,
+            serialized_data.len()
+        );
+
+        Ok(())
+    }
+
+    /// Load cache from disk using rkyv for zero-copy deserialization
+    pub async fn load_from_disk(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let cache_path = match &self.cache_file_path {
+            Some(path) => path,
+            None => return Ok(()), // No persistence configured
+        };
+
+        // Check if cache file exists
+        if !fs::try_exists(cache_path).await? {
+            debug!(
+                "Cache file {} does not exist, starting with empty cache",
+                cache_path
+            );
+            return Ok(());
+        }
+
+        // Read cache file as bytes
+        let serialized_data = fs::read(cache_path).await?;
+
+        // Try to detect format and deserialize accordingly
+        let snapshot = if serialized_data.starts_with(b"{") {
+            // JSON format (legacy v1) - fallback for backward compatibility
+            debug!("Detected legacy JSON format, deserializing with serde_json");
+            let json_str = std::str::from_utf8(&serialized_data)?;
+            serde_json::from_str::<CacheSnapshot>(json_str)?
+        } else {
+            // rkyv format (v2+) - zero-copy deserialization
+            debug!("Detected rkyv binary format, deserializing with zero-copy");
+
+            // Deserialize directly from the bytes
+            rkyv::from_bytes::<CacheSnapshot, rkyv::rancor::Error>(&serialized_data)
+                .map_err(|e| format!("rkyv deserialization failed: {}", e))?
+        };
+
+        debug!(
+            "Loading cache from {} (version {}, {} entries, snapshot from {}, {} bytes)",
+            cache_path,
+            snapshot.version,
+            snapshot.entries.len(),
+            snapshot.snapshot_timestamp,
+            serialized_data.len()
+        );
+
+        // Load entries, filtering out expired ones
+        let now_timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let mut loaded_count = 0;
+        let mut expired_count = 0;
+
+        for (key, serializable_entry) in snapshot.entries {
+            // Check if entry is still valid
+            if serializable_entry.expiry_timestamp > now_timestamp {
+                let entry = CacheEntry::from(serializable_entry);
+
+                // Insert into cache
+                self.cache.insert(key.clone(), entry);
+
+                // Update insertion order for LRU
+                {
+                    let mut order = self.insertion_order.lock();
+                    order.push(key.clone());
+                }
+
+                // Update domain trie
+                {
+                    let mut trie = self.domain_trie.lock();
+                    trie.insert(&key.domain, key.clone());
+                }
+
+                loaded_count += 1;
+            } else {
+                expired_count += 1;
+            }
+        }
+
+        debug!(
+            "Loaded {} valid cache entries, skipped {} expired entries (rkyv zero-copy)",
+            loaded_count, expired_count
+        );
+
+        Ok(())
+    }
+
+    /// Get cache persistence status
+    pub fn has_persistence(&self) -> bool {
+        self.cache_file_path.is_some()
+    }
+
+    /// Get cache file path
+    pub fn cache_file_path(&self) -> Option<&str> {
+        self.cache_file_path.as_deref()
+    }
+
+    /// Get all cache entries (for testing and debugging)
+    pub fn iter_entries(&self) -> impl Iterator<Item = (CacheKey, CacheEntry)> + '_ {
+        self.cache
+            .iter()
+            .map(|item| (item.key().clone(), item.value().clone()))
     }
 }
 

@@ -77,7 +77,8 @@ impl ServerHealth {
             if let Some(current_avg) = *avg_time {
                 // EMA with alpha = 0.2 (more weight to recent responses)
                 let new_avg = Duration::from_millis(
-                    (current_avg.as_millis() as f64 * 0.8 + response_time.as_millis() as f64 * 0.2) as u64
+                    (current_avg.as_millis() as f64 * 0.8 + response_time.as_millis() as f64 * 0.2)
+                        as u64,
                 );
                 *avg_time = Some(new_avg);
             } else {
@@ -143,7 +144,9 @@ impl ServerHealth {
             1.0
         };
 
-        let avg_response_time = self.avg_response_time.try_lock()
+        let avg_response_time = self
+            .avg_response_time
+            .try_lock()
             .map(|guard| *guard)
             .unwrap_or(None);
 
@@ -272,18 +275,18 @@ impl DnsResolver {
                     config.max_cache_size, config.default_ttl, cache_path
                 );
                 let cache = DnsCache::with_persistence(
-                    config.max_cache_size, 
-                    config.default_ttl, 
-                    cache_path.clone()
+                    config.max_cache_size,
+                    config.default_ttl,
+                    cache_path.clone(),
                 );
-                
+
                 // Load existing cache from disk
                 if let Err(e) = cache.load_from_disk().await {
                     warn!("Failed to load cache from disk: {}", e);
                 } else {
                     info!("Loaded cache from disk: {}", cache_path);
                 }
-                
+
                 cache
             } else {
                 info!(
@@ -305,7 +308,7 @@ impl DnsResolver {
         debug!("Upstream servers: {:?}", config.upstream_servers);
 
         let server_health = Arc::new(DashMap::new());
-        
+
         // Initialize health tracking for all upstream servers
         for &server_addr in &config.upstream_servers {
             server_health.insert(server_addr, ServerHealth::new());
@@ -599,7 +602,7 @@ impl DnsResolver {
 
         // Get healthy servers for parallel queries
         let servers_to_query = self.get_servers_by_health_priority();
-        
+
         if servers_to_query.is_empty() {
             error!("No healthy servers available for parallel queries");
             return Err(DnsError::Parse("No healthy servers available".to_string()));
@@ -618,65 +621,72 @@ impl DnsResolver {
                 // Check if we should try this server
                 if let Some(health) = self.server_health.get(&upstream_addr) {
                     if !health.should_retry_health_check() {
-                        debug!("Skipping unhealthy server {} in parallel query", upstream_addr);
+                        debug!(
+                            "Skipping unhealthy server {} in parallel query",
+                            upstream_addr
+                        );
                         return None;
                     }
                     health.update_health_check_time();
                 }
 
                 let query = query.clone();
-                Some(async move {
-                    debug!(
-                        "Parallel query {}: starting query to {}",
-                        idx, upstream_addr
-                    );
-                    let start_time = std::time::Instant::now();
+                Some(
+                    async move {
+                        debug!(
+                            "Parallel query {}: starting query to {}",
+                            idx, upstream_addr
+                        );
+                        let start_time = std::time::Instant::now();
 
-                    match self.query_upstream(&query, upstream_addr).await {
-                        Ok(mut response) => {
-                            let elapsed = start_time.elapsed();
-                            
-                            // Record successful response
-                            if let Some(health) = self.server_health.get(&upstream_addr) {
-                                health.record_success(elapsed);
+                        match self.query_upstream(&query, upstream_addr).await {
+                            Ok(mut response) => {
+                                let elapsed = start_time.elapsed();
+
+                                // Record successful response
+                                if let Some(health) = self.server_health.get(&upstream_addr) {
+                                    health.record_success(elapsed);
+                                }
+
+                                debug!(
+                                    "Parallel query {}: SUCCESS from {} in {:?}",
+                                    idx, upstream_addr, elapsed
+                                );
+
+                                // Restore original query ID
+                                response.header.id = original_id;
+
+                                // Handle EDNS response setup
+                                self.setup_edns_response(&query, &mut response);
+
+                                Ok((response, upstream_addr, elapsed))
                             }
-                            
-                            debug!(
-                                "Parallel query {}: SUCCESS from {} in {:?}",
-                                idx, upstream_addr, elapsed
-                            );
+                            Err(e) => {
+                                let elapsed = start_time.elapsed();
 
-                            // Restore original query ID
-                            response.header.id = original_id;
+                                // Record failure
+                                if let Some(health) = self.server_health.get(&upstream_addr) {
+                                    health.record_failure();
+                                }
 
-                            // Handle EDNS response setup
-                            self.setup_edns_response(&query, &mut response);
-
-                            Ok((response, upstream_addr, elapsed))
-                        }
-                        Err(e) => {
-                            let elapsed = start_time.elapsed();
-                            
-                            // Record failure
-                            if let Some(health) = self.server_health.get(&upstream_addr) {
-                                health.record_failure();
+                                debug!(
+                                    "Parallel query {}: FAILED from {} in {:?}: {:?}",
+                                    idx, upstream_addr, elapsed, e
+                                );
+                                Err(e)
                             }
-                            
-                            debug!(
-                                "Parallel query {}: FAILED from {} in {:?}: {:?}",
-                                idx, upstream_addr, elapsed, e
-                            );
-                            Err(e)
                         }
                     }
-                }
-                .boxed())
+                    .boxed(),
+                )
             })
             .collect();
 
         if query_futures.is_empty() {
             warn!("No servers available for parallel queries after health filtering");
-            return Err(DnsError::Parse("No healthy servers available for parallel queries".to_string()));
+            return Err(DnsError::Parse(
+                "No healthy servers available for parallel queries".to_string(),
+            ));
         }
 
         // Race all queries with a timeout
@@ -710,10 +720,10 @@ impl DnsResolver {
     /// Sequential resolution with automatic failover
     async fn resolve_sequentially(&self, query: &DNSPacket, original_id: u16) -> Result<DNSPacket> {
         let mut last_error = None;
-        
+
         // Get healthy servers first, then unhealthy ones as fallback
         let servers_to_try = self.get_servers_by_health_priority();
-        
+
         if servers_to_try.is_empty() {
             error!("No upstream servers available");
             return Err(DnsError::Parse("No upstream servers available".to_string()));
@@ -723,7 +733,10 @@ impl DnsResolver {
             // Check if we should try this server
             if let Some(health) = self.server_health.get(&upstream_addr) {
                 if !health.should_retry_health_check() {
-                    debug!("Skipping unhealthy server {} (in backoff period)", upstream_addr);
+                    debug!(
+                        "Skipping unhealthy server {} (in backoff period)",
+                        upstream_addr
+                    );
                     continue;
                 }
                 health.update_health_check_time();
@@ -733,13 +746,15 @@ impl DnsResolver {
             match self.query_upstream(query, upstream_addr).await {
                 Ok(mut response) => {
                     let response_time = start_time.elapsed();
-                    
+
                     // Record successful response
                     if let Some(health) = self.server_health.get(&upstream_addr) {
                         health.record_success(response_time);
                         info!(
                             "Successfully resolved query from upstream {} (attempt {}, response_time: {:?})",
-                            upstream_addr, attempt + 1, response_time
+                            upstream_addr,
+                            attempt + 1,
+                            response_time
                         );
                     }
 
@@ -757,11 +772,15 @@ impl DnsResolver {
                         health.record_failure();
                         let stats = health.get_stats();
                         warn!(
-                            "Failed to resolve from upstream {} (attempt {}): {:?} - Server stats: {} failures, {:.1}% success rate", 
-                            upstream_addr, attempt + 1, e, stats.consecutive_failures, stats.success_rate * 100.0
+                            "Failed to resolve from upstream {} (attempt {}): {:?} - Server stats: {} failures, {:.1}% success rate",
+                            upstream_addr,
+                            attempt + 1,
+                            e,
+                            stats.consecutive_failures,
+                            stats.success_rate * 100.0
                         );
                     }
-                    
+
                     last_error = Some(e);
 
                     // If this isn't the last server, continue to next
@@ -773,7 +792,10 @@ impl DnsResolver {
         }
 
         // All upstream servers failed
-        error!("All upstream servers failed to resolve query after trying {} servers", servers_to_try.len());
+        error!(
+            "All upstream servers failed to resolve query after trying {} servers",
+            servers_to_try.len()
+        );
         Err(last_error.unwrap_or(DnsError::Parse("No upstream servers available".to_string())))
     }
 
@@ -799,14 +821,18 @@ impl DnsResolver {
         healthy_servers.sort_by(|&a, &b| {
             let a_health = self.server_health.get(&a);
             let b_health = self.server_health.get(&b);
-            
+
             match (a_health, b_health) {
                 (Some(a_health), Some(b_health)) => {
-                    let a_time = a_health.avg_response_time.try_lock()
+                    let a_time = a_health
+                        .avg_response_time
+                        .try_lock()
                         .map(|guard| *guard)
                         .unwrap_or(None)
                         .unwrap_or(Duration::from_millis(1000));
-                    let b_time = b_health.avg_response_time.try_lock()
+                    let b_time = b_health
+                        .avg_response_time
+                        .try_lock()
                         .map(|guard| *guard)
                         .unwrap_or(None)
                         .unwrap_or(Duration::from_millis(1000));
@@ -1369,10 +1395,14 @@ impl DnsResolver {
     pub async fn save_cache(&self) -> Result<()> {
         if let Some(cache) = &self.cache {
             if cache.has_persistence() {
-                cache.save_to_disk().await.map_err(|e| {
-                    DnsError::Io(format!("Failed to save cache: {}", e))
-                })?;
-                debug!("Cache saved to disk: {}", cache.cache_file_path().unwrap_or("unknown"));
+                cache
+                    .save_to_disk()
+                    .await
+                    .map_err(|e| DnsError::Io(format!("Failed to save cache: {}", e)))?;
+                debug!(
+                    "Cache saved to disk: {}",
+                    cache.cache_file_path().unwrap_or("unknown")
+                );
             }
         }
         Ok(())
@@ -1380,7 +1410,9 @@ impl DnsResolver {
 
     /// Check if cache persistence is enabled
     pub fn has_cache_persistence(&self) -> bool {
-        self.cache.as_ref().map_or(false, |cache| cache.has_persistence())
+        self.cache
+            .as_ref()
+            .map_or(false, |cache| cache.has_persistence())
     }
 
     /// Get server health statistics for all upstream servers
@@ -1398,7 +1430,7 @@ impl DnsResolver {
     pub fn get_health_debug_info(&self) -> String {
         let mut info = String::new();
         info.push_str("=== Upstream Server Health Status ===\n");
-        
+
         for &server_addr in &self.config.upstream_servers {
             if let Some(health) = self.server_health.get(&server_addr) {
                 let stats = health.get_stats();
@@ -1413,7 +1445,7 @@ impl DnsResolver {
                 ));
             }
         }
-        
+
         info
     }
 

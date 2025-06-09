@@ -6,7 +6,19 @@ use super::{
     enums::{DNSResourceClass, DNSResourceType},
 };
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
+#[rkyv(derive(Debug, PartialEq))]
 pub struct DNSQuestion {
     pub labels: Vec<String>,
     pub qtype: DNSResourceType,

@@ -1,5 +1,6 @@
 use dns::DNSPacket;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::Semaphore;
@@ -10,9 +11,12 @@ pub mod cache;
 pub mod config;
 pub mod dns;
 pub mod error;
+pub mod rate_limiter;
 pub mod resolver;
+pub mod validation;
 
 use config::DnsConfig;
+use rate_limiter::DnsRateLimiter;
 use resolver::DnsResolver;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -74,27 +78,115 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
     // Create semaphore for limiting concurrent queries
     let query_semaphore = Arc::new(Semaphore::new(config.max_concurrent_queries));
 
+    // Create rate limiter
+    let rate_limiter = Arc::new(DnsRateLimiter::new(config.rate_limit_config.clone()));
+
+    info!(
+        "Rate limiting enabled: {}, per-IP limit: {} QPS, global limit: {} QPS",
+        config.rate_limit_config.enable_rate_limiting,
+        config.rate_limit_config.queries_per_second_per_ip,
+        config.rate_limit_config.global_queries_per_second
+    );
+
+    // Start rate limiter cleanup task
+    let rate_limiter_cleanup = rate_limiter.clone();
+    let cleanup_interval = config.rate_limit_config.cleanup_interval_seconds;
+    let cleanup_task = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(cleanup_interval));
+        loop {
+            interval.tick().await;
+            rate_limiter_cleanup.cleanup_expired_entries();
+
+            let stats = rate_limiter_cleanup.get_stats();
+            if stats.active_ip_limiters > 1000 {
+                debug!(
+                    "Rate limiter stats: {} active IP limiters, {} error limiters, {} nxdomain limiters",
+                    stats.active_ip_limiters,
+                    stats.active_error_limiters,
+                    stats.active_nxdomain_limiters
+                );
+            }
+        }
+    });
+
+    // Start cache persistence task if enabled
+    let cache_save_task = if config.cache_save_interval > 0 && resolver.has_cache_persistence() {
+        let resolver_cache = resolver.clone();
+        let save_interval = config.cache_save_interval;
+        info!(
+            "Starting cache persistence task: saving every {} seconds",
+            save_interval
+        );
+
+        Some(tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(save_interval));
+            loop {
+                interval.tick().await;
+                if let Err(e) = resolver_cache.save_cache().await {
+                    error!("Failed to save cache: {}", e);
+                } else {
+                    trace!("Cache saved successfully");
+                }
+            }
+        }))
+    } else {
+        None
+    };
+
     // Start UDP and TCP servers concurrently
     let udp_task = tokio::spawn(run_udp_server(
         config.clone(),
         resolver.clone(),
         query_semaphore.clone(),
+        rate_limiter.clone(),
     ));
     let tcp_task = tokio::spawn(run_tcp_server(
         config.clone(),
         resolver.clone(),
         query_semaphore.clone(),
+        rate_limiter.clone(),
     ));
 
     info!("DNS server listening on {} (UDP and TCP)", config.bind_addr);
 
-    // Wait for either server to exit (which shouldn't happen)
+    // Setup graceful shutdown signal handling
+    let shutdown_signal = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to listen for shutdown signal");
+        info!("Shutdown signal received, saving cache before exit...");
+
+        // Save cache before shutdown
+        if let Err(e) = resolver.save_cache().await {
+            error!("Failed to save cache during shutdown: {}", e);
+        } else {
+            info!("Cache saved successfully during shutdown");
+        }
+    };
+
+    // Wait for any task to exit or shutdown signal
     tokio::select! {
         result = udp_task => {
             error!("UDP server exited: {:?}", result);
         }
         result = tcp_task => {
             error!("TCP server exited: {:?}", result);
+        }
+        result = cleanup_task => {
+            error!("Rate limiter cleanup task exited: {:?}", result);
+        }
+        result = async {
+            if let Some(task) = cache_save_task {
+                task.await
+            } else {
+                // If no cache task, wait forever
+                std::future::pending::<Result<(), tokio::task::JoinError>>().await
+            }
+        } => {
+            error!("Cache save task exited: {:?}", result);
+        }
+        _ = shutdown_signal => {
+            info!("Heimdall DNS server shutting down gracefully");
         }
     }
 
@@ -105,6 +197,7 @@ async fn run_udp_server(
     config: DnsConfig,
     resolver: Arc<DnsResolver>,
     query_semaphore: Arc<Semaphore>,
+    rate_limiter: Arc<DnsRateLimiter>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Bind UDP socket
     let sock = Arc::new(UdpSocket::bind(config.bind_addr).await?);
@@ -115,6 +208,12 @@ async fn run_udp_server(
 
     loop {
         let (read_bytes, src_addr) = sock.recv_from(&mut buf).await?;
+
+        // Check rate limiting first (before semaphore to save resources)
+        if !rate_limiter.check_query_allowed(src_addr.ip()) {
+            warn!("Rate limit exceeded for {}, dropping query", src_addr.ip());
+            continue;
+        }
 
         // Acquire semaphore permit before processing query
         let permit = match query_semaphore.clone().try_acquire_owned() {
@@ -169,6 +268,7 @@ async fn run_tcp_server(
     config: DnsConfig,
     resolver: Arc<DnsResolver>,
     query_semaphore: Arc<Semaphore>,
+    rate_limiter: Arc<DnsRateLimiter>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Bind TCP listener
     let listener = TcpListener::bind(config.bind_addr).await?;
@@ -178,10 +278,13 @@ async fn run_tcp_server(
         let (stream, src_addr) = listener.accept().await?;
         let resolver = resolver.clone();
         let query_semaphore = query_semaphore.clone();
+        let rate_limiter = rate_limiter.clone();
 
         // Handle each TCP connection in a separate task
         tokio::spawn(async move {
-            if let Err(e) = handle_tcp_connection(stream, src_addr, resolver, query_semaphore).await
+            if let Err(e) =
+                handle_tcp_connection(stream, src_addr, resolver, query_semaphore, rate_limiter)
+                    .await
             {
                 warn!("TCP connection error from {}: {:?}", src_addr, e);
             }
@@ -194,6 +297,7 @@ async fn handle_tcp_connection(
     src_addr: std::net::SocketAddr,
     resolver: Arc<DnsResolver>,
     query_semaphore: Arc<Semaphore>,
+    rate_limiter: Arc<DnsRateLimiter>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut length_buf = [0u8; 2];
 
@@ -214,6 +318,15 @@ async fn handle_tcp_connection(
         // Read the DNS message
         let mut message_buf = vec![0; message_length];
         stream.read_exact(&mut message_buf).await?;
+
+        // Check rate limiting
+        if !rate_limiter.check_query_allowed(src_addr.ip()) {
+            warn!(
+                "Rate limit exceeded for {}, closing TCP connection",
+                src_addr.ip()
+            );
+            break;
+        }
 
         // Acquire semaphore permit for concurrent query limiting
         let _permit = match query_semaphore.clone().try_acquire_owned() {

@@ -2,7 +2,19 @@ use super::ParseError;
 
 /// EDNS0 OPT pseudo-record implementation
 /// RFC 6891: https://tools.ietf.org/html/rfc6891
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
+#[rkyv(derive(Debug, PartialEq))]
 pub struct EdnsOpt {
     /// UDP payload size that can be handled by the requestor
     pub udp_payload_size: u16,
@@ -17,7 +29,18 @@ pub struct EdnsOpt {
 }
 
 /// EDNS option structure
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
+#[rkyv(derive(Debug, PartialEq))]
 pub struct EdnsOption {
     /// Option code (2 bytes)
     pub code: u16,
