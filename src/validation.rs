@@ -349,13 +349,8 @@ impl DNSValidator {
         }
 
         // Check for amplification-prone queries
-        if self.config.block_amplification_queries {
-            match qtype {
-                DNSResourceType::ANY => {
-                    return Err(ValidationError::PotentialAmplificationAttack);
-                }
-                _ => {}
-            }
+        if self.config.block_amplification_queries && qtype == DNSResourceType::ANY {
+            return Err(ValidationError::PotentialAmplificationAttack);
         }
 
         // Check allowed types (if list is not empty)
@@ -580,27 +575,23 @@ mod tests {
         // Valid domain names
         assert!(
             validator
-                .validate_domain_name(&vec!["google".to_string(), "com".to_string()])
+                .validate_domain_name(&["google".to_string(), "com".to_string()])
                 .is_ok()
         );
-        assert!(validator.validate_domain_name(&vec![]).is_ok()); // Root domain
+        assert!(validator.validate_domain_name(&[]).is_ok()); // Root domain
 
         // Invalid domain names
         assert!(
             validator
-                .validate_domain_name(&vec!["-invalid".to_string()])
+                .validate_domain_name(&["-invalid".to_string()])
                 .is_err()
         );
         assert!(
             validator
-                .validate_domain_name(&vec!["invalid-".to_string()])
+                .validate_domain_name(&["invalid-".to_string()])
                 .is_err()
         );
-        assert!(
-            validator
-                .validate_domain_name(&vec!["a".repeat(64)])
-                .is_err()
-        ); // Too long label
+        assert!(validator.validate_domain_name(&["a".repeat(64)]).is_err()); // Too long label
 
         // Domain name too long
         let long_labels: Vec<String> = (0..10).map(|i| format!("label{}", i).repeat(6)).collect();
@@ -609,8 +600,10 @@ mod tests {
 
     #[test]
     fn test_query_type_validation() {
-        let mut config = ValidationConfig::default();
-        config.block_amplification_queries = true;
+        let config = ValidationConfig {
+            block_amplification_queries: true,
+            ..Default::default()
+        };
         let validator = DNSValidator::new(config);
 
         // Allowed types should pass

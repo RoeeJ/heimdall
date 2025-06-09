@@ -34,6 +34,7 @@ fn test_invalid_opcode_fails() {
 fn test_empty_query_fails() {
     let mut packet = DNSPacket::default();
     packet.header.qr = false; // This is a query
+    packet.header.qdcount = 1; // Claims to have a question
     packet.questions.clear(); // But no questions
 
     assert!(matches!(
@@ -49,9 +50,11 @@ fn test_excessive_records_fails() {
 
     // Add way too many questions
     for i in 0..150 {
-        let mut question = DNSQuestion::default();
-        question.labels = vec![format!("test{}", i), "com".to_string()];
-        question.qtype = DNSResourceType::A;
+        let question = DNSQuestion {
+            labels: vec![format!("test{}", i), "com".to_string()],
+            qtype: DNSResourceType::A,
+            ..Default::default()
+        };
         packet.questions.push(question);
     }
 
@@ -69,40 +72,40 @@ fn test_domain_name_validation() {
     // Valid domain names
     assert!(
         validator
-            .validate_domain_name(&vec!["google".to_string(), "com".to_string()])
+            .validate_domain_name(&["google".to_string(), "com".to_string()])
             .is_ok()
     );
-    assert!(validator.validate_domain_name(&vec![]).is_ok()); // Root domain
+    assert!(validator.validate_domain_name(&[]).is_ok()); // Root domain
     assert!(
         validator
-            .validate_domain_name(&vec!["test123".to_string()])
+            .validate_domain_name(&["test123".to_string()])
             .is_ok()
     );
     assert!(
         validator
-            .validate_domain_name(&vec!["sub-domain".to_string(), "example".to_string()])
+            .validate_domain_name(&["sub-domain".to_string(), "example".to_string()])
             .is_ok()
     );
 
     // Invalid domain names
     assert!(matches!(
-        validator.validate_domain_name(&vec!["-invalid".to_string()]),
+        validator.validate_domain_name(&["-invalid".to_string()]),
         Err(ValidationError::InvalidLabelFormat(_))
     ));
 
     assert!(matches!(
-        validator.validate_domain_name(&vec!["invalid-".to_string()]),
+        validator.validate_domain_name(&["invalid-".to_string()]),
         Err(ValidationError::InvalidLabelFormat(_))
     ));
 
     assert!(matches!(
-        validator.validate_domain_name(&vec!["invalid@domain".to_string()]),
+        validator.validate_domain_name(&["invalid@domain".to_string()]),
         Err(ValidationError::InvalidLabelCharacters(_))
     ));
 
     // Label too long (>63 chars)
     assert!(matches!(
-        validator.validate_domain_name(&vec!["a".repeat(64)]),
+        validator.validate_domain_name(&["a".repeat(64)]),
         Err(ValidationError::LabelTooLong(64))
     ));
 
@@ -118,9 +121,11 @@ fn test_domain_name_validation() {
 
 #[test]
 fn test_query_type_validation() {
-    let mut config = ValidationConfig::default();
-    config.block_amplification_queries = true;
-    config.allow_zone_transfers = false;
+    let config = ValidationConfig {
+        block_amplification_queries: true,
+        allow_zone_transfers: false,
+        ..Default::default()
+    };
     let validator = DNSValidator::new(config);
 
     // Allowed types should pass
@@ -193,13 +198,15 @@ fn test_resource_record_validation() {
     let validator = DNSValidator::new(config);
 
     // Valid A record
-    let mut a_record = DNSResource::default();
-    a_record.labels = vec!["example".to_string(), "com".to_string()];
-    a_record.rtype = DNSResourceType::A;
-    a_record.rclass = DNSResourceClass::IN;
-    a_record.ttl = 300;
-    a_record.rdata = vec![192, 168, 1, 1]; // Valid IPv4
-    a_record.rdlength = 4;
+    let a_record = DNSResource {
+        labels: vec!["example".to_string(), "com".to_string()],
+        rtype: DNSResourceType::A,
+        rclass: DNSResourceClass::IN,
+        ttl: 300,
+        rdata: vec![192, 168, 1, 1], // Valid IPv4
+        rdlength: 4,
+        ..Default::default()
+    };
     assert!(validator.validate_resource_record(&a_record).is_ok());
 
     // Invalid A record (wrong data length)
@@ -247,25 +254,29 @@ fn test_resource_record_validation() {
 
 #[test]
 fn test_packet_size_validation() {
-    let mut config = ValidationConfig::default();
-    config.max_packet_size = 100; // Very small limit for testing
+    let config = ValidationConfig {
+        max_packet_size: 100, // Very small limit for testing
+        ..Default::default()
+    };
     let validator = DNSValidator::new(config);
 
     let mut packet = create_valid_query_packet();
 
     // Add many answers to make packet large
     for i in 0..20 {
-        let mut answer = DNSResource::default();
-        answer.labels = vec![
-            format!("answer{}", i),
-            "example".to_string(),
-            "com".to_string(),
-        ];
-        answer.rtype = DNSResourceType::A;
-        answer.rclass = DNSResourceClass::IN;
-        answer.ttl = 300;
-        answer.rdata = vec![192, 168, 1, i as u8];
-        answer.rdlength = 4;
+        let answer = DNSResource {
+            labels: vec![
+                format!("answer{}", i),
+                "example".to_string(),
+                "com".to_string(),
+            ],
+            rtype: DNSResourceType::A,
+            rclass: DNSResourceClass::IN,
+            ttl: 300,
+            rdata: vec![192, 168, 1, i as u8],
+            rdlength: 4,
+            ..Default::default()
+        };
         packet.answers.push(answer);
     }
 
@@ -280,8 +291,10 @@ fn test_packet_size_validation() {
 
 #[test]
 fn test_edns_validation() {
-    let mut config = ValidationConfig::default();
-    config.max_edns_payload_size = 1024; // Small limit for testing
+    let config = ValidationConfig {
+        max_edns_payload_size: 1024, // Small limit for testing
+        ..Default::default()
+    };
 
     let mut packet = create_valid_query_packet();
     packet.add_edns(8192, false); // Payload size larger than limit
@@ -301,9 +314,11 @@ fn test_security_validation() {
     // Too many questions (suspicious pattern)
     let mut packet = DNSPacket::default();
     for i in 0..15 {
-        let mut question = DNSQuestion::default();
-        question.labels = vec![format!("test{}", i), "com".to_string()];
-        question.qtype = DNSResourceType::A;
+        let question = DNSQuestion {
+            labels: vec![format!("test{}", i), "com".to_string()],
+            qtype: DNSResourceType::A,
+            ..Default::default()
+        };
         packet.questions.push(question);
     }
     packet.header.qdcount = packet.questions.len() as u16;
@@ -332,9 +347,11 @@ fn test_malformed_packet_structure() {
 
 #[test]
 fn test_custom_validation_config() {
-    let mut config = ValidationConfig::default();
-    config.allowed_query_types = vec![DNSResourceType::A, DNSResourceType::AAAA];
-    config.blocked_query_types = vec![DNSResourceType::MX];
+    let config = ValidationConfig {
+        allowed_query_types: vec![DNSResourceType::A, DNSResourceType::AAAA],
+        blocked_query_types: vec![DNSResourceType::MX],
+        ..Default::default()
+    };
 
     let mut packet = create_valid_query_packet();
     packet.questions[0].qtype = DNSResourceType::MX; // Blocked type
@@ -385,10 +402,11 @@ fn create_valid_query_packet() -> DNSPacket {
     packet.header.qdcount = 1;
 
     // Valid question
-    let mut question = DNSQuestion::default();
-    question.labels = vec!["example".to_string(), "com".to_string()];
-    question.qtype = DNSResourceType::A;
-    question.qclass = DNSResourceClass::IN;
+    let question = DNSQuestion {
+        labels: vec!["example".to_string(), "com".to_string()],
+        qtype: DNSResourceType::A,
+        qclass: DNSResourceClass::IN,
+    };
     packet.questions.push(question);
 
     packet

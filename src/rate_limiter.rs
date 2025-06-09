@@ -39,7 +39,7 @@ pub struct RateLimitConfig {
 impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
-            enable_rate_limiting: true,
+            enable_rate_limiting: false,
             queries_per_second_per_ip: 50,    // 50 QPS per IP
             burst_size_per_ip: 100,           // Allow bursts up to 100
             global_queries_per_second: 10000, // 10k QPS global limit
@@ -248,9 +248,12 @@ mod tests {
 
     #[test]
     fn test_basic_rate_limiting() {
-        let mut config = RateLimitConfig::default();
-        config.queries_per_second_per_ip = 2; // Very low limit for testing
-        config.burst_size_per_ip = 2;
+        let config = RateLimitConfig {
+            enable_rate_limiting: true,
+            queries_per_second_per_ip: 2, // Very low limit for testing
+            burst_size_per_ip: 2,
+            ..Default::default()
+        };
 
         let limiter = DnsRateLimiter::new(config);
         let test_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
@@ -265,9 +268,12 @@ mod tests {
 
     #[test]
     fn test_per_ip_isolation() {
-        let mut config = RateLimitConfig::default();
-        config.queries_per_second_per_ip = 1;
-        config.burst_size_per_ip = 1;
+        let config = RateLimitConfig {
+            enable_rate_limiting: true,
+            queries_per_second_per_ip: 1,
+            burst_size_per_ip: 1,
+            ..Default::default()
+        };
 
         let limiter = DnsRateLimiter::new(config);
         let ip1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
@@ -283,10 +289,13 @@ mod tests {
 
     #[test]
     fn test_global_rate_limiting() {
-        let mut config = RateLimitConfig::default();
-        config.global_queries_per_second = 2;
-        config.global_burst_size = 2;
-        config.queries_per_second_per_ip = 100; // High per-IP limit
+        let config = RateLimitConfig {
+            enable_rate_limiting: true,
+            global_queries_per_second: 2,
+            global_burst_size: 2,
+            queries_per_second_per_ip: 100, // High per-IP limit
+            ..Default::default()
+        };
 
         let limiter = DnsRateLimiter::new(config);
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
@@ -299,8 +308,11 @@ mod tests {
 
     #[test]
     fn test_error_response_limiting() {
-        let mut config = RateLimitConfig::default();
-        config.errors_per_second_per_ip = 1;
+        let config = RateLimitConfig {
+            enable_rate_limiting: true,
+            errors_per_second_per_ip: 1,
+            ..Default::default()
+        };
 
         let limiter = DnsRateLimiter::new(config);
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
@@ -314,8 +326,10 @@ mod tests {
 
     #[test]
     fn test_disabled_rate_limiting() {
-        let mut config = RateLimitConfig::default();
-        config.enable_rate_limiting = false;
+        let config = RateLimitConfig {
+            enable_rate_limiting: false,
+            ..Default::default()
+        };
 
         let limiter = DnsRateLimiter::new(config);
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
@@ -330,7 +344,10 @@ mod tests {
 
     #[test]
     fn test_cleanup() {
-        let config = RateLimitConfig::default();
+        let config = RateLimitConfig {
+            enable_rate_limiting: true,
+            ..Default::default()
+        };
         let limiter = DnsRateLimiter::new(config);
 
         // Add some entries
@@ -350,9 +367,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_rate_recovery() {
-        let mut config = RateLimitConfig::default();
-        config.queries_per_second_per_ip = 10; // 10 QPS = 100ms per query
-        config.burst_size_per_ip = 1;
+        let config = RateLimitConfig {
+            enable_rate_limiting: true,
+            queries_per_second_per_ip: 10, // 10 QPS = 100ms per query
+            burst_size_per_ip: 1,
+            ..Default::default()
+        };
 
         let limiter = DnsRateLimiter::new(config);
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));

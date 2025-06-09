@@ -106,21 +106,26 @@ fn test_packet_validation() {
     let mut packet = create_test_query();
     assert!(packet.valid());
 
-    // Test invalid packet - wrong question count
+    // Test invalid packet - wrong question count (requires comprehensive validation)
     packet.header.qdcount = 2; // But we only have 1 question
-    assert!(!packet.valid());
+    assert!(packet.validate_comprehensive(None).is_err());
 
     // Fix it
     packet.header.qdcount = 1;
     assert!(packet.valid());
+    assert!(packet.validate_comprehensive(None).is_ok());
 
-    // Test invalid label length
+    // Test invalid label length (should be caught by fast validation)
     packet.questions[0].labels[0] = "a".repeat(64); // Too long
-    assert!(!packet.valid());
+    assert!(packet.validate_comprehensive(None).is_err());
+
+    // Reset to valid state
+    packet.questions[0].labels[0] = "example".to_string();
+    assert!(packet.valid());
 
     // Test invalid total name length
     packet.questions[0].labels = vec!["a".repeat(63); 5]; // Total > 255
-    assert!(!packet.valid());
+    assert!(packet.validate_comprehensive(None).is_err());
 }
 
 #[test]

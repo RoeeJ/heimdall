@@ -1412,7 +1412,7 @@ impl DnsResolver {
     pub fn has_cache_persistence(&self) -> bool {
         self.cache
             .as_ref()
-            .map_or(false, |cache| cache.has_persistence())
+            .is_some_and(|cache| cache.has_persistence())
     }
 
     /// Get server health statistics for all upstream servers
