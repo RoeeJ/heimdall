@@ -5,7 +5,6 @@ use heimdall::dns::{
 };
 use std::fs;
 use tempfile::tempdir;
-use tokio;
 
 #[tokio::test]
 async fn test_rkyv_cache_persistence() {

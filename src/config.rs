@@ -167,7 +167,7 @@ impl DnsConfig {
         // Rate limiting configuration
         if let Ok(enable_rate_limiting) = std::env::var("HEIMDALL_ENABLE_RATE_LIMITING") {
             config.rate_limit_config.enable_rate_limiting =
-                enable_rate_limiting.parse().unwrap_or(true);
+                enable_rate_limiting.parse().unwrap_or(false);
         }
 
         if let Ok(qps_per_ip) = std::env::var("HEIMDALL_QUERIES_PER_SECOND_PER_IP") {

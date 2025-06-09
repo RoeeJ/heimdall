@@ -5,11 +5,14 @@ use std::time::Duration;
 #[test]
 fn test_rate_limiter_integration() {
     // Create a rate limiter with very low limits for testing
-    let mut config = RateLimitConfig::default();
-    config.queries_per_second_per_ip = 2;
-    config.burst_size_per_ip = 2;
-    config.global_queries_per_second = 10;
-    config.global_burst_size = 10;
+    let config = RateLimitConfig {
+        enable_rate_limiting: true,
+        queries_per_second_per_ip: 2,
+        burst_size_per_ip: 2,
+        global_queries_per_second: 10,
+        global_burst_size: 10,
+        ..Default::default()
+    };
 
     let rate_limiter = DnsRateLimiter::new(config);
     let test_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
@@ -28,8 +31,10 @@ fn test_rate_limiter_integration() {
 
 #[test]
 fn test_disabled_rate_limiting() {
-    let mut config = RateLimitConfig::default();
-    config.enable_rate_limiting = false;
+    let config = RateLimitConfig {
+        enable_rate_limiting: false,
+        ..Default::default()
+    };
 
     let rate_limiter = DnsRateLimiter::new(config);
     let test_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
@@ -42,8 +47,11 @@ fn test_disabled_rate_limiting() {
 
 #[test]
 fn test_error_response_limiting() {
-    let mut config = RateLimitConfig::default();
-    config.errors_per_second_per_ip = 1;
+    let config = RateLimitConfig {
+        enable_rate_limiting: true,
+        errors_per_second_per_ip: 1,
+        ..Default::default()
+    };
 
     let rate_limiter = DnsRateLimiter::new(config);
     let test_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
@@ -60,9 +68,12 @@ fn test_error_response_limiting() {
 
 #[tokio::test]
 async fn test_rate_recovery_over_time() {
-    let mut config = RateLimitConfig::default();
-    config.queries_per_second_per_ip = 10; // 10 QPS = 100ms per query
-    config.burst_size_per_ip = 1;
+    let config = RateLimitConfig {
+        enable_rate_limiting: true,
+        queries_per_second_per_ip: 10, // 10 QPS = 100ms per query
+        burst_size_per_ip: 1,
+        ..Default::default()
+    };
 
     let rate_limiter = DnsRateLimiter::new(config);
     let test_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
@@ -80,7 +91,10 @@ async fn test_rate_recovery_over_time() {
 
 #[test]
 fn test_rate_limiter_stats() {
-    let config = RateLimitConfig::default();
+    let config = RateLimitConfig {
+        enable_rate_limiting: true,
+        ..Default::default()
+    };
     let rate_limiter = DnsRateLimiter::new(config);
 
     // Initially no active limiters
@@ -103,9 +117,12 @@ fn test_rate_limiter_stats() {
 
 #[test]
 fn test_multiple_ips() {
-    let mut config = RateLimitConfig::default();
-    config.queries_per_second_per_ip = 1;
-    config.burst_size_per_ip = 1;
+    let config = RateLimitConfig {
+        enable_rate_limiting: true,
+        queries_per_second_per_ip: 1,
+        burst_size_per_ip: 1,
+        ..Default::default()
+    };
 
     let rate_limiter = DnsRateLimiter::new(config);
 
