@@ -1,0 +1,16 @@
+apiVersion: v2
+name: heimdall
+description: A Helm chart for Heimdall DNS Server
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - dns
+  - server
+  - heimdall
+home: https://github.com/RoeeJ/heimdall
+sources:
+  - https://github.com/RoeeJ/heimdall
+maintainers:
+  - name: RoeeJ
+    url: https://github.com/RoeeJ

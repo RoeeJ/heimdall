@@ -1,0 +1,224 @@
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: heimdall-dns
+---
+# ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: heimdall
+  namespace: heimdall-dns
+---
+# ConfigMap for reference (configuration via env vars)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: heimdall-config
+  namespace: heimdall-dns
+data:
+  heimdall.toml: |
+    # Configuration reference
+    bind_addr = "0.0.0.0:1053"
+    http_bind_addr = "0.0.0.0:8080"
+    upstream_servers = ["1.1.1.1:53", "8.8.8.8:53", "8.8.4.4:53"]
+    enable_caching = true
+    max_cache_size = 10000
+    cache_file_path = "/cache/heimdall_cache.rkyv"
+---
+# PersistentVolumeClaim for cache
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: heimdall-cache
+  namespace: heimdall-dns
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: heimdall
+  namespace: heimdall-dns
+  labels:
+    app: heimdall
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: heimdall
+  template:
+    metadata:
+      labels:
+        app: heimdall
+    spec:
+      serviceAccountName: heimdall
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - heimdall
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: heimdall
+        image: ghcr.io/roeej/heimdall:latest
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_BIND_SERVICE
+        ports:
+        - name: dns-udp
+          containerPort: 1053
+          protocol: UDP
+        - name: dns-tcp
+          containerPort: 1053
+          protocol: TCP
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        env:
+        - name: HEIMDALL_BIND_ADDR
+          value: "0.0.0.0:1053"
+        - name: HEIMDALL_HTTP_BIND_ADDR
+          value: "0.0.0.0:8080"
+        - name: HEIMDALL_UPSTREAM_SERVERS
+          value: "1.1.1.1:53,8.8.8.8:53,8.8.4.4:53"
+        - name: HEIMDALL_ENABLE_CACHING
+          value: "true"
+        - name: HEIMDALL_MAX_CACHE_SIZE
+          value: "10000"
+        - name: HEIMDALL_CACHE_FILE_PATH
+          value: "/cache/heimdall_cache.rkyv"
+        - name: HEIMDALL_CACHE_SAVE_INTERVAL
+          value: "300"
+        - name: HEIMDALL_ENABLE_PARALLEL_QUERIES
+          value: "true"
+        - name: HEIMDALL_WORKER_THREADS
+          value: "0"
+        - name: HEIMDALL_MAX_CONCURRENT_QUERIES
+          value: "1000"
+        - name: RUST_LOG
+          value: "heimdall=info"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 1000m
+            memory: 512Mi
+        volumeMounts:
+        - name: cache
+          mountPath: /cache
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: cache
+        persistentVolumeClaim:
+          claimName: heimdall-cache
+      - name: tmp
+        emptyDir: {}
+---
+# Service (LoadBalancer)
+apiVersion: v1
+kind: Service
+metadata:
+  name: heimdall
+  namespace: heimdall-dns
+  labels:
+    app: heimdall
+  annotations:
+    # Uncomment for AWS NLB
+    # service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    # Uncomment for internal load balancer on Azure
+    # service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+spec:
+  type: LoadBalancer
+  selector:
+    app: heimdall
+  ports:
+  - name: dns-udp
+    port: 53
+    targetPort: 1053
+    protocol: UDP
+  - name: dns-tcp
+    port: 53
+    targetPort: 1053
+    protocol: TCP
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+---
+# PodDisruptionBudget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: heimdall
+  namespace: heimdall-dns
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: heimdall
+---
+# HorizontalPodAutoscaler (optional)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: heimdall
+  namespace: heimdall-dns
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: heimdall
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80

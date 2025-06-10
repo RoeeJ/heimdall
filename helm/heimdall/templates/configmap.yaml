@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "heimdall.fullname" . }}
+  labels:
+    {{- include "heimdall.labels" . | nindent 4 }}
+data:
+  heimdall.toml: |
+    # Heimdall DNS Server Configuration
+    # This ConfigMap is for reference and future use
+    # Currently, configuration is passed via environment variables
+    
+    bind_addr = "{{ .Values.config.bindAddr }}"
+    http_bind_addr = "{{ .Values.config.httpBindAddr }}"
+    
+    upstream_servers = [
+      {{- range .Values.config.upstreamServers }}
+      "{{ . }}",
+      {{- end }}
+    ]
+    
+    upstream_timeout = {{ .Values.config.upstreamTimeout }}
+    max_cache_size = {{ .Values.config.cache.maxSize }}
+    default_ttl = {{ .Values.config.cache.defaultTTL }}
+    enable_caching = {{ .Values.config.cache.enabled }}
+    
+    {{- if .Values.persistence.enabled }}
+    cache_file_path = "{{ .Values.config.cache.filePath }}"
+    cache_save_interval = {{ .Values.config.cache.saveInterval }}
+    {{- end }}
+    
+    enable_rate_limiting = {{ .Values.config.rateLimiting.enabled }}
+    queries_per_second_per_ip = {{ .Values.config.rateLimiting.queriesPerSecondPerIP }}
+    global_queries_per_second = {{ .Values.config.rateLimiting.globalQueriesPerSecond }}
+    
+    worker_threads = {{ .Values.config.workerThreads }}
+    blocking_threads = {{ .Values.config.blockingThreads }}
+    max_concurrent_queries = {{ .Values.config.maxConcurrentQueries }}
+    max_retries = {{ .Values.config.maxRetries }}
+    enable_parallel_queries = {{ .Values.config.enableParallelQueries }}
