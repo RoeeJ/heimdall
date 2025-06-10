@@ -164,7 +164,7 @@ async fn handle_dns_query(
             .collect::<Vec<_>>()
             .join(".");
         if !domain.is_empty() {
-            info!("Query: {} {:?}", domain, question.qtype);
+            debug!("Query: {} {:?}", domain, question.qtype);
         }
     }
 

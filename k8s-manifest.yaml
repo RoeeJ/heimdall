@@ -121,7 +121,7 @@ spec:
         - name: HEIMDALL_MAX_CONCURRENT_QUERIES
           value: "1000"
         - name: RUST_LOG
-          value: "heimdall=info"
+          value: "heimdall=info,warn"
         livenessProbe:
           httpGet:
             path: /health

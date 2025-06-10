@@ -543,8 +543,8 @@ impl DnsResolver {
                 let stats = cache.stats();
                 let total_queries = stats.hits.load(std::sync::atomic::Ordering::Relaxed)
                     + stats.misses.load(std::sync::atomic::Ordering::Relaxed);
-                if total_queries % 10 == 0 && total_queries > 0 {
-                    info!("Cache performance: {}", cache.debug_info());
+                if total_queries % 100 == 0 && total_queries > 0 {
+                    debug!("Cache performance: {}", cache.debug_info());
                 }
 
                 // Perform periodic cache cleanup (every 100 queries)
@@ -695,7 +695,7 @@ impl DnsResolver {
 
         match timeout(parallel_timeout, futures::future::select_ok(query_futures)).await {
             Ok(Ok(((response, upstream_addr, elapsed), _remaining_futures))) => {
-                info!(
+                debug!(
                     "Parallel query SUCCESS: {} responded in {:?} (faster than others)",
                     upstream_addr, elapsed
                 );
@@ -750,7 +750,7 @@ impl DnsResolver {
                     // Record successful response
                     if let Some(health) = self.server_health.get(&upstream_addr) {
                         health.record_success(response_time);
-                        info!(
+                        debug!(
                             "Successfully resolved query from upstream {} (attempt {}, response_time: {:?})",
                             upstream_addr,
                             attempt + 1,
