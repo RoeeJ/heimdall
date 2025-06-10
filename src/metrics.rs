@@ -19,6 +19,7 @@ pub struct DnsMetrics {
     queries_total: CounterVec,
     query_duration: HistogramVec,
     concurrent_queries: IntGauge,
+    malformed_packets: CounterVec,
 
     // Upstream server metrics
     upstream_requests: CounterVec,
@@ -90,6 +91,14 @@ impl DnsMetrics {
             "heimdall_concurrent_queries",
             "Current number of concurrent DNS queries being processed"
         ))?;
+
+        let malformed_packets = CounterVec::new(
+            opts!(
+                "heimdall_malformed_packets_total",
+                "Total number of malformed DNS packets received"
+            ),
+            &["protocol", "error_type"],
+        )?;
 
         // Upstream server metrics
         let upstream_requests = CounterVec::new(
@@ -178,6 +187,7 @@ impl DnsMetrics {
         registry.register(Box::new(queries_total.clone()))?;
         registry.register(Box::new(query_duration.clone()))?;
         registry.register(Box::new(concurrent_queries.clone()))?;
+        registry.register(Box::new(malformed_packets.clone()))?;
         registry.register(Box::new(upstream_requests.clone()))?;
         registry.register(Box::new(upstream_responses.clone()))?;
         registry.register(Box::new(upstream_response_time.clone()))?;
@@ -199,6 +209,7 @@ impl DnsMetrics {
             queries_total,
             query_duration,
             concurrent_queries,
+            malformed_packets,
             upstream_requests,
             upstream_responses,
             upstream_response_time,
@@ -331,6 +342,13 @@ impl DnsMetrics {
         self.query_duration
             .with_label_values(&[protocol, if cache_hit { "hit" } else { "miss" }])
             .observe(duration.as_secs_f64());
+    }
+
+    /// Record a malformed packet
+    pub fn record_malformed_packet(&self, protocol: &str, error_type: &str) {
+        self.malformed_packets
+            .with_label_values(&[protocol, error_type])
+            .inc();
     }
 
     /// Record a rate limit drop
