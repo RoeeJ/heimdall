@@ -228,6 +228,7 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
         resolver.clone(),
         query_semaphore.clone(),
         rate_limiter.clone(),
+        metrics.clone(),
         udp_shutdown_rx,
     ));
     let tcp_task = tokio::spawn(run_tcp_server(
@@ -235,6 +236,7 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
         resolver.clone(),
         query_semaphore.clone(),
         rate_limiter.clone(),
+        metrics.clone(),
         tcp_shutdown_rx,
     ));
 

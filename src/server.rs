@@ -1,5 +1,6 @@
 use crate::{
-    config::DnsConfig, dns::DNSPacket, rate_limiter::DnsRateLimiter, resolver::DnsResolver,
+    config::DnsConfig, dns::DNSPacket, metrics::DnsMetrics, rate_limiter::DnsRateLimiter,
+    resolver::DnsResolver,
 };
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
@@ -12,6 +13,7 @@ pub async fn run_udp_server(
     resolver: Arc<DnsResolver>,
     query_semaphore: Arc<Semaphore>,
     rate_limiter: Arc<DnsRateLimiter>,
+    metrics: Arc<DnsMetrics>,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Bind UDP socket
@@ -53,6 +55,7 @@ pub async fn run_udp_server(
                 };
 
                 let resolver_clone = resolver.clone();
+                let metrics_clone = metrics.clone();
                 let query_data = buf[..read_bytes].to_vec();
                 let sock_clone = sock.clone();
 
@@ -60,7 +63,7 @@ pub async fn run_udp_server(
                 tokio::spawn(async move {
                     let _permit = permit; // Keep permit alive for the duration of the query
 
-                    match handle_dns_query(&query_data, &resolver_clone).await {
+                    match handle_dns_query(&query_data, &resolver_clone, &metrics_clone, "udp").await {
                         Ok(response_data) => {
                             // Check if response is too large for UDP and client supports EDNS
                             if response_data.len() > 512 {
@@ -83,7 +86,12 @@ pub async fn run_udp_server(
                             }
                         }
                         Err(e) => {
-                            warn!("Failed to handle UDP query from {}: {:?}", src_addr, e);
+                            // Log at debug level for parsing errors, warn for other errors
+                            if e.to_string().contains("Invalid DNS packet") {
+                                debug!("Malformed UDP packet from {}: {}", src_addr, e);
+                            } else {
+                                warn!("Failed to handle UDP query from {}: {:?}", src_addr, e);
+                            }
                         }
                     }
                 });
@@ -100,6 +108,7 @@ pub async fn run_tcp_server(
     resolver: Arc<DnsResolver>,
     query_semaphore: Arc<Semaphore>,
     rate_limiter: Arc<DnsRateLimiter>,
+    metrics: Arc<DnsMetrics>,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Bind TCP listener
@@ -121,11 +130,12 @@ pub async fn run_tcp_server(
                 let resolver = resolver.clone();
                 let query_semaphore = query_semaphore.clone();
                 let rate_limiter = rate_limiter.clone();
+                let metrics = metrics.clone();
 
                 // Handle each TCP connection in a separate task
                 tokio::spawn(async move {
                     if let Err(e) =
-                        handle_tcp_connection(stream, src_addr, resolver, query_semaphore, rate_limiter)
+                        handle_tcp_connection(stream, src_addr, resolver, query_semaphore, rate_limiter, metrics)
                             .await
                     {
                         warn!("TCP connection error from {}: {:?}", src_addr, e);
@@ -141,9 +151,36 @@ pub async fn run_tcp_server(
 async fn handle_dns_query(
     buf: &[u8],
     resolver: &DnsResolver,
+    metrics: &DnsMetrics,
+    protocol: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     // Parse the DNS packet
-    let packet = DNSPacket::parse(buf)?;
+    let packet = match DNSPacket::parse(buf) {
+        Ok(packet) => packet,
+        Err(e) => {
+            debug!(
+                "Failed to parse DNS packet: {:?} (packet length: {} bytes)",
+                e,
+                buf.len()
+            );
+
+            // Record the malformed packet in metrics
+            let error_type = if e.to_string().contains("InvalidLabel") {
+                "invalid_label"
+            } else if e.to_string().contains("BufferTooSmall") {
+                "buffer_too_small"
+            } else if e.to_string().contains("InvalidPacket") {
+                "invalid_packet"
+            } else {
+                "parse_error"
+            };
+            metrics.record_malformed_packet(protocol, error_type);
+
+            // For malformed packets, we can't create a proper response since we don't have a valid packet ID
+            // Return a generic format error response
+            return Err(format!("Invalid DNS packet: {}", e).into());
+        }
+    };
 
     debug!(
         "Received DNS query: id={}, questions={}, edns={}",
@@ -196,6 +233,7 @@ async fn handle_tcp_connection(
     resolver: Arc<DnsResolver>,
     query_semaphore: Arc<Semaphore>,
     rate_limiter: Arc<DnsRateLimiter>,
+    metrics: Arc<DnsMetrics>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -241,7 +279,7 @@ async fn handle_tcp_connection(
         };
 
         // Parse and handle the DNS query
-        match handle_dns_query(&message_buf, &resolver).await {
+        match handle_dns_query(&message_buf, &resolver, &metrics, "tcp").await {
             Ok(response_data) => {
                 // Write length prefix followed by response
                 let response_length = response_data.len() as u16;
@@ -250,7 +288,12 @@ async fn handle_tcp_connection(
                 stream.flush().await?;
             }
             Err(e) => {
-                warn!("Failed to handle TCP query from {}: {:?}", src_addr, e);
+                // Log at debug level for parsing errors, warn for other errors
+                if e.to_string().contains("Invalid DNS packet") {
+                    debug!("Malformed TCP packet from {}: {}", src_addr, e);
+                } else {
+                    warn!("Failed to handle TCP query from {}: {:?}", src_addr, e);
+                }
                 // For TCP, we should close the connection on errors
                 break;
             }
