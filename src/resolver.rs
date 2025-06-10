@@ -1107,6 +1107,25 @@ impl DnsResolver {
         response
     }
 
+    /// Create a truncated response for UDP size limits
+    pub fn create_truncated_response(&self, query: &DNSPacket) -> DNSPacket {
+        let mut response = query.clone();
+        response.header.qr = true; // This is a response
+        response.header.ra = true; // Recursion available
+        response.header.tc = true; // Truncated - client should retry with TCP
+        response.header.rcode = 0; // NOERROR
+        response.header.ancount = 0; // No answers (truncated)
+        response.header.nscount = 0; // No authority records
+        response.header.arcount = 0; // No additional records (except EDNS if present)
+
+        // Clear answer sections to ensure response fits in UDP
+        response.answers.clear();
+        response.authorities.clear();
+        response.resources.clear();
+
+        response
+    }
+
     /// Create a NXDOMAIN response for non-existent domains
     pub fn create_nxdomain_response(&self, query: &DNSPacket) -> DNSPacket {
         let mut response = query.clone();

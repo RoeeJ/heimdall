@@ -65,23 +65,43 @@ pub async fn run_udp_server(
 
                     match handle_dns_query(&query_data, &resolver_clone, &metrics_clone, "udp").await {
                         Ok(response_data) => {
-                            // Check if response is too large for UDP and client supports EDNS
-                            if response_data.len() > 512 {
-                                // Try to parse the query to check EDNS support
-                                if let Ok(query_packet) = DNSPacket::parse(&query_data) {
-                                    let max_udp_size = query_packet.max_udp_payload_size();
-                                    if response_data.len() > max_udp_size as usize {
-                                        warn!(
-                                            "Response too large for UDP ({}>{} bytes), client should retry with TCP",
-                                            response_data.len(),
-                                            max_udp_size
-                                        );
-                                        // TODO: Set TC (truncated) flag in response
-                                    }
-                                }
-                            }
+                            let final_response = if let Ok(query_packet) = DNSPacket::parse(&query_data) {
+                                let max_udp_size = query_packet.max_udp_payload_size();
 
-                            if let Err(e) = sock_clone.send_to(&response_data, src_addr).await {
+                                // Check if response is too large for UDP
+                                if response_data.len() > max_udp_size as usize {
+                                    debug!(
+                                        "Response too large for UDP ({}>{} bytes), sending truncated response",
+                                        response_data.len(),
+                                        max_udp_size
+                                    );
+
+                                    // Record truncation in metrics
+                                    let reason = if max_udp_size == 512 {
+                                        "no_edns"
+                                    } else {
+                                        "exceeds_edns_limit"
+                                    };
+                                    metrics_clone.record_truncated_response("udp", reason);
+
+                                    // Create truncated response with TC flag set
+                                    let truncated_response = resolver_clone.create_truncated_response(&query_packet);
+                                    match truncated_response.serialize() {
+                                        Ok(truncated_data) => truncated_data,
+                                        Err(e) => {
+                                            error!("Failed to serialize truncated response: {:?}", e);
+                                            response_data // Fall back to original response
+                                        }
+                                    }
+                                } else {
+                                    response_data
+                                }
+                            } else {
+                                // If we can't parse the query, just send the original response
+                                response_data
+                            };
+
+                            if let Err(e) = sock_clone.send_to(&final_response, src_addr).await {
                                 error!("Failed to send UDP response to {}: {:?}", src_addr, e);
                             }
                         }
