@@ -1,5 +1,8 @@
 use crate::{
-    config::DnsConfig, dns::DNSPacket, metrics::DnsMetrics, rate_limiter::DnsRateLimiter,
+    config::DnsConfig,
+    dns::{DNSPacket, enums::DnsOpcode},
+    metrics::DnsMetrics,
+    rate_limiter::DnsRateLimiter,
     resolver::DnsResolver,
 };
 use std::sync::Arc;
@@ -214,15 +217,31 @@ async fn handle_dns_query(
         debug!("EDNS info: {}", packet.edns_debug_info());
     }
 
-    // Validate opcode - only QUERY (0) is supported
-    if packet.header.opcode != 0 {
-        debug!(
-            "Unsupported opcode {} in query id={}, returning NOTIMPL",
-            packet.header.opcode, packet.header.id
-        );
-        let response = resolver.create_notimpl_response(&packet);
-        let serialized = response.serialize()?;
-        return Ok(serialized);
+    // Validate opcode
+    match DnsOpcode::from_u8(packet.header.opcode) {
+        Some(opcode) => {
+            if !opcode.is_implemented() {
+                debug!(
+                    "Unsupported opcode {:?} ({}) in query id={}, returning NOTIMPL",
+                    opcode, packet.header.opcode, packet.header.id
+                );
+                metrics.record_error_response("notimpl", protocol);
+                let response = resolver.create_notimpl_response(&packet);
+                let serialized = response.serialize()?;
+                return Ok(serialized);
+            }
+        }
+        None => {
+            // Invalid opcode value
+            debug!(
+                "Invalid opcode {} in query id={}, returning FORMERR",
+                packet.header.opcode, packet.header.id
+            );
+            metrics.record_error_response("formerr", protocol);
+            let response = resolver.create_formerr_response(&packet);
+            let serialized = response.serialize()?;
+            return Ok(serialized);
+        }
     }
 
     // Validate the packet has at least one question
@@ -231,7 +250,20 @@ async fn handle_dns_query(
             "Query id={} has no questions, returning FORMERR",
             packet.header.id
         );
+        metrics.record_error_response("formerr", protocol);
         let response = resolver.create_formerr_response(&packet);
+        let serialized = response.serialize()?;
+        return Ok(serialized);
+    }
+
+    // Check for policy violations that should return REFUSED
+    if should_refuse_query(&packet) {
+        debug!(
+            "Query id={} violates policy, returning REFUSED",
+            packet.header.id
+        );
+        metrics.record_error_response("refused", protocol);
+        let response = resolver.create_refused_response(&packet);
         let serialized = response.serialize()?;
         return Ok(serialized);
     }
@@ -344,4 +376,33 @@ async fn handle_tcp_connection(
     }
 
     Ok(())
+}
+
+/// Check if a query should be refused based on policy
+fn should_refuse_query(packet: &DNSPacket) -> bool {
+    use crate::dns::enums::DNSResourceType;
+
+    // Check if query is asking for zone transfers
+    for question in &packet.questions {
+        match question.qtype {
+            DNSResourceType::AXFR | DNSResourceType::IXFR => {
+                // Zone transfers are refused
+                return true;
+            }
+            DNSResourceType::ANY => {
+                // ANY queries can be refused for security (amplification attack prevention)
+                // This is configurable in production systems
+                return true;
+            }
+            _ => {}
+        }
+    }
+
+    // Additional policy checks can be added here:
+    // - Refusing queries from certain IP ranges
+    // - Refusing queries for certain domains
+    // - Refusing based on query patterns
+    // - Refusing based on authentication status
+
+    false
 }

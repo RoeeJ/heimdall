@@ -106,6 +106,12 @@ pub trait PacketComponent {
         writer: &mut BitWriter<&mut Vec<u8>, E>,
         labels: &Vec<String>,
     ) -> Result<(), ParseError> {
+        // Handle root zone (empty labels)
+        if labels.is_empty() {
+            writer.write_var::<u8>(8, 0)?;
+            return Ok(());
+        }
+
         for label in labels {
             if label.is_empty() {
                 // Write null terminator for root label
@@ -118,7 +124,7 @@ pub trait PacketComponent {
         }
 
         // Ensure we always write a null terminator if not already written
-        if !labels.is_empty() && !labels.last().unwrap().is_empty() {
+        if !labels.last().unwrap().is_empty() {
             writer.write_var::<u8>(8, 0)?;
         }
 

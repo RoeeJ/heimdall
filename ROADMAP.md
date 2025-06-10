@@ -1,6 +1,6 @@
 # Heimdall DNS Server Roadmap
 
-## Current Status: Phase 3 MOSTLY COMPLETED! 🎉🚀🏆
+## Current Status: Phase 4 IN PROGRESS - RFC Compliance & Enhanced Features! 🎯📚✨
 
 **✅ ENTERPRISE-READY DNS SERVER**: Heimdall is now a production-grade DNS server!
 - Successfully resolves all common DNS record types (A, AAAA, MX, NS, CNAME, TXT, SOA)
@@ -12,6 +12,7 @@
 - **Security & Validation**: Input validation, rate limiting, DoS protection
 - **Advanced Reliability**: Health monitoring, automatic failover, connection pooling
 - **Performance Features**: Query deduplication, parallel queries, zero-copy optimizations
+- **RFC Compliance**: Enhanced error handling (REFUSED, NOTIMPL, FORMERR), negative caching
 - Production-ready for enterprise DNS forwarding with security and reliability features
 
 **Usage**: 
@@ -48,7 +49,7 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
 - [✅] Logging system with configurable levels (tracing)
 - [✅] Real-world testing with dig command
 - [✅] **NEW**: Support for iterative queries (RD=0)
-- [📝] **NOTE**: dig +trace has a known limitation with non-standard ports (our port 1053)
+- [✅] **FIXED**: dig +trace now works with Heimdall (root zone query fix implemented)
 - [✅] **COMPLETED**: Comprehensive stress testing framework with resource monitoring
 - [✅] **COMPLETED**: Performance metrics collection (query count, response times, errors, CPU/memory usage)
 
@@ -197,6 +198,7 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
   - [✅] SOA-based TTL handling for negative responses
   - [✅] NODATA response caching  
   - [✅] Proper negative cache expiration
+  - [✅] NSEC/NSEC3 record preservation in negative cache
   - [✅] Enhanced NXDOMAIN responses with synthetic SOA records
 - [✅] **Enhanced Error Handling** - **COMPLETED**
   - [✅] REFUSED and NOTIMPL response generation
@@ -204,7 +206,7 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
   - [✅] Comprehensive ResponseCode enum with RFC compliance
   - [✅] Opcode validation with NOTIMPL responses
   - [✅] Extended RCODE support (YXDomain, YXRRSet, NXRRSet, NotAuth, NotZone, BadOptVersion)
-  - [ ] Detailed error reporting for clients
+  - [ ] Detailed error reporting for clients (deferred)
 - [✅] **Comprehensive DNS Record Type Support** - **COMPLETED**
   - [✅] Expanded from 23 to 85 DNS record types
   - [✅] Complete IANA registry coverage
@@ -214,13 +216,15 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
   - [✅] All zone management types supported
   - [✅] Bidirectional type mapping (u16 ↔ enum)
   - [✅] Comprehensive test coverage for all types
-- [⏳] **RDATA Parsing Implementation** - **IN PROGRESS**
+- [✅] **RDATA Parsing Implementation** - **CRITICAL TYPES COMPLETED**
   - [✅] Basic types parsed: A, AAAA, MX, NS, CNAME, PTR, TXT (7 types)
-  - [✅] Critical types parsed: SOA, SRV, CAA (3 types) - **COMPLETED**
-  - [✅] DNSSEC types parsed: DNSKEY, RRSIG, DS, NSEC, NSEC3 (5 types) - **COMPLETED**
-  - [ ] Modern types: TLSA, SSHFP, HTTPS, SVCB (0/4 types)
+  - [✅] Critical types parsed: SOA, SRV, CAA (3 types)
+  - [✅] DNSSEC types parsed: DNSKEY, RRSIG, DS, NSEC, NSEC3 (5 types)
+  - [✅] Security types parsed: TLSA, SSHFP (2 types)
+  - [ ] Modern types: HTTPS, SVCB (0/2 types)
   - [ ] Service discovery: LOC, NAPTR, DNAME (0/3 types)
-  - [ ] Remaining 67 types for complete coverage
+  - [ ] Remaining 68 types for complete coverage
+  - **Status**: 17/85 types implemented (20%) - All critical types complete!
 
 ### 4.2 Security & Validation (Short-term - 2 months)
 - [ ] **DNSSEC Validation (RFC 4033-4035)** - 4-6 weeks
@@ -400,13 +404,16 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
 9. **Phase 9** - Advanced enterprise features and high availability
 
 ### RFC Compliance Focus ⭐ **UPDATED**
-**Current Status**: ~85% compliance for recursive resolver (up from ~70%), ~30% for authoritative server
+**Current Status**: ~90% compliance for recursive resolver (up from ~85%), ~30% for authoritative server
 **Target**: 95% recursive compliance, 90% authoritative compliance
 
 **Completed Achievements** (Phase 4.1):
 1. ✅ **Complete Negative Caching** - RFC 2308 compliant with SOA-based TTL handling
 2. ✅ **Enhanced Error Handling** - All standard RCODEs implemented with proper responses
 3. ✅ **Comprehensive DNS Record Types** - 85 types supported (up from 23)
+4. ✅ **Opcode Validation** - Proper handling of all DNS opcodes with appropriate error responses
+5. ✅ **Extended RCODE Support** - All RFC-defined response codes implemented
+6. ✅ **Root Zone Query Support** - Fixed critical bug for dig +trace compatibility
 
 **Next Priorities** (Phase 4.2-4.4):
 1. **DNSSEC Validation** - Essential security feature for production deployment
@@ -437,9 +444,10 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
 - [ ] DoH/DoT < 10ms additional latency vs plain DNS
 
 ### Testing Strategy ⭐ **ENHANCED**
-- ✅ Unit tests for all components (56 tests passing)
+- ✅ Unit tests for all components (66+ tests passing)
 - ✅ Integration tests with real DNS infrastructure
 - ✅ Benchmark suite for performance tracking
+- ✅ Error handling tests for all DNS response codes
 - [ ] **RFC Compliance Tests** - Automated validation against DNS standards
 - [ ] **DNSSEC Validation Tests** - Cryptographic verification testing
 - [ ] **Interoperability Tests** - Compatibility with BIND, PowerDNS, Unbound
