@@ -293,13 +293,13 @@ async fn test_parallel_vs_sequential_queries() {
     query.questions.push(question);
 
     // Test parallel resolution
-    let parallel_resolver = DnsResolver::new(parallel_config).await.unwrap();
+    let parallel_resolver = DnsResolver::new(parallel_config, None).await.unwrap();
     let parallel_start = Instant::now();
     let _parallel_result = parallel_resolver.resolve(query.clone(), 3000).await;
     let parallel_duration = parallel_start.elapsed();
 
     // Test sequential resolution
-    let sequential_resolver = DnsResolver::new(sequential_config).await.unwrap();
+    let sequential_resolver = DnsResolver::new(sequential_config, None).await.unwrap();
     let sequential_start = Instant::now();
     let _sequential_result = sequential_resolver.resolve(query, 4000).await;
     let sequential_duration = sequential_start.elapsed();

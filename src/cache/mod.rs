@@ -1,3 +1,8 @@
+pub mod local_backend;
+pub mod redis_backend;
+
+pub use redis_backend::{LayeredCache, RedisConfig};
+
 use crate::dns::{
     DNSPacket,
     enums::{DNSResourceClass, DNSResourceType},
@@ -7,6 +12,7 @@ use parking_lot::Mutex;
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, hash_map::DefaultHasher};
+use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -88,6 +94,16 @@ impl CacheKey {
         } else {
             false
         }
+    }
+}
+
+impl fmt::Display for CacheKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}:{:?}:{:?}",
+            self.domain, self.record_type, self.record_class
+        )
     }
 }
 
@@ -322,8 +338,16 @@ impl CacheStats {
         self.evictions.fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn record_evictions(&self, count: u64) {
+        self.evictions.fetch_add(count, Ordering::Relaxed);
+    }
+
     pub fn record_expired_eviction(&self) {
         self.expired_evictions.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_expired_evictions(&self, count: u64) {
+        self.expired_evictions.fetch_add(count, Ordering::Relaxed);
     }
 
     pub fn record_negative_hit(&self) {

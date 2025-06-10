@@ -1,3 +1,4 @@
+use crate::cache::RedisConfig;
 use crate::rate_limiter::RateLimitConfig;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -57,6 +58,9 @@ pub struct DnsConfig {
 
     /// HTTP server bind address for metrics and health checks (None = disabled)
     pub http_bind_addr: Option<SocketAddr>,
+
+    /// Redis configuration for distributed caching
+    pub redis_config: RedisConfig,
 }
 
 impl Default for DnsConfig {
@@ -89,6 +93,7 @@ impl Default for DnsConfig {
             cache_file_path: None,    // No persistence by default
             cache_save_interval: 300, // Save every 5 minutes
             http_bind_addr: Some("127.0.0.1:8080".parse().unwrap()), // HTTP server enabled by default
+            redis_config: RedisConfig::default(),
         }
     }
 }
@@ -219,6 +224,9 @@ impl DnsConfig {
                 config.http_bind_addr = Some(addr);
             }
         }
+
+        // Redis configuration (auto-detected)
+        config.redis_config = RedisConfig::from_env();
 
         config
     }

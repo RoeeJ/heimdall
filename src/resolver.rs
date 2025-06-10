@@ -664,10 +664,11 @@ impl DnsResolver {
                                 // Record successful response
                                 if let Some(health) = self.server_health.get(&upstream_addr) {
                                     health.record_success(elapsed);
-                                    
+
                                     // Record individual response time metric
                                     if let Some(metrics) = &self.metrics {
-                                        metrics.upstream_response_time
+                                        metrics
+                                            .upstream_response_time
                                             .with_label_values(&[&upstream_addr.to_string()])
                                             .observe(elapsed.as_secs_f64());
                                     }
@@ -775,14 +776,15 @@ impl DnsResolver {
                     // Record successful response
                     if let Some(health) = self.server_health.get(&upstream_addr) {
                         health.record_success(response_time);
-                        
+
                         // Record individual response time metric
                         if let Some(metrics) = &self.metrics {
-                            metrics.upstream_response_time
+                            metrics
+                                .upstream_response_time
                                 .with_label_values(&[&upstream_addr.to_string()])
                                 .observe(response_time.as_secs_f64());
                         }
-                        
+
                         debug!(
                             "Successfully resolved query from upstream {} (attempt {}, response_time: {:?})",
                             upstream_addr,
