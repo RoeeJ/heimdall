@@ -1,4 +1,6 @@
-use crate::{config::DnsConfig, dns::DNSPacket, rate_limiter::DnsRateLimiter, resolver::DnsResolver};
+use crate::{
+    config::DnsConfig, dns::DNSPacket, rate_limiter::DnsRateLimiter, resolver::DnsResolver,
+};
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{Semaphore, broadcast};
