@@ -1,5 +1,5 @@
 pub mod cache;
-pub mod cluster_discovery;
+pub mod cluster_registry;
 pub mod config;
 pub mod config_reload;
 pub mod dns;

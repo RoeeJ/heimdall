@@ -1,5 +1,6 @@
 pub mod local_backend;
 pub mod redis_backend;
+pub mod redis_helper;
 
 pub use redis_backend::{LayeredCache, RedisConfig};
 
