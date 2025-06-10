@@ -58,7 +58,7 @@ fn benchmark_parallel_vs_sequential(c: &mut Criterion) {
     // Benchmark parallel resolution
     group.bench_function("parallel_resolution", |b| {
         let resolver = rt
-            .block_on(DnsResolver::new(parallel_config.clone()))
+            .block_on(DnsResolver::new(parallel_config.clone(), None))
             .unwrap();
         b.iter(|| {
             rt.block_on(async {
@@ -71,7 +71,7 @@ fn benchmark_parallel_vs_sequential(c: &mut Criterion) {
     // Benchmark sequential resolution
     group.bench_function("sequential_resolution", |b| {
         let resolver = rt
-            .block_on(DnsResolver::new(sequential_config.clone()))
+            .block_on(DnsResolver::new(sequential_config.clone(), None))
             .unwrap();
         b.iter(|| {
             rt.block_on(async {
@@ -89,7 +89,7 @@ fn benchmark_query_deduplication(c: &mut Criterion) {
 
     c.bench_function("concurrent_identical_queries", |b| {
         let config = DnsConfig::default();
-        let resolver = Arc::new(rt.block_on(DnsResolver::new(config)).unwrap());
+        let resolver = Arc::new(rt.block_on(DnsResolver::new(config, None)).unwrap());
         let query = create_query_packet("test.example.com");
 
         b.iter(|| {
@@ -120,7 +120,7 @@ fn benchmark_connection_pooling(c: &mut Criterion) {
     let mut group = c.benchmark_group("connection_pooling");
 
     let config = DnsConfig::default();
-    let resolver = rt.block_on(DnsResolver::new(config)).unwrap();
+    let resolver = rt.block_on(DnsResolver::new(config, None)).unwrap();
 
     // Create different queries to avoid cache hits
     let queries: Vec<DNSPacket> = (0..100)
@@ -167,7 +167,7 @@ fn benchmark_cache_performance(c: &mut Criterion) {
     // Benchmark with cache
     group.bench_function("with_cache", |b| {
         let resolver = rt
-            .block_on(DnsResolver::new(cached_config.clone()))
+            .block_on(DnsResolver::new(cached_config.clone(), None))
             .unwrap();
 
         // Prime the cache
@@ -186,7 +186,7 @@ fn benchmark_cache_performance(c: &mut Criterion) {
     // Benchmark without cache
     group.bench_function("without_cache", |b| {
         let resolver = rt
-            .block_on(DnsResolver::new(uncached_config.clone()))
+            .block_on(DnsResolver::new(uncached_config.clone(), None))
             .unwrap();
         b.iter(|| {
             rt.block_on(async {

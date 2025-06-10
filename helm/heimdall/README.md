@@ -79,6 +79,10 @@ The following table lists the configurable parameters and their default values:
 | `resources.requests.memory` | Memory request | `128Mi` |
 | `resources.limits.cpu` | CPU limit | `1000m` |
 | `resources.limits.memory` | Memory limit | `512Mi` |
+| `redis.enabled` | Enable Redis for distributed caching | `true` |
+| `redis.persistence.enabled` | Enable Redis persistence | `true` |
+| `redis.persistence.size` | Redis PVC size | `10Gi` |
+| `redis.auth.enabled` | Enable Redis authentication | `false` |
 
 ## Accessing the DNS Server
 
@@ -120,6 +124,33 @@ The default configuration includes:
 - Pod disruption budget ensuring at least 1 pod is always available
 - Anti-affinity rules to spread pods across nodes
 - Persistent cache storage for each pod
+- Optional Redis backend for shared cache across replicas
+
+## Redis Distributed Cache
+
+When Redis is enabled (default), Heimdall uses a two-tier cache system:
+- **L1 Cache**: Local in-memory cache for fastest access
+- **L2 Cache**: Redis shared cache for cross-replica consistency
+
+Benefits of Redis integration:
+- Shared cache improves overall hit rate
+- Consistent view of cached data across all replicas
+- Survives pod restarts with Redis persistence
+- Automatic failover to local-only cache if Redis is unavailable
+
+To disable Redis:
+```yaml
+redis:
+  enabled: false
+```
+
+To enable Redis authentication:
+```yaml
+redis:
+  auth:
+    enabled: true
+    password: "your-secure-password"  # Or use existingSecret
+```
 
 ## Security
 

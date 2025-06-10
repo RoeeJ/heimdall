@@ -93,6 +93,21 @@ spec:
               value: {{ .Values.config.maxRetries | quote }}
             - name: HEIMDALL_ENABLE_PARALLEL_QUERIES
               value: {{ .Values.config.enableParallelQueries | quote }}
+            {{- if .Values.redis.enabled }}
+            - name: HEIMDALL_REDIS_URL
+              {{- if .Values.redis.auth.enabled }}
+              value: "redis://:$(REDIS_PASSWORD)@{{ include "heimdall.fullname" . }}-redis:6379"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "heimdall.fullname" . }}-redis-secret
+                  key: redis-password
+              {{- else }}
+              value: "redis://{{ include "heimdall.fullname" . }}-redis:6379"
+              {{- end }}
+            - name: HEIMDALL_REDIS_ENABLED
+              value: "true"
+            {{- end }}
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

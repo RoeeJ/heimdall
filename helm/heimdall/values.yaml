@@ -197,3 +197,67 @@ volumeMounts: []
 
 # Volumes (additional)
 volumes: []
+
+# Redis configuration for distributed caching
+redis:
+  # Enable Redis deployment
+  enabled: true
+  
+  image:
+    repository: redis
+    tag: 7-alpine
+    pullPolicy: IfNotPresent
+  
+  # Redis arguments
+  args:
+    - --appendonly
+    - "yes"
+    - --save
+    - "60 1000"
+    - --save
+    - "300 100"
+    - --save
+    - "900 1"
+    - --maxmemory
+    - "800mb"
+    - --maxmemory-policy
+    - "allkeys-lru"
+  
+  # Authentication
+  auth:
+    enabled: false
+    password: ""
+    existingSecret: ""
+  
+  # Resources
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+  
+  # Persistence
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+  
+  # Security contexts
+  podSecurityContext:
+    fsGroup: 999
+    runAsUser: 999
+    runAsNonRoot: true
+  
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false  # Redis needs to write to /data
+    capabilities:
+      drop:
+      - ALL
+  
+  # Node selection
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}

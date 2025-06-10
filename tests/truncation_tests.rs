@@ -29,6 +29,7 @@ async fn test_create_truncated_response() {
         max_concurrent_queries: 1000,
         rate_limit_config: RateLimitConfig::default(),
         http_bind_addr: None,
+        redis_config: Default::default(),
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -94,6 +95,7 @@ async fn test_udp_size_limits_basic() {
         max_concurrent_queries: 1000,
         rate_limit_config: RateLimitConfig::default(),
         http_bind_addr: None,
+        redis_config: Default::default(),
     };
 
     let _resolver = DnsResolver::new(config, None)
@@ -148,6 +150,7 @@ async fn test_truncated_response_serialization() {
         max_concurrent_queries: 1000,
         rate_limit_config: RateLimitConfig::default(),
         http_bind_addr: None,
+        redis_config: Default::default(),
     };
 
     let resolver = DnsResolver::new(config, None)

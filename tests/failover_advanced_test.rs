@@ -34,6 +34,7 @@ async fn test_consecutive_failures_mark_unhealthy() {
         max_concurrent_queries: 1000,
         rate_limit_config: RateLimitConfig::default(),
         http_bind_addr: None,
+        redis_config: Default::default(),
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -154,6 +155,7 @@ async fn test_health_based_priority_ordering() {
         max_concurrent_queries: 1000,
         rate_limit_config: RateLimitConfig::default(),
         http_bind_addr: None,
+        redis_config: Default::default(),
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -255,6 +257,7 @@ async fn test_server_health_reset() {
         max_concurrent_queries: 1000,
         rate_limit_config: RateLimitConfig::default(),
         http_bind_addr: None,
+        redis_config: Default::default(),
     };
 
     let resolver = DnsResolver::new(config, None)

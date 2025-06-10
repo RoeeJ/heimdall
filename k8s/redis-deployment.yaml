@@ -1,0 +1,123 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: heimdall-redis
+  namespace: heimdall-dns
+  labels:
+    app: redis
+    component: cache
+spec:
+  ports:
+  - port: 6379
+    targetPort: 6379
+    protocol: TCP
+    name: redis
+  selector:
+    app: redis
+    component: cache
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  namespace: heimdall-dns
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: heimdall-redis
+  namespace: heimdall-dns
+  labels:
+    app: redis
+    component: cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+      component: cache
+  template:
+    metadata:
+      labels:
+        app: redis
+        component: cache
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+          name: redis
+        command:
+        - redis-server
+        - --appendonly
+        - "yes"
+        - --save
+        - "60 1000"  # Save after 60 seconds if at least 1000 keys changed
+        - --save
+        - "300 100"  # Save after 300 seconds if at least 100 keys changed
+        - --save
+        - "900 1"    # Save after 900 seconds if at least 1 key changed
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        livenessProbe:
+          tcpSocket:
+            port: 6379
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 3
+      volumes:
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: redis-data
+---
+# Optional: Redis configuration for production use
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: heimdall-dns
+data:
+  redis.conf: |
+    # Redis configuration for Heimdall DNS cache
+    
+    # Persistence
+    appendonly yes
+    appendfsync everysec
+    
+    # Memory management
+    maxmemory 800mb
+    maxmemory-policy allkeys-lru
+    
+    # Performance
+    tcp-keepalive 60
+    timeout 0
+    
+    # Security (uncomment for production)
+    # requirepass your-redis-password
+    
+    # Logging
+    loglevel notice
