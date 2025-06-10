@@ -275,6 +275,10 @@ pub struct DnsResolver {
     /// Metrics collector (optional)
     #[allow(dead_code)]
     metrics: Option<Arc<DnsMetrics>>,
+    /// Query counter
+    query_counter: AtomicU64,
+    /// Error counter
+    error_counter: AtomicU64,
 }
 
 impl DnsResolver {
@@ -339,11 +343,15 @@ impl DnsResolver {
             connection_pool: ConnectionPool::new(5), // Pool up to 5 connections per server
             server_health,
             metrics,
+            query_counter: AtomicU64::new(0),
+            error_counter: AtomicU64::new(0),
         })
     }
 
     /// Resolve a DNS query with automatic mode detection
     pub async fn resolve(&self, query: DNSPacket, original_id: u16) -> Result<DNSPacket> {
+        // Increment query counter
+        self.query_counter.fetch_add(1, Ordering::Relaxed);
         // Check cache first if enabled and we have questions
         if let Some(cache) = &self.cache {
             if !query.questions.is_empty() {
@@ -1663,5 +1671,15 @@ impl DnsResolver {
             }
         }
         buffer.push(0); // Null terminator
+    }
+
+    /// Get total number of queries handled
+    pub fn total_queries(&self) -> u64 {
+        self.query_counter.load(Ordering::Relaxed)
+    }
+
+    /// Get total number of errors
+    pub fn total_errors(&self) -> u64 {
+        self.error_counter.load(Ordering::Relaxed)
     }
 }

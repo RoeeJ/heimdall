@@ -5,7 +5,7 @@ use tracing::{debug, error, info, trace, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub mod cache;
-pub mod cluster_discovery;
+pub mod cluster_registry;
 pub mod config;
 pub mod config_reload;
 pub mod dns;

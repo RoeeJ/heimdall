@@ -11,9 +11,10 @@ use tower_http::cors::CorsLayer;
 use tracing::{error, info};
 
 use crate::{
-    cluster_discovery::ClusterDiscovery, config_reload::ConfigReloader, metrics::DnsMetrics,
+    cluster_registry::ClusterRegistry, config_reload::ConfigReloader, metrics::DnsMetrics,
     rate_limiter::DnsRateLimiter, resolver::DnsResolver,
 };
+use tracing::debug;
 
 /// HTTP server for metrics export and health checks
 pub struct HttpServer {
@@ -21,7 +22,7 @@ pub struct HttpServer {
     rate_limiter: Option<Arc<DnsRateLimiter>>,
     metrics: Arc<DnsMetrics>,
     config_reloader: Option<Arc<ConfigReloader>>,
-    cluster_discovery: Option<Arc<ClusterDiscovery>>,
+    cluster_registry: Option<Arc<ClusterRegistry>>,
     bind_addr: SocketAddr,
 }
 
@@ -33,35 +34,52 @@ impl HttpServer {
         config_reloader: Option<Arc<ConfigReloader>>,
         bind_addr: SocketAddr,
     ) -> Self {
-        // Initialize cluster discovery if in Kubernetes
-        let cluster_discovery = ClusterDiscovery::new().map(Arc::new);
-
         Self {
             resolver,
             rate_limiter,
             metrics,
             config_reloader,
-            cluster_discovery,
+            cluster_registry: None, // Will be initialized in start()
             bind_addr,
         }
     }
 
     /// Start the HTTP server
-    pub async fn start(self) -> Result<(), Box<dyn std::error::Error>> {
-        // Start cluster discovery task if enabled
-        if let Some(ref discovery) = self.cluster_discovery {
-            let discovery_clone = discovery.clone();
-            tokio::spawn(crate::cluster_discovery::cluster_discovery_task(
-                discovery_clone,
-            ));
-        }
+    pub async fn start(mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // Initialize cluster registry if in Kubernetes and Redis is available
+        let cluster_registry = if std::env::var("KUBERNETES_SERVICE_HOST").is_ok() {
+            // Get Redis connection
+            let redis_conn = crate::cache::redis_helper::get_redis_connection().await;
+            if redis_conn.is_some() {
+                let registry = Arc::new(ClusterRegistry::new(redis_conn, self.bind_addr).await);
+
+                // Start heartbeat task
+                let registry_clone = registry.clone();
+                let resolver_clone = self.resolver.clone();
+                tokio::spawn(crate::cluster_registry::heartbeat_task(
+                    registry_clone,
+                    resolver_clone,
+                ));
+
+                info!("Cluster registry initialized with Redis-based coordination");
+                Some(registry)
+            } else {
+                info!("Cluster registry disabled: Redis not available");
+                None
+            }
+        } else {
+            debug!("Cluster registry disabled: not running in Kubernetes");
+            None
+        };
+
+        self.cluster_registry = cluster_registry;
 
         let app_state = AppState {
             resolver: self.resolver,
             rate_limiter: self.rate_limiter,
             metrics: self.metrics,
             config_reloader: self.config_reloader,
-            cluster_discovery: self.cluster_discovery,
+            cluster_registry: self.cluster_registry,
             startup_time: SystemTime::now(),
         };
 
@@ -73,13 +91,34 @@ impl HttpServer {
             .route("/cache/stats", get(cache_stats))
             .route("/upstream/stats", get(upstream_stats))
             .route("/config/reload", axum::routing::post(reload_config))
-            .with_state(app_state)
+            .with_state(app_state.clone())
             .layer(CorsLayer::permissive());
 
         info!("Starting HTTP server on {}", self.bind_addr);
 
         let listener = tokio::net::TcpListener::bind(self.bind_addr).await?;
-        axum::serve(listener, app).await?;
+
+        // Create a shutdown signal handler
+        let cluster_registry = app_state.cluster_registry.clone();
+        let shutdown_signal = async move {
+            // Wait for ctrl-c or other shutdown signals
+            tokio::signal::ctrl_c()
+                .await
+                .expect("failed to listen for ctrl-c");
+
+            // Unregister from cluster if we have a registry
+            if let Some(registry) = cluster_registry {
+                if let Err(e) = registry.unregister().await {
+                    error!("Failed to unregister from cluster: {}", e);
+                } else {
+                    info!("Unregistered from cluster");
+                }
+            }
+        };
+
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown_signal)
+            .await?;
 
         Ok(())
     }
@@ -91,7 +130,7 @@ struct AppState {
     rate_limiter: Option<Arc<DnsRateLimiter>>,
     metrics: Arc<DnsMetrics>,
     config_reloader: Option<Arc<ConfigReloader>>,
-    cluster_discovery: Option<Arc<ClusterDiscovery>>,
+    cluster_registry: Option<Arc<ClusterRegistry>>,
     startup_time: SystemTime,
 }
 
@@ -163,23 +202,39 @@ async fn detailed_health_check(State(state): State<AppState>) -> impl IntoRespon
     };
 
     // Get cluster information if available
-    let cluster_info = if let Some(ref discovery) = state.cluster_discovery {
-        let members = discovery.get_members().await;
-        let stats = discovery.get_stats().await;
+    let cluster_info = if let Some(ref registry) = state.cluster_registry {
+        let members = registry.get_members().await;
+        let stats = registry.get_stats().await;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
         Some(json!({
             "enabled": true,
             "stats": {
                 "total_members": stats.total_members,
                 "healthy_members": stats.healthy_members,
+                "degraded_members": stats.degraded_members,
                 "unhealthy_members": stats.unhealthy_members,
-                "unknown_members": stats.unknown_members
+                "starting_members": stats.starting_members,
+                "stale_members": stats.stale_members
             },
             "members": members.iter().map(|member| json!({
+                "id": member.id,
                 "address": member.address,
                 "hostname": member.hostname,
+                "pod_ip": member.pod_ip,
                 "status": format!("{:?}", member.status).to_lowercase(),
-                "last_seen_seconds_ago": member.last_seen.elapsed().as_secs()
+                "last_heartbeat_seconds_ago": now.saturating_sub(member.last_heartbeat),
+                "uptime_seconds": member.stats.uptime_seconds,
+                "queries_total": member.stats.queries_total,
+                "cache_hits": member.stats.cache_hits,
+                "cache_misses": member.stats.cache_misses,
+                "cache_size": member.stats.cache_size,
+                "cache_hit_rate": if member.stats.cache_hits + member.stats.cache_misses > 0 {
+                    member.stats.cache_hits as f64 / (member.stats.cache_hits + member.stats.cache_misses) as f64
+                } else { 0.0 }
             })).collect::<Vec<_>>()
         }))
     } else {
@@ -294,14 +349,16 @@ async fn server_stats(State(state): State<AppState>) -> impl IntoResponse {
             "active_error_limiters": stats.active_error_limiters,
             "active_nxdomain_limiters": stats.active_nxdomain_limiters
         })),
-        "cluster": if let Some(ref discovery) = state.cluster_discovery {
-            let stats = discovery.get_stats().await;
+        "cluster": if let Some(ref registry) = state.cluster_registry {
+            let stats = registry.get_stats().await;
             json!({
                 "enabled": true,
                 "total_members": stats.total_members,
                 "healthy_members": stats.healthy_members,
+                "degraded_members": stats.degraded_members,
                 "unhealthy_members": stats.unhealthy_members,
-                "unknown_members": stats.unknown_members
+                "starting_members": stats.starting_members,
+                "stale_members": stats.stale_members
             })
         } else {
             json!({ "enabled": false })
