@@ -1,0 +1,17 @@
+{{- if .Values.clusterDiscovery.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "heimdall.fullname" . }}-headless
+  labels:
+    {{- include "heimdall.labels" . | nindent 4 }}
+spec:
+  clusterIP: None  # This makes it a headless service
+  ports:
+    - port: {{ .Values.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "heimdall.selectorLabels" . | nindent 4 }}
+{{- end }}
