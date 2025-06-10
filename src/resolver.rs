@@ -1,7 +1,21 @@
 use crate::cache::{CacheKey, DnsCache};
 use crate::config::DnsConfig;
-use crate::dns::DNSPacket;
+use crate::dns::{
+    DNSPacket,
+    enums::{DNSResourceClass, DNSResourceType, ResponseCode},
+    resource::DNSResource,
+};
 use crate::error::{DnsError, Result};
+
+/// Helper struct for SOA record fields to avoid too many function parameters
+#[derive(Debug, Clone)]
+struct SoaFields {
+    pub serial: u32,
+    pub refresh: u32,
+    pub retry: u32,
+    pub expire: u32,
+    pub minimum: u32,
+}
 use dashmap::DashMap;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -1094,7 +1108,7 @@ impl DnsResolver {
         let mut response = query.clone();
         response.header.qr = true; // This is a response
         response.header.ra = true; // Recursion available
-        response.header.rcode = 2; // SERVFAIL
+        response.header.rcode = ResponseCode::ServerFailure.to_u8(); // SERVFAIL
         response.header.ancount = 0; // No answers
         response.header.nscount = 0; // No authority records
         response.header.arcount = 0; // No additional records
@@ -1103,6 +1117,10 @@ impl DnsResolver {
         response.answers.clear();
         response.authorities.clear();
         response.resources.clear();
+
+        // Note: SERVFAIL responses typically don't include SOA records
+        // as they indicate a server problem rather than a definitive
+        // negative answer about the domain's existence
 
         response
     }
@@ -1113,7 +1131,7 @@ impl DnsResolver {
         response.header.qr = true; // This is a response
         response.header.ra = true; // Recursion available
         response.header.tc = true; // Truncated - client should retry with TCP
-        response.header.rcode = 0; // NOERROR
+        response.header.rcode = ResponseCode::NoError.to_u8(); // NOERROR
         response.header.ancount = 0; // No answers (truncated)
         response.header.nscount = 0; // No authority records
         response.header.arcount = 0; // No additional records (except EDNS if present)
@@ -1126,12 +1144,77 @@ impl DnsResolver {
         response
     }
 
-    /// Create a NXDOMAIN response for non-existent domains
+    /// Create a NXDOMAIN response for non-existent domains with proper SOA authority
     pub fn create_nxdomain_response(&self, query: &DNSPacket) -> DNSPacket {
         let mut response = query.clone();
         response.header.qr = true; // This is a response
         response.header.ra = true; // Recursion available
-        response.header.rcode = 3; // NXDOMAIN
+        response.header.rcode = ResponseCode::NameError.to_u8(); // NXDOMAIN
+        response.header.ancount = 0; // No answers
+        response.header.arcount = 0; // No additional records
+
+        // Clear answer and additional sections
+        response.answers.clear();
+        response.authorities.clear();
+        response.resources.clear();
+
+        // Add SOA record in authority section for RFC 2308 compliance
+        if !query.questions.is_empty() {
+            if let Some(soa_record) = self.create_synthetic_soa_record(&query.questions[0].labels) {
+                response.authorities.push(soa_record);
+                response.header.nscount = 1;
+            } else {
+                response.header.nscount = 0;
+            }
+        } else {
+            response.header.nscount = 0;
+        }
+
+        response
+    }
+
+    /// Create a REFUSED response for policy violations or administrative refusal
+    pub fn create_refused_response(&self, query: &DNSPacket) -> DNSPacket {
+        let mut response = query.clone();
+        response.header.qr = true; // This is a response
+        response.header.ra = true; // Recursion available
+        response.header.rcode = ResponseCode::Refused.to_u8(); // REFUSED
+        response.header.ancount = 0; // No answers
+        response.header.nscount = 0; // No authority records
+        response.header.arcount = 0; // No additional records
+
+        // Clear answer sections
+        response.answers.clear();
+        response.authorities.clear();
+        response.resources.clear();
+
+        response
+    }
+
+    /// Create a NOTIMPL response for unsupported operations
+    pub fn create_notimpl_response(&self, query: &DNSPacket) -> DNSPacket {
+        let mut response = query.clone();
+        response.header.qr = true; // This is a response
+        response.header.ra = false; // May not support recursion for this operation
+        response.header.rcode = ResponseCode::NotImplemented.to_u8(); // NOTIMPL
+        response.header.ancount = 0; // No answers
+        response.header.nscount = 0; // No authority records
+        response.header.arcount = 0; // No additional records
+
+        // Clear answer sections but preserve question
+        response.answers.clear();
+        response.authorities.clear();
+        response.resources.clear();
+
+        response
+    }
+
+    /// Create a FORMERR response for malformed queries
+    pub fn create_formerr_response(&self, query: &DNSPacket) -> DNSPacket {
+        let mut response = query.clone();
+        response.header.qr = true; // This is a response
+        response.header.ra = true; // Recursion available
+        response.header.rcode = ResponseCode::FormatError.to_u8(); // FORMERR
         response.header.ancount = 0; // No answers
         response.header.nscount = 0; // No authority records
         response.header.arcount = 0; // No additional records
@@ -1483,5 +1566,81 @@ impl DnsResolver {
             }
             info!("Reset health status for server: {}", server_addr);
         }
+    }
+
+    /// Create a synthetic SOA record for negative responses (RFC 2308 compliance)
+    fn create_synthetic_soa_record(&self, query_labels: &[String]) -> Option<DNSResource> {
+        // Extract the domain from the query labels
+        // For queries like "nonexistent.example.com", we want to create SOA for "example.com"
+        if query_labels.is_empty() {
+            return None;
+        }
+
+        // For simplicity, create a generic SOA record for the queried domain
+        // In a real authoritative server, this would be based on actual zone data
+        let domain_labels = if query_labels.len() >= 2 {
+            // Use the last two labels as the domain (e.g., example.com)
+            query_labels[query_labels.len() - 2..].to_vec()
+        } else {
+            query_labels.to_vec()
+        };
+
+        let mut soa_record = DNSResource {
+            labels: domain_labels.clone(),
+            rtype: DNSResourceType::SOA,
+            rclass: DNSResourceClass::IN,
+            ttl: 300, // 5 minutes TTL for synthetic SOA
+            ..Default::default()
+        };
+
+        // Create SOA rdata with default values for a recursive resolver
+        let domain_name = format!("{}.", domain_labels.join("."));
+        let admin_email = format!("admin.{}.", domain_labels.join("."));
+
+        soa_record.rdata = self.create_soa_rdata(
+            &domain_name,
+            &admin_email,
+            SoaFields {
+                serial: 1,      // Serial number
+                refresh: 3600,  // Refresh (1 hour)
+                retry: 1800,    // Retry (30 minutes)
+                expire: 604800, // Expire (1 week)
+                minimum: 180,   // Minimum TTL (3 minutes) - used for negative caching per RFC 2308
+            },
+        );
+        soa_record.rdlength = soa_record.rdata.len() as u16;
+
+        Some(soa_record)
+    }
+
+    /// Create SOA rdata in DNS wire format
+    fn create_soa_rdata(&self, mname: &str, rname: &str, soa_fields: SoaFields) -> Vec<u8> {
+        let mut rdata = Vec::new();
+
+        // Encode MNAME (primary nameserver)
+        self.encode_domain_name(&mut rdata, mname);
+
+        // Encode RNAME (responsible email)
+        self.encode_domain_name(&mut rdata, rname);
+
+        // Encode 32-bit values in network byte order
+        rdata.extend_from_slice(&soa_fields.serial.to_be_bytes());
+        rdata.extend_from_slice(&soa_fields.refresh.to_be_bytes());
+        rdata.extend_from_slice(&soa_fields.retry.to_be_bytes());
+        rdata.extend_from_slice(&soa_fields.expire.to_be_bytes());
+        rdata.extend_from_slice(&soa_fields.minimum.to_be_bytes());
+
+        rdata
+    }
+
+    /// Encode domain name in DNS wire format
+    fn encode_domain_name(&self, buffer: &mut Vec<u8>, domain: &str) {
+        for label in domain.split('.') {
+            if !label.is_empty() {
+                buffer.push(label.len() as u8);
+                buffer.extend_from_slice(label.as_bytes());
+            }
+        }
+        buffer.push(0); // Null terminator
     }
 }
