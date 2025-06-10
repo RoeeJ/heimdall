@@ -253,21 +253,23 @@ impl DnsMetrics {
                 .with_label_values(&[&server_label])
                 .inc_by(stats.total_requests as f64);
 
+            let success_label = "success".to_string();
             self.upstream_responses
-                .with_label_values(&[&server_label, "success"])
+                .with_label_values(&[&server_label, &success_label])
                 .reset();
             self.upstream_responses
-                .with_label_values(&[&server_label, "success"])
+                .with_label_values(&[&server_label, &success_label])
                 .inc_by(stats.successful_responses as f64);
 
             let failed_responses = stats
                 .total_requests
                 .saturating_sub(stats.successful_responses);
+            let failure_label = "failure".to_string();
             self.upstream_responses
-                .with_label_values(&[&server_label, "failure"])
+                .with_label_values(&[&server_label, &failure_label])
                 .reset();
             self.upstream_responses
-                .with_label_values(&[&server_label, "failure"])
+                .with_label_values(&[&server_label, &failure_label])
                 .inc_by(failed_responses as f64);
 
             self.upstream_health_status
