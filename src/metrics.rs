@@ -452,6 +452,111 @@ impl DnsMetrics {
         encoder.encode(&metric_families, &mut buffer)?;
         Ok(String::from_utf8_lossy(&buffer).to_string())
     }
+
+    /// Add cluster-wide aggregated metrics
+    pub async fn add_cluster_metrics(
+        &self,
+        buffer: &mut String,
+        cluster_registry: Option<&crate::cluster_registry::ClusterRegistry>,
+    ) {
+        if let Some(registry) = cluster_registry {
+            let members = registry.get_members().await;
+
+            // Calculate cluster-wide totals
+            let total_queries: u64 = members.iter().map(|m| m.stats.queries_total).sum();
+            let total_cache_hits: u64 = members.iter().map(|m| m.stats.cache_hits).sum();
+            let total_cache_misses: u64 = members.iter().map(|m| m.stats.cache_misses).sum();
+            let total_cache_size: usize = members.iter().map(|m| m.stats.cache_size).sum();
+            let total_errors: u64 = members.iter().map(|m| m.stats.upstream_errors).sum();
+
+            // Calculate cluster-wide cache hit rate
+            let cluster_hit_rate = if total_cache_hits + total_cache_misses > 0 {
+                total_cache_hits as f64 / (total_cache_hits + total_cache_misses) as f64
+            } else {
+                0.0
+            };
+
+            // Add cluster metrics in Prometheus format
+            buffer.push_str("\n# HELP heimdall_cluster_total_queries Total queries across all cluster members\n");
+            buffer.push_str("# TYPE heimdall_cluster_total_queries counter\n");
+            buffer.push_str(&format!(
+                "heimdall_cluster_total_queries {}\n",
+                total_queries
+            ));
+
+            buffer.push_str("# HELP heimdall_cluster_cache_hits_total Total cache hits across all cluster members\n");
+            buffer.push_str("# TYPE heimdall_cluster_cache_hits_total counter\n");
+            buffer.push_str(&format!(
+                "heimdall_cluster_cache_hits_total {}\n",
+                total_cache_hits
+            ));
+
+            buffer.push_str("# HELP heimdall_cluster_cache_misses_total Total cache misses across all cluster members\n");
+            buffer.push_str("# TYPE heimdall_cluster_cache_misses_total counter\n");
+            buffer.push_str(&format!(
+                "heimdall_cluster_cache_misses_total {}\n",
+                total_cache_misses
+            ));
+
+            buffer.push_str("# HELP heimdall_cluster_cache_hit_rate Cluster-wide cache hit rate\n");
+            buffer.push_str("# TYPE heimdall_cluster_cache_hit_rate gauge\n");
+            buffer.push_str(&format!(
+                "heimdall_cluster_cache_hit_rate {}\n",
+                cluster_hit_rate
+            ));
+
+            buffer.push_str("# HELP heimdall_cluster_cache_size_total Total cache entries across all cluster members\n");
+            buffer.push_str("# TYPE heimdall_cluster_cache_size_total gauge\n");
+            buffer.push_str(&format!(
+                "heimdall_cluster_cache_size_total {}\n",
+                total_cache_size
+            ));
+
+            buffer.push_str(
+                "# HELP heimdall_cluster_errors_total Total errors across all cluster members\n",
+            );
+            buffer.push_str("# TYPE heimdall_cluster_errors_total counter\n");
+            buffer.push_str(&format!("heimdall_cluster_errors_total {}\n", total_errors));
+
+            buffer.push_str(
+                "# HELP heimdall_cluster_members_total Total number of cluster members\n",
+            );
+            buffer.push_str("# TYPE heimdall_cluster_members_total gauge\n");
+            buffer.push_str(&format!(
+                "heimdall_cluster_members_total {}\n",
+                members.len()
+            ));
+
+            // Add per-member metrics
+            for member in &members {
+                let labels = format!(
+                    "hostname=\"{}\",pod_ip=\"{}\"",
+                    member.hostname, member.pod_ip
+                );
+
+                buffer.push_str(&format!(
+                    "heimdall_cluster_member_queries_total{{{}}} {}\n",
+                    labels, member.stats.queries_total
+                ));
+
+                buffer.push_str(&format!(
+                    "heimdall_cluster_member_cache_hit_rate{{{}}} {}\n",
+                    labels,
+                    if member.stats.cache_hits + member.stats.cache_misses > 0 {
+                        member.stats.cache_hits as f64
+                            / (member.stats.cache_hits + member.stats.cache_misses) as f64
+                    } else {
+                        0.0
+                    }
+                ));
+
+                buffer.push_str(&format!(
+                    "heimdall_cluster_member_uptime_seconds{{{}}} {}\n",
+                    labels, member.stats.uptime_seconds
+                ));
+            }
+        }
+    }
 }
 
 impl Default for DnsMetrics {

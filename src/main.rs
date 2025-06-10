@@ -198,6 +198,10 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
             http_addr
         );
         info!(
+            "  http://{}/cluster/stats - Cluster-wide statistics",
+            http_addr
+        );
+        info!(
             "  POST http://{}/config/reload - Manual configuration reload",
             http_addr
         );
