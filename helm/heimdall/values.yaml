@@ -170,9 +170,9 @@ metrics:
     labels: {}
 
 # Environment variables (additional)
-env: []
-  # - name: RUST_LOG
-  #   value: "heimdall=debug"
+env:
+  - name: RUST_LOG
+    value: "heimdall=info,warn"
 
 # Volume mounts (additional)
 volumeMounts: []

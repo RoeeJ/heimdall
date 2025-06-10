@@ -430,7 +430,7 @@ impl DnsCache {
             trie.insert(&key.domain, key.clone());
         }
 
-        debug!(
+        trace!(
             "Cached response for domain: {} (TTL: {}s, negative: {})",
             key.domain, final_ttl, is_negative
         );

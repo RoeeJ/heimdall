@@ -205,6 +205,26 @@ env:
   value: "10000"
 - name: HEIMDALL_ENABLE_PARALLEL_QUERIES
   value: "true"
+- name: RUST_LOG
+  value: "heimdall=info,warn"  # Production logging (info for operations, debug for troubleshooting)
+```
+
+### Logging Levels
+
+For different environments, adjust the `RUST_LOG` environment variable:
+
+```yaml
+# Production - minimal logging
+- name: RUST_LOG
+  value: "heimdall=info,warn"
+
+# Staging/Debug - detailed query logging  
+- name: RUST_LOG
+  value: "heimdall=debug"
+
+# Deep troubleshooting - full trace logging
+- name: RUST_LOG
+  value: "heimdall=trace"
 ```
 
 ### Monitoring with Prometheus
