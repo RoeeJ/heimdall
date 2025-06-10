@@ -15,6 +15,12 @@ pub struct DnsMetrics {
     cache_size: IntGauge,
     cache_hit_rate: Gauge,
 
+    // RFC 2308 negative caching metrics
+    cache_negative_hits: IntCounter,
+    cache_nxdomain_responses: IntCounter,
+    cache_nodata_responses: IntCounter,
+    cache_negative_hit_rate: Gauge,
+
     // Query metrics
     queries_total: CounterVec,
     query_duration: HistogramVec,
@@ -69,6 +75,27 @@ impl DnsMetrics {
         let cache_hit_rate = Gauge::with_opts(opts!(
             "heimdall_cache_hit_rate",
             "DNS cache hit rate as a percentage (0-100)"
+        ))?;
+
+        // RFC 2308 negative caching metrics
+        let cache_negative_hits = IntCounter::with_opts(opts!(
+            "heimdall_cache_negative_hits_total",
+            "Total number of negative cache hits (NXDOMAIN/NODATA)"
+        ))?;
+
+        let cache_nxdomain_responses = IntCounter::with_opts(opts!(
+            "heimdall_cache_nxdomain_responses_total",
+            "Total number of NXDOMAIN responses cached"
+        ))?;
+
+        let cache_nodata_responses = IntCounter::with_opts(opts!(
+            "heimdall_cache_nodata_responses_total",
+            "Total number of NODATA responses cached"
+        ))?;
+
+        let cache_negative_hit_rate = Gauge::with_opts(opts!(
+            "heimdall_cache_negative_hit_rate",
+            "Negative cache hit rate as a percentage of total cache hits (0-100)"
         ))?;
 
         // Query metrics
@@ -193,6 +220,10 @@ impl DnsMetrics {
         registry.register(Box::new(cache_evictions.clone()))?;
         registry.register(Box::new(cache_size.clone()))?;
         registry.register(Box::new(cache_hit_rate.clone()))?;
+        registry.register(Box::new(cache_negative_hits.clone()))?;
+        registry.register(Box::new(cache_nxdomain_responses.clone()))?;
+        registry.register(Box::new(cache_nodata_responses.clone()))?;
+        registry.register(Box::new(cache_negative_hit_rate.clone()))?;
         registry.register(Box::new(queries_total.clone()))?;
         registry.register(Box::new(query_duration.clone()))?;
         registry.register(Box::new(concurrent_queries.clone()))?;
@@ -216,6 +247,10 @@ impl DnsMetrics {
             cache_evictions,
             cache_size,
             cache_hit_rate,
+            cache_negative_hits,
+            cache_nxdomain_responses,
+            cache_nodata_responses,
+            cache_negative_hit_rate,
             queries_total,
             query_duration,
             concurrent_queries,
@@ -256,6 +291,19 @@ impl DnsMetrics {
                     + cache_stats.expired_evictions.load(Ordering::Relaxed),
             );
             self.cache_hit_rate.set(cache_stats.hit_rate());
+
+            // RFC 2308 negative caching metrics
+            self.cache_negative_hits.reset();
+            self.cache_negative_hits
+                .inc_by(cache_stats.negative_hits.load(Ordering::Relaxed));
+            self.cache_nxdomain_responses.reset();
+            self.cache_nxdomain_responses
+                .inc_by(cache_stats.nxdomain_responses.load(Ordering::Relaxed));
+            self.cache_nodata_responses.reset();
+            self.cache_nodata_responses
+                .inc_by(cache_stats.nodata_responses.load(Ordering::Relaxed));
+            self.cache_negative_hit_rate
+                .set(cache_stats.negative_hit_rate());
 
             // Get cache size separately
             if let Some(cache_size) = resolver.cache_size() {

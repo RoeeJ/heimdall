@@ -49,6 +49,12 @@ fn test_all_dns_record_types_serialization() {
         ("example.com", DNSResourceType::PTR),
         ("example.com", DNSResourceType::SRV),
         ("example.com", DNSResourceType::CAA),
+        // Phase 1 additions
+        ("example.com", DNSResourceType::LOC),
+        ("example.com", DNSResourceType::NAPTR),
+        ("example.com", DNSResourceType::SPF),
+        ("example.com", DNSResourceType::DNAME),
+        ("example.com", DNSResourceType::URI),
     ];
 
     for (domain, record_type) in test_cases {

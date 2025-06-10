@@ -203,14 +203,37 @@ async fn handle_dns_query(
     };
 
     debug!(
-        "Received DNS query: id={}, questions={}, edns={}",
+        "Received DNS query: id={}, opcode={}, questions={}, edns={}",
         packet.header.id,
+        packet.header.opcode,
         packet.header.qdcount,
         if packet.supports_edns() { "yes" } else { "no" }
     );
     trace!("Full packet header: {:?}", packet.header);
     if packet.supports_edns() {
         debug!("EDNS info: {}", packet.edns_debug_info());
+    }
+
+    // Validate opcode - only QUERY (0) is supported
+    if packet.header.opcode != 0 {
+        debug!(
+            "Unsupported opcode {} in query id={}, returning NOTIMPL",
+            packet.header.opcode, packet.header.id
+        );
+        let response = resolver.create_notimpl_response(&packet);
+        let serialized = response.serialize()?;
+        return Ok(serialized);
+    }
+
+    // Validate the packet has at least one question
+    if packet.header.qdcount == 0 {
+        debug!(
+            "Query id={} has no questions, returning FORMERR",
+            packet.header.id
+        );
+        let response = resolver.create_formerr_response(&packet);
+        let serialized = response.serialize()?;
+        return Ok(serialized);
     }
 
     // Log the domain being queried

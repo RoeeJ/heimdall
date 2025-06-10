@@ -182,134 +182,268 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
 - **Query Deduplication**: Prevent duplicate upstream requests for identical concurrent queries
 - **Parallel Queries**: Race multiple upstream servers for fastest response times
 
-### 3.3 Operational Features 🔄 **PARTIAL**
-- [ ] Metrics export (Prometheus format)
-- [ ] Health check endpoints
-- [ ] Configuration hot-reloading
-- [🔄] Graceful shutdown handling (partial implementation)
+### 3.3 Operational Features ✅ **COMPLETED**
+- [✅] Metrics export (Prometheus format)
+- [✅] Health check endpoints
+- [✅] Configuration hot-reloading
+- [✅] Graceful shutdown handling
 - [ ] Structured logging with correlation IDs
 
-## Phase 4: Adblocking Features
+## Phase 4: Enhanced DNS Features & RFC Compliance ⭐ **NEW FOCUS**
+**Goal**: Achieve comprehensive RFC compliance and implement missing DNS features for production deployment
+
+### 4.1 Core RFC Compliance ✅ **COMPLETED**
+- [✅] **Complete Negative Caching (RFC 2308)** - **COMPLETED**
+  - [✅] SOA-based TTL handling for negative responses
+  - [✅] NODATA response caching  
+  - [✅] Proper negative cache expiration
+  - [✅] Enhanced NXDOMAIN responses with synthetic SOA records
+- [✅] **Enhanced Error Handling** - **COMPLETED**
+  - [✅] REFUSED and NOTIMPL response generation
+  - [✅] FORMERR response generation for malformed packets
+  - [✅] Comprehensive ResponseCode enum with RFC compliance
+  - [✅] Opcode validation with NOTIMPL responses
+  - [✅] Extended RCODE support (YXDomain, YXRRSet, NXRRSet, NotAuth, NotZone, BadOptVersion)
+  - [ ] Detailed error reporting for clients
+- [✅] **Comprehensive DNS Record Type Support** - **COMPLETED**
+  - [✅] Expanded from 23 to 85 DNS record types
+  - [✅] Complete IANA registry coverage
+  - [✅] All DNSSEC record types supported
+  - [✅] All service discovery types supported
+  - [✅] All security/certificate types supported
+  - [✅] All zone management types supported
+  - [✅] Bidirectional type mapping (u16 ↔ enum)
+  - [✅] Comprehensive test coverage for all types
+
+### 4.2 Security & Validation (Short-term - 2 months)
+- [ ] **DNSSEC Validation (RFC 4033-4035)** - 4-6 weeks
+  - [ ] Signature validation implementation
+  - [ ] Chain of trust verification from root to target
+  - [ ] Trust anchor management and updates
+  - [ ] NSEC/NSEC3 authenticated denial of existence
+  - [ ] Support for RSA, ECDSA, EdDSA signature algorithms
+
+### 4.3 Authoritative DNS Support (Medium-term - 3-4 months)
+- [ ] **Zone Management (RFC 1035)** - 4-6 weeks
+  - [ ] Zone file parsing and storage (RFC 1035 format)
+  - [ ] SOA record handling and authority designation
+  - [ ] Authoritative response generation with AA flag
+  - [ ] Glue record handling for in-bailiwick nameservers
+- [ ] **Zone Transfer Support** - 3-4 weeks
+  - [ ] AXFR (full zone transfer) implementation
+  - [ ] IXFR (incremental zone transfer) support
+  - [ ] Secondary zone synchronization from primaries
+- [ ] **DNS Notify (RFC 1996)** - 2-3 weeks
+  - [ ] NOTIFY opcode support and processing
+  - [ ] Zone change notification system
+  - [ ] Multi-master notification handling
+
+### 4.4 Dynamic Operations (Medium-term - 2 months)
+- [ ] **Dynamic DNS Updates (RFC 2136)** - 6-8 weeks
+  - [ ] UPDATE opcode handling and processing
+  - [ ] TSIG authentication support for secure updates
+  - [ ] Dynamic record modification (add/delete/replace)
+  - [ ] Update policy management and access control
+  - [ ] Prerequisite checking for conditional updates
+
+## Phase 5: Modern DNS Features & Transport ⭐ **UPDATED**
+**Goal**: Implement modern transport protocols and advanced DNS features
+
+### 5.1 Encrypted Transport Support
+- [ ] **DNS-over-TLS (RFC 7858)** - 4-6 weeks
+  - [ ] TLS 1.3 implementation for DNS queries
+  - [ ] Certificate management and validation
+  - [ ] Client certificate support
+- [ ] **DNS-over-HTTPS (RFC 8484)** - 6-8 weeks
+  - [ ] HTTP/2 support with multiplexing
+  - [ ] JSON and binary DNS message formats
+  - [ ] RESTful DNS API endpoints
+- [ ] **Certificate Management** - 2-3 weeks
+  - [ ] Automatic certificate provisioning (Let's Encrypt)
+  - [ ] Certificate rotation and renewal
+
+### 5.2 Advanced Resolution Features
+- [ ] **Full Iterative Resolution** - 8-12 weeks
+  - [ ] Complete RFC 1035 iterative resolver implementation
+  - [ ] Root hint management and updates
+  - [ ] Priming queries for root server discovery
+  - [ ] Delegation validation and authority checking
+- [ ] **Multicast DNS (RFC 6762)** - 4-6 weeks
+  - [ ] `.local` domain special handling
+  - [ ] Multicast query and response processing
+  - [ ] Local network service discovery
+  - [ ] Conflict resolution for name collisions
+
+### 5.3 IPv6 and Modern Networking
+- [ ] **DNS64/NAT64 Support** - 3-4 weeks
+  - [ ] IPv6-only network support
+  - [ ] Automatic AAAA synthesis for IPv4-only services
+- [ ] **Happy Eyeballs v2** - 2-3 weeks
+  - [ ] Dual-stack connection optimization
+  - [ ] IPv4/IPv6 preference management
+
+## Phase 6: Adblocking & Filtering Features ⭐ **MOVED FROM PHASE 4**
 **Goal**: Implement efficient adblocking with minimal performance impact
 
-### 4.1 Blocklist Management
+### 6.1 Blocklist Management
 - [ ] Support for multiple blocklist formats (hosts, domains, AdBlock syntax)
 - [ ] Automatic blocklist downloading and updates
 - [ ] Blocklist compilation into efficient data structures
 - [ ] Support for popular lists (EasyList, EasyPrivacy, etc.)
 - [ ] Allowlist support for exceptions
 
-### 4.2 Blocking Engine
+### 6.2 Blocking Engine
 - [ ] Efficient domain matching using tries or bloom filters
 - [ ] Wildcard domain blocking (*.doubleclick.net)
 - [ ] Regex pattern support for advanced blocking
 - [ ] CNAME cloaking detection and blocking
 - [ ] Configurable blocking response (NXDOMAIN, 0.0.0.0, custom)
 
-### 4.3 Analytics
-- [ ] Blocked query statistics
-- [ ] Per-client blocking metrics
+### 6.3 Analytics & Reporting
+- [ ] Blocked query statistics and metrics
+- [ ] Per-client blocking metrics and policies
 - [ ] Top blocked domains dashboard
 - [ ] Query log with filtering capabilities
 
-## Phase 5: Custom Domain Management
-**Goal**: Support for local/custom domains
+## Phase 7: Custom Domain Management ⭐ **RENUMBERED**
+**Goal**: Support for local/custom domains and service discovery
 
-### 5.1 Local DNS Records
+### 7.1 Local DNS Records
 - [ ] Configuration file for custom DNS records
 - [ ] Support for common local TLDs (.local, .lan, .lab, .home)
 - [ ] Dynamic record management API
 - [ ] Wildcard domain support
 - [ ] Reverse DNS (PTR) records for local IPs
 
-### 5.2 Service Discovery
-- [ ] mDNS/Bonjour compatibility
+### 7.2 Service Discovery
 - [ ] SRV record support for services
 - [ ] Integration with Docker/Kubernetes for container discovery
 - [ ] DHCP integration for automatic hostname registration
+- [ ] Service health checking and automatic record updates
 
-### 5.3 Split-Horizon DNS
-- [ ] Different responses based on client IP
+### 7.3 Split-Horizon DNS
+- [ ] Different responses based on client IP/network
 - [ ] Internal vs external domain resolution
 - [ ] VPN client detection and routing
+- [ ] Policy-based response modification
 
-## Phase 6: Management & Monitoring
-**Goal**: Production-ready management interface
+## Phase 8: Management & Monitoring Interface ⭐ **RENUMBERED**
+**Goal**: Production-ready management interface and operational tools
 
-### 6.1 Configuration Management
+### 8.1 Configuration Management
 - [ ] YAML/TOML configuration file support
-- [ ] Hot-reload configuration without restart
-- [ ] Configuration validation
-- [ ] Environment variable support
+- [ ] Advanced configuration validation
+- [ ] Configuration templating and includes
+- [ ] Backup and restore configuration
 
-### 6.2 API & Web Interface
-- [ ] REST API for management
-- [ ] Real-time WebSocket updates
-- [ ] Web dashboard for monitoring
-- [ ] Query log viewer
-- [ ] Blocklist management UI
+### 8.2 API & Web Interface
+- [ ] REST API for management operations
+- [ ] Real-time WebSocket updates for monitoring
+- [ ] Modern web dashboard for monitoring and management
+- [ ] Query log viewer with filtering and search
+- [ ] Blocklist management UI with import/export
 - [ ] Custom domain management UI
+- [ ] DNSSEC key management interface
 
-### 6.3 Integration
-- [ ] Prometheus metrics export
-- [ ] Grafana dashboard templates
-- [ ] Syslog support
-- [ ] Docker image with multi-arch support
-- [ ] Kubernetes Helm chart
-- [ ] SystemD service files
+### 8.3 Integration & Deployment
+- [ ] Grafana dashboard templates for metrics visualization
+- [ ] Syslog support with structured logging
+- [ ] Docker image with multi-arch support (ARM64, x86_64)
+- [ ] Kubernetes Helm chart with best practices
+- [ ] SystemD service files with proper security
+- [ ] Ansible playbooks for automated deployment
 
-## Phase 7: Advanced Features
-**Goal**: Enterprise-grade features
+## Phase 9: High Availability & Enterprise Features ⭐ **RENUMBERED**
+**Goal**: Enterprise-grade features and high availability
 
-### 7.1 Security
-- [ ] DNSSEC validation
-- [ ] DNS-over-HTTPS (DoH) support
-- [ ] DNS-over-TLS (DoT) support
-- [ ] Rate limiting and DDoS protection
-- [ ] Query source IP validation
-
-### 7.2 High Availability
+### 9.1 High Availability
 - [ ] Primary/secondary server synchronization
-- [ ] Distributed caching with Redis
-- [ ] Health check endpoints
-- [ ] Automatic failover support
+- [ ] Distributed caching with Redis backend
+- [ ] Cluster coordination and leader election
+- [ ] Geographic load balancing
+- [ ] Automatic disaster recovery
 
-### 7.3 Advanced Filtering
-- [ ] Time-based blocking rules
-- [ ] Client-specific blocking policies
-- [ ] Parental control features
-- [ ] Malware domain blocking
-- [ ] AI-based threat detection
+### 9.2 Advanced Security
+- [ ] Query source IP validation and geofencing
+- [ ] Advanced rate limiting with machine learning
+- [ ] Threat intelligence integration
+- [ ] Audit logging and compliance reporting
+- [ ] Role-based access control (RBAC)
+
+### 9.3 Advanced Filtering & Policy
+- [ ] Time-based blocking rules and schedules
+- [ ] Client-specific blocking policies per IP/subnet
+- [ ] Parental control features with categories
+- [ ] Malware domain blocking with threat feeds
+- [ ] AI-based threat detection and response
+- [ ] Content categorization and filtering
+- [ ] Compliance with regulatory requirements (GDPR, etc.)
 
 ## Implementation Strategy
 
-### Priority Order
+### Priority Order ⭐ **UPDATED**
 1. **Phase 1** ✅ - Without basic DNS functionality, nothing else matters
 2. **Phase 2** ✅ - Performance is critical for a DNS server
-3. **Phase 3** 🎯 - Production readiness and operational features  
-4. **Phase 4** - Core differentiating feature (adblocking)
-5. **Phase 5** - Essential for home lab use cases
-6. **Phase 6** - Management interface and monitoring
-7. **Phase 7** - Advanced enterprise features
+3. **Phase 3** ✅ - Production readiness and operational features  
+4. **Phase 4** 🎯 - **RFC compliance and missing DNS features (NEW PRIORITY)**
+5. **Phase 5** - Modern transport protocols and advanced DNS features
+6. **Phase 6** - Core differentiating feature (adblocking and filtering)
+7. **Phase 7** - Essential for home lab use cases (custom domains)
+8. **Phase 8** - Management interface and monitoring
+9. **Phase 9** - Advanced enterprise features and high availability
 
-### Technology Choices
+### RFC Compliance Focus ⭐ **UPDATED**
+**Current Status**: ~85% compliance for recursive resolver (up from ~70%), ~30% for authoritative server
+**Target**: 95% recursive compliance, 90% authoritative compliance
+
+**Completed Achievements** (Phase 4.1):
+1. ✅ **Complete Negative Caching** - RFC 2308 compliant with SOA-based TTL handling
+2. ✅ **Enhanced Error Handling** - All standard RCODEs implemented with proper responses
+3. ✅ **Comprehensive DNS Record Types** - 85 types supported (up from 23)
+
+**Next Priorities** (Phase 4.2-4.4):
+1. **DNSSEC Validation** - Essential security feature for production deployment
+2. **Authoritative DNS** - Transform from resolver-only to full DNS server
+3. **Dynamic Updates** - Enable programmatic DNS record management
+4. **Zone Transfers** - Support primary/secondary server synchronization
+
+### Technology Choices ⭐ **UPDATED**
 - **Async Runtime**: Continue with Tokio for high concurrency
-- **Web Framework**: Consider Axum or Actix for API/Web UI
-- **Cache Storage**: In-memory with optional Redis backend
+- **Cryptography**: ring crate for DNSSEC signature validation (EdDSA, ECDSA, RSA)
+- **Zone Storage**: SQLite for zone data with optional PostgreSQL backend
+- **Web Framework**: Axum for modern async HTTP/REST API
+- **Cache Storage**: In-memory with optional Redis backend for distributed deployments
 - **Configuration**: TOML for human-friendly config files
-- **Metrics**: prometheus-rust for metrics export
-- **Logging**: tracing crate for structured logging
+- **Metrics**: prometheus-rust for metrics export ✅ **IMPLEMENTED**
+- **Logging**: tracing crate for structured logging ✅ **IMPLEMENTED**
+- **Transport Security**: rustls for TLS/DoT, hyper for DoH
+- **Testing**: criterion for benchmarking, quickcheck for property testing
 
-### Performance Targets
+### Performance Targets ⭐ **UPDATED**
 - ✅ < 1ms average resolution time for cached queries (ACHIEVED)
 - ✅ < 50ms for upstream queries (ACHIEVED)
-- [ ] Support for 10,000+ queries per second on modest hardware
 - ✅ Memory usage < 100MB for 1 million cached entries (ACHIEVED)
+- [ ] Support for 10,000+ queries per second on modest hardware
+- [ ] DNSSEC validation < 5ms additional latency per query
+- [ ] Zone transfer (AXFR) < 30 seconds for 100,000 records
 - [ ] Blocklist loading < 5 seconds for 1 million domains
+- [ ] DoH/DoT < 10ms additional latency vs plain DNS
 
-### Testing Strategy
-- Unit tests for all components
-- Integration tests with real DNS infrastructure
-- Benchmark suite for performance tracking
-- Chaos testing for reliability
-- Security audit before v1.0 release
+### Testing Strategy ⭐ **ENHANCED**
+- ✅ Unit tests for all components (56 tests passing)
+- ✅ Integration tests with real DNS infrastructure
+- ✅ Benchmark suite for performance tracking
+- [ ] **RFC Compliance Tests** - Automated validation against DNS standards
+- [ ] **DNSSEC Validation Tests** - Cryptographic verification testing
+- [ ] **Interoperability Tests** - Compatibility with BIND, PowerDNS, Unbound
+- [ ] **Zone Transfer Tests** - AXFR/IXFR compatibility testing
+- [ ] **Security Testing** - Fuzzing, attack simulation, penetration testing
+- [ ] Chaos testing for reliability
+- [ ] Security audit before v1.0 release
+
+## 📚 References & Documentation
+- **RFC Compliance**: See `/docs/RFC_COMPLIANCE.md` for detailed compliance status
+- **Performance Tuning**: See `/docs/PERFORMANCE_TUNING.md` for optimization guide
+- **Architecture**: See `/ARCHITECTURE.md` for system design overview
+- **Malformed Packet Handling**: See `/docs/MALFORMED_PACKET_HANDLING.md`
+- **UDP Truncation**: See `/docs/UDP_TRUNCATION.md` for TC flag implementation
