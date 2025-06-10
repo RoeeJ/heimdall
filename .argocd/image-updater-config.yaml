@@ -1,0 +1,38 @@
+# ArgoCD Image Updater Configuration
+# This configures automatic image updates when GHA pushes new images
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-image-updater-config
+  namespace: argocd
+data:
+  applications: |
+    - name: heimdall-dns
+      image:
+        name: ghcr.io/roeej/heimdall
+        tag: latest
+      update:
+        strategy: latest
+      git:
+        repo: https://github.com/RoeeJ/heimdall
+        path: helm/heimdall
+        branch: main
+        commit:
+          messageTemplate: |
+            chore: update heimdall image to {{.NewTag}}
+            
+            Updated by ArgoCD Image Updater
+            Image: {{.Image}}
+            Registry: {{.Registry}}
+  
+  # Log level for image updater (can be: trace, debug, info, warn, error)
+  log.level: info
+  
+  # Registry configuration (if using private registries)
+  registries.conf: |
+    registries:
+    - name: GitHub Container Registry
+      prefix: ghcr.io
+      api_url: https://ghcr.io/v2/
+      credentials: pullsecret:argocd/ghcr-credentials  # Optional: if private repo
