@@ -51,8 +51,8 @@ impl ClusterDiscovery {
             .unwrap_or(8080);
 
         info!(
-            "Cluster discovery enabled: namespace={}, service={}, port={}",
-            namespace, service_name, port
+            "Cluster discovery enabled: namespace={}, service={}, port={}, headless_service={}-headless",
+            namespace, service_name, port, service_name
         );
 
         Some(Self {
@@ -65,8 +65,12 @@ impl ClusterDiscovery {
 
     /// Discover cluster members using DNS lookup
     pub async fn discover_members(&self) -> Vec<ClusterMember> {
-        let headless_service =
-            format!("{}.{}.svc.cluster.local", self.service_name, self.namespace);
+        // Try headless service first, then regular service
+        let headless_service_name = format!("{}-headless", self.service_name);
+        let headless_service = format!(
+            "{}.{}.svc.cluster.local",
+            headless_service_name, self.namespace
+        );
 
         debug!("Discovering cluster members via DNS: {}", headless_service);
 
@@ -75,6 +79,7 @@ impl ClusterDiscovery {
             Ok(addrs) => {
                 let mut members = Vec::new();
                 let mut members_map = self.members.write().await;
+                members_map.clear(); // Clear old entries
 
                 for addr in addrs {
                     let member_id = addr.ip().to_string();
@@ -98,10 +103,54 @@ impl ClusterDiscovery {
                 members
             }
             Err(e) => {
-                warn!("Failed to discover cluster members: {}", e);
-                // Return cached members if available
-                let members = self.members.read().await;
-                members.values().cloned().collect()
+                warn!(
+                    "Failed to discover cluster members for {}: {}",
+                    headless_service, e
+                );
+
+                // Try alternative: just the service name without FQDN
+                let simple_name = &self.service_name;
+                debug!("Trying simple service name: {}-headless", simple_name);
+
+                match tokio::net::lookup_host(format!("{}-headless:{}", simple_name, self.port))
+                    .await
+                {
+                    Ok(addrs) => {
+                        let mut members = Vec::new();
+                        let mut members_map = self.members.write().await;
+                        members_map.clear();
+
+                        for addr in addrs {
+                            let member_id = addr.ip().to_string();
+                            let hostname = self
+                                .reverse_dns_lookup(addr.ip())
+                                .await
+                                .unwrap_or_else(|| member_id.clone());
+
+                            let member = ClusterMember {
+                                address: addr.to_string(),
+                                hostname,
+                                last_seen: Instant::now(),
+                                status: MemberStatus::Unknown,
+                            };
+
+                            members.push(member.clone());
+                            members_map.insert(member_id, member);
+                        }
+
+                        info!(
+                            "Discovered {} cluster members using simple name",
+                            members.len()
+                        );
+                        members
+                    }
+                    Err(e2) => {
+                        warn!("Failed with simple name too: {}", e2);
+                        // Return cached members if available
+                        let members = self.members.read().await;
+                        members.values().cloned().collect()
+                    }
+                }
             }
         }
     }
