@@ -35,8 +35,59 @@ This document tracks Heimdall DNS server's compliance with DNS-related RFCs and 
 - ✅ **Type definitions**: All 85 types defined in `src/dns/enums.rs`
 - ✅ **Bidirectional mapping**: Complete u16 ↔ DNSResourceType conversions
 - ✅ **Serialization support**: All types can be serialized/parsed in DNS packets
-- ⚠️ **RDATA parsing**: Basic parsing for common types (A, AAAA, MX, NS, CNAME, TXT, PTR)
-- ❌ **RDATA parsing**: Advanced parsing needed for specialized types
+- ⚠️ **RDATA parsing**: Only 7 out of 85 types have RDATA parsing (A, AAAA, MX, NS, CNAME, TXT, PTR)
+- ❌ **RDATA parsing**: 78 types store RDATA as raw bytes without interpretation
+- ❌ **Critical gap**: SOA, SRV, CAA, DNSSEC types cannot be properly interpreted
+
+### RDATA Parsing Gap Details
+See [RDATA Parsing Status](./RDATA_PARSING_STATUS.md) for complete breakdown of all 85 types.
+
+## 🔴 Critical Missing Features (High Priority)
+
+### 0. RDATA Parsing for Critical Record Types (MAJOR IMPROVEMENT)
+**Status**: ⚠️ Implemented for 17 out of 85 types (up from 15)
+**Priority**: 🔴 Critical
+
+#### Current Implementation
+- ✅ **Basic types parsed**: A, AAAA, MX, NS, CNAME, PTR, TXT (7 types)
+- ✅ **Critical types parsed**: SOA, SRV, CAA (3 types)
+- ✅ **DNSSEC types parsed**: DNSKEY, RRSIG, DS, NSEC, NSEC3 (5 types)
+- ✅ **Security types parsed**: TLSA, SSHFP (2 types) - **NEW**
+- ✅ **Raw storage**: All types store RDATA as bytes
+- ✅ **Helper methods**: SOA minimum TTL extraction, SRV/CAA field access, DNSKEY/DS field extraction, TLSA/SSHFP field extraction
+
+#### Completed Components
+- ✅ **SOA parsing** - Extracts serial, refresh, retry, expire, minimum
+- ✅ **SRV parsing** - Extracts priority, weight, port, target
+- ✅ **CAA parsing** - Extracts flags, tag, value for certificate validation
+- ✅ **DNSKEY parsing** - Extracts flags, protocol, algorithm, public key (base64) - **NEW**
+- ✅ **RRSIG parsing** - Extracts type covered, algorithm, labels, TTL, expiration, inception, key tag, signer, signature - **NEW**
+- ✅ **DS parsing** - Extracts key tag, algorithm, digest type, digest (hex)
+- ✅ **NSEC parsing** - Extracts next domain, type bitmap
+- ✅ **NSEC3 parsing** - Extracts hash algorithm, flags, iterations, salt, next hash, type bitmap
+- ✅ **TLSA parsing** - Extracts certificate usage, selector, matching type, certificate data (hex) - **NEW**
+- ✅ **SSHFP parsing** - Extracts algorithm, fingerprint type, fingerprint (hex) - **NEW**
+
+#### Remaining Missing Components
+- ❌ **Modern type parsing** - HTTPS, SVCB cannot be interpreted
+- ❌ **Service discovery** - LOC, NAPTR records cannot be used
+- ❌ **68 other types** - Still stored as raw bytes
+
+#### Production Impact (Major Improvement)
+- ✅ **Negative caching fixed** - SOA minimum TTL now extractable
+- ✅ **Service discovery enabled** - SRV records now usable
+- ✅ **Certificate validation possible** - CAA records now checkable
+- ✅ **DNSSEC parsing ready** - DNSSEC records can now be interpreted - **NEW**
+- ❌ **DNSSEC validation not implemented** - Can parse but not validate signatures
+- ❌ **Limited functionality** - Many advanced DNS features still unusable
+
+#### Implementation Effort
+- **Completed**: SOA, SRV, CAA, DNSKEY, RRSIG, DS, NSEC, NSEC3 parsing
+- **Remaining**: 2-3 weeks for TLSA/SSHFP, 4-6 weeks for all types
+- **Dependencies**: base64, hex, base32 libraries (added)
+- **Complexity**: Medium (format parsing and validation)
+
+---
 
 ## 🔴 Critical Missing Features (High Priority)
 
@@ -202,6 +253,88 @@ This document tracks Heimdall DNS server's compliance with DNS-related RFCs and 
 - **Estimated effort**: 2-3 weeks
 - **Dependencies**: EDNS extended error support
 - **Complexity**: Low-Medium (error handling logic)
+
+## 🟡 Additional Important Gaps (NEW SECTION)
+
+### 10. EDNS Option Processing
+**Status**: ⚠️ Framework exists, not implemented
+**Priority**: 🟡 Important
+
+#### Current Implementation
+- ✅ **Option codes defined** in `src/dns/edns.rs`
+- ✅ **EDNS OPT record parsing** works correctly
+- ✅ **DO flag support** for DNSSEC
+
+#### Missing Components
+- ❌ **Client Subnet (ECS)** - RFC 7871 - No geolocation support
+- ❌ **DNS Cookies** - RFC 7873 - No replay protection
+- ❌ **TCP Keepalive** - RFC 7828 - No connection persistence
+- ❌ **Padding** - RFC 7830 - No privacy protection
+- ❌ **Chain Query** - RFC 7901 - No query chaining
+- ❌ **Extended DNS Errors** - RFC 8914 - No detailed error info
+
+#### Production Impact
+- **No CDN optimization** - Client subnet not available
+- **Security gaps** - No cookie-based authentication
+- **Privacy concerns** - No padding for traffic analysis protection
+
+---
+
+### 11. Query Type Special Handling
+**Status**: ❌ Missing
+**Priority**: 🟡 Important
+
+#### Missing Components
+- ❌ **ANY query expansion** - Should return all record types
+- ❌ **MAILB query conversion** - Should query MB, MG, MR types
+- ❌ **AXFR/IXFR handling** - Zone transfer queries not processed
+- ❌ **Meta-query logic** - Special query types not handled
+
+#### Production Impact
+- **Non-compliant responses** - ANY queries return incomplete data
+- **Mail features broken** - MAILB queries don't work
+- **Limited functionality** - Special queries fail
+
+---
+
+### 12. Response Code Utilization Gap
+**Status**: ⚠️ Defined but unused
+**Priority**: 🟡 Important
+
+#### Current Implementation
+- ✅ **ResponseCode enum** complete with all RCODEs
+- ✅ **Basic codes used**: NoError, ServFail, NameError
+
+#### Missing Usage
+- ❌ **YXDomain (6)** - For dynamic updates
+- ❌ **YXRRSet (7)** - For dynamic updates
+- ❌ **NXRRSet (8)** - For dynamic updates
+- ❌ **NotAuth (9)** - For zone authority errors
+- ❌ **NotZone (10)** - For zone scope errors
+
+#### Production Impact
+- **Generic errors** - Clients can't distinguish error types
+- **Poor diagnostics** - Troubleshooting is difficult
+- **Update failures** - Dynamic DNS updates can't report specific errors
+
+---
+
+### 13. DNS Class Support Limitations
+**Status**: ⚠️ Partial
+**Priority**: 🟢 Advanced
+
+#### Current Implementation
+- ✅ **IN, CS, CH, HS** classes supported
+
+#### Missing Components
+- ❌ **NONE (254)** class - Used in dynamic updates
+- ❌ **ANY (255)** class - Used in queries
+- ❌ **Class-specific behavior** - All classes treated identically
+
+#### Production Impact
+- **Dynamic updates limited** - Cannot use NONE class
+- **Query limitations** - Cannot use ANY class
+- **Non-standard use cases** - Chaos class queries not handled properly
 
 ## 🟢 Advanced Missing Features (Lower Priority)
 
