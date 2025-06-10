@@ -513,7 +513,12 @@ impl DnsCache {
             for authority in &response.authorities {
                 if authority.rtype == DNSResourceType::SOA {
                     // Extract SOA minimum TTL from rdata
-                    if let Some(soa_min_ttl) = self.extract_soa_minimum_ttl(&authority.rdata) {
+                    // First try the new parsing helper, then fallback to manual extraction
+                    let soa_min_ttl = authority
+                        .get_soa_minimum()
+                        .or_else(|| self.extract_soa_minimum_ttl(&authority.rdata));
+
+                    if let Some(soa_min_ttl) = soa_min_ttl {
                         // RFC 2308: Use the minimum of SOA TTL and SOA minimum field
                         min_ttl = min_ttl.min(authority.ttl.min(soa_min_ttl));
                         debug!(
@@ -569,6 +574,9 @@ impl DnsCache {
     }
 
     /// Extract the minimum TTL field from SOA record data per RFC 1035
+    ///
+    /// NOTE: This method is now largely superseded by DNSResource::get_soa_minimum()
+    /// but is kept as a fallback for cases where the SOA record hasn't been fully parsed
     fn extract_soa_minimum_ttl(&self, rdata: &[u8]) -> Option<u32> {
         // SOA rdata format (RFC 1035 Section 3.3.13):
         // MNAME (variable length domain name)

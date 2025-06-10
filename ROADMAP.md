@@ -189,7 +189,7 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
 - [✅] Graceful shutdown handling
 - [ ] Structured logging with correlation IDs
 
-## Phase 4: Enhanced DNS Features & RFC Compliance ⭐ **NEW FOCUS**
+## Phase 4: Enhanced DNS Features & RFC Compliance ⭐ **IN PROGRESS**
 **Goal**: Achieve comprehensive RFC compliance and implement missing DNS features for production deployment
 
 ### 4.1 Core RFC Compliance ✅ **COMPLETED**
@@ -214,6 +214,13 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
   - [✅] All zone management types supported
   - [✅] Bidirectional type mapping (u16 ↔ enum)
   - [✅] Comprehensive test coverage for all types
+- [⏳] **RDATA Parsing Implementation** - **IN PROGRESS**
+  - [✅] Basic types parsed: A, AAAA, MX, NS, CNAME, PTR, TXT (7 types)
+  - [✅] Critical types parsed: SOA, SRV, CAA (3 types) - **COMPLETED**
+  - [✅] DNSSEC types parsed: DNSKEY, RRSIG, DS, NSEC, NSEC3 (5 types) - **COMPLETED**
+  - [ ] Modern types: TLSA, SSHFP, HTTPS, SVCB (0/4 types)
+  - [ ] Service discovery: LOC, NAPTR, DNAME (0/3 types)
+  - [ ] Remaining 67 types for complete coverage
 
 ### 4.2 Security & Validation (Short-term - 2 months)
 - [ ] **DNSSEC Validation (RFC 4033-4035)** - 4-6 weeks
