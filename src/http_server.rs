@@ -90,6 +90,7 @@ impl HttpServer {
             .route("/stats", get(server_stats))
             .route("/cache/stats", get(cache_stats))
             .route("/upstream/stats", get(upstream_stats))
+            .route("/cluster/stats", get(cluster_stats))
             .route("/config/reload", axum::routing::post(reload_config))
             .with_state(app_state.clone())
             .layer(CorsLayer::permissive());
@@ -275,11 +276,19 @@ async fn prometheus_metrics(State(state): State<AppState>) -> impl IntoResponse 
         .await;
 
     match state.metrics.export() {
-        Ok(metrics) => Response::builder()
-            .status(StatusCode::OK)
-            .header("Content-Type", "text/plain; charset=utf-8")
-            .body(metrics)
-            .unwrap(),
+        Ok(mut metrics) => {
+            // Add cluster-wide aggregated metrics
+            state
+                .metrics
+                .add_cluster_metrics(&mut metrics, state.cluster_registry.as_deref())
+                .await;
+
+            Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "text/plain; charset=utf-8")
+                .body(metrics)
+                .unwrap()
+        }
         Err(e) => {
             error!("Failed to export metrics: {}", e);
             Response::builder()
@@ -351,6 +360,21 @@ async fn server_stats(State(state): State<AppState>) -> impl IntoResponse {
         })),
         "cluster": if let Some(ref registry) = state.cluster_registry {
             let stats = registry.get_stats().await;
+            let members = registry.get_members().await;
+
+            // Calculate cluster-wide aggregates
+            let total_queries: u64 = members.iter().map(|m| m.stats.queries_total).sum();
+            let total_cache_hits: u64 = members.iter().map(|m| m.stats.cache_hits).sum();
+            let total_cache_misses: u64 = members.iter().map(|m| m.stats.cache_misses).sum();
+            let total_cache_size: usize = members.iter().map(|m| m.stats.cache_size).sum();
+            let total_errors: u64 = members.iter().map(|m| m.stats.upstream_errors).sum();
+
+            let cluster_hit_rate = if total_cache_hits + total_cache_misses > 0 {
+                total_cache_hits as f64 / (total_cache_hits + total_cache_misses) as f64
+            } else {
+                0.0
+            };
+
             json!({
                 "enabled": true,
                 "total_members": stats.total_members,
@@ -358,7 +382,15 @@ async fn server_stats(State(state): State<AppState>) -> impl IntoResponse {
                 "degraded_members": stats.degraded_members,
                 "unhealthy_members": stats.unhealthy_members,
                 "starting_members": stats.starting_members,
-                "stale_members": stats.stale_members
+                "stale_members": stats.stale_members,
+                "aggregated_stats": {
+                    "total_queries": total_queries,
+                    "total_cache_hits": total_cache_hits,
+                    "total_cache_misses": total_cache_misses,
+                    "total_cache_size": total_cache_size,
+                    "total_errors": total_errors,
+                    "cluster_cache_hit_rate": cluster_hit_rate
+                }
             })
         } else {
             json!({ "enabled": false })
@@ -455,5 +487,95 @@ async fn reload_config(State(state): State<AppState>) -> impl IntoResponse {
                 "message": "Configuration hot-reload is not enabled"
             })),
         )
+    }
+}
+
+/// Cluster statistics endpoint
+async fn cluster_stats(State(state): State<AppState>) -> impl IntoResponse {
+    if let Some(ref registry) = state.cluster_registry {
+        let members = registry.get_members().await;
+        let stats = registry.get_stats().await;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        // Calculate cluster-wide aggregates
+        let total_queries: u64 = members.iter().map(|m| m.stats.queries_total).sum();
+        let total_cache_hits: u64 = members.iter().map(|m| m.stats.cache_hits).sum();
+        let total_cache_misses: u64 = members.iter().map(|m| m.stats.cache_misses).sum();
+        let total_cache_size: usize = members.iter().map(|m| m.stats.cache_size).sum();
+        let total_errors: u64 = members.iter().map(|m| m.stats.upstream_errors).sum();
+
+        let cluster_hit_rate = if total_cache_hits + total_cache_misses > 0 {
+            total_cache_hits as f64 / (total_cache_hits + total_cache_misses) as f64
+        } else {
+            0.0
+        };
+
+        // Calculate average response times and QPS
+        let total_uptime_seconds: u64 = members.iter().map(|m| m.stats.uptime_seconds).sum();
+        let cluster_qps = if total_uptime_seconds > 0 {
+            total_queries as f64 / total_uptime_seconds as f64
+        } else {
+            0.0
+        };
+
+        Json(json!({
+            "cluster_info": {
+                "total_members": stats.total_members,
+                "healthy_members": stats.healthy_members,
+                "degraded_members": stats.degraded_members,
+                "unhealthy_members": stats.unhealthy_members,
+                "starting_members": stats.starting_members,
+                "stale_members": stats.stale_members
+            },
+            "aggregated_metrics": {
+                "total_queries": total_queries,
+                "total_cache_hits": total_cache_hits,
+                "total_cache_misses": total_cache_misses,
+                "total_cache_size": total_cache_size,
+                "total_errors": total_errors,
+                "cluster_cache_hit_rate": cluster_hit_rate,
+                "average_qps": cluster_qps
+            },
+            "members": members.iter().map(|member| {
+                let member_hit_rate = if member.stats.cache_hits + member.stats.cache_misses > 0 {
+                    member.stats.cache_hits as f64 / (member.stats.cache_hits + member.stats.cache_misses) as f64
+                } else {
+                    0.0
+                };
+
+                let member_qps = if member.stats.uptime_seconds > 0 {
+                    member.stats.queries_total as f64 / member.stats.uptime_seconds as f64
+                } else {
+                    0.0
+                };
+
+                json!({
+                    "id": member.id,
+                    "hostname": member.hostname,
+                    "address": member.address,
+                    "pod_ip": member.pod_ip,
+                    "status": format!("{:?}", member.status).to_lowercase(),
+                    "last_heartbeat_seconds_ago": now.saturating_sub(member.last_heartbeat),
+                    "stats": {
+                        "uptime_seconds": member.stats.uptime_seconds,
+                        "queries_total": member.stats.queries_total,
+                        "qps": member_qps,
+                        "cache_hits": member.stats.cache_hits,
+                        "cache_misses": member.stats.cache_misses,
+                        "cache_hit_rate": member_hit_rate,
+                        "cache_size": member.stats.cache_size,
+                        "upstream_errors": member.stats.upstream_errors
+                    }
+                })
+            }).collect::<Vec<_>>()
+        }))
+    } else {
+        Json(json!({
+            "error": "Cluster registry not available",
+            "enabled": false
+        }))
     }
 }
