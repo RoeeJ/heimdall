@@ -11,8 +11,8 @@ use tower_http::cors::CorsLayer;
 use tracing::{error, info};
 
 use crate::{
-    config_reload::ConfigReloader, metrics::DnsMetrics, rate_limiter::DnsRateLimiter,
-    resolver::DnsResolver,
+    cluster_discovery::ClusterDiscovery, config_reload::ConfigReloader, metrics::DnsMetrics,
+    rate_limiter::DnsRateLimiter, resolver::DnsResolver,
 };
 
 /// HTTP server for metrics export and health checks
@@ -21,6 +21,7 @@ pub struct HttpServer {
     rate_limiter: Option<Arc<DnsRateLimiter>>,
     metrics: Arc<DnsMetrics>,
     config_reloader: Option<Arc<ConfigReloader>>,
+    cluster_discovery: Option<Arc<ClusterDiscovery>>,
     bind_addr: SocketAddr,
 }
 
@@ -32,22 +33,35 @@ impl HttpServer {
         config_reloader: Option<Arc<ConfigReloader>>,
         bind_addr: SocketAddr,
     ) -> Self {
+        // Initialize cluster discovery if in Kubernetes
+        let cluster_discovery = ClusterDiscovery::new().map(Arc::new);
+
         Self {
             resolver,
             rate_limiter,
             metrics,
             config_reloader,
+            cluster_discovery,
             bind_addr,
         }
     }
 
     /// Start the HTTP server
     pub async fn start(self) -> Result<(), Box<dyn std::error::Error>> {
+        // Start cluster discovery task if enabled
+        if let Some(ref discovery) = self.cluster_discovery {
+            let discovery_clone = discovery.clone();
+            tokio::spawn(crate::cluster_discovery::cluster_discovery_task(
+                discovery_clone,
+            ));
+        }
+
         let app_state = AppState {
             resolver: self.resolver,
             rate_limiter: self.rate_limiter,
             metrics: self.metrics,
             config_reloader: self.config_reloader,
+            cluster_discovery: self.cluster_discovery,
             startup_time: SystemTime::now(),
         };
 
@@ -77,6 +91,7 @@ struct AppState {
     rate_limiter: Option<Arc<DnsRateLimiter>>,
     metrics: Arc<DnsMetrics>,
     config_reloader: Option<Arc<ConfigReloader>>,
+    cluster_discovery: Option<Arc<ClusterDiscovery>>,
     startup_time: SystemTime,
 }
 
@@ -147,6 +162,30 @@ async fn detailed_health_check(State(state): State<AppState>) -> impl IntoRespon
         })
     };
 
+    // Get cluster information if available
+    let cluster_info = if let Some(ref discovery) = state.cluster_discovery {
+        let members = discovery.get_members().await;
+        let stats = discovery.get_stats().await;
+
+        Some(json!({
+            "enabled": true,
+            "stats": {
+                "total_members": stats.total_members,
+                "healthy_members": stats.healthy_members,
+                "unhealthy_members": stats.unhealthy_members,
+                "unknown_members": stats.unknown_members
+            },
+            "members": members.iter().map(|member| json!({
+                "address": member.address,
+                "hostname": member.hostname,
+                "status": format!("{:?}", member.status).to_lowercase(),
+                "last_seen_seconds_ago": member.last_seen.elapsed().as_secs()
+            })).collect::<Vec<_>>()
+        }))
+    } else {
+        None
+    };
+
     let response = json!({
         "status": if overall_healthy { "healthy" } else { "degraded" },
         "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -159,7 +198,8 @@ async fn detailed_health_check(State(state): State<AppState>) -> impl IntoRespon
             "active_ip_limiters": stats.active_ip_limiters,
             "active_error_limiters": stats.active_error_limiters,
             "active_nxdomain_limiters": stats.active_nxdomain_limiters
-        }))
+        })),
+        "cluster": cluster_info.unwrap_or_else(|| json!({ "enabled": false }))
     });
 
     let status_code = if overall_healthy {
@@ -253,7 +293,19 @@ async fn server_stats(State(state): State<AppState>) -> impl IntoResponse {
             "active_ip_limiters": stats.active_ip_limiters,
             "active_error_limiters": stats.active_error_limiters,
             "active_nxdomain_limiters": stats.active_nxdomain_limiters
-        }))
+        })),
+        "cluster": if let Some(ref discovery) = state.cluster_discovery {
+            let stats = discovery.get_stats().await;
+            json!({
+                "enabled": true,
+                "total_members": stats.total_members,
+                "healthy_members": stats.healthy_members,
+                "unhealthy_members": stats.unhealthy_members,
+                "unknown_members": stats.unknown_members
+            })
+        } else {
+            json!({ "enabled": false })
+        }
     });
 
     Json(response)

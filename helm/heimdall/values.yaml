@@ -261,3 +261,8 @@ redis:
   nodeSelector: {}
   tolerations: []
   affinity: {}
+
+# Cluster discovery for multi-replica coordination
+clusterDiscovery:
+  # Enable headless service for pod discovery
+  enabled: true
