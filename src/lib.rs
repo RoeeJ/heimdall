@@ -8,6 +8,7 @@ pub mod http_server;
 pub mod metrics;
 pub mod rate_limiter;
 pub mod resolver;
+pub mod server;
 pub mod validation;
 
 pub use dns::DNSPacket;

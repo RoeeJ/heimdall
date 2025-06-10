@@ -14,15 +14,17 @@ pub mod http_server;
 pub mod metrics;
 pub mod rate_limiter;
 pub mod resolver;
+pub mod server;
 pub mod validation;
 
 use config::DnsConfig;
 use config_reload::{ConfigReloader, handle_config_changes};
-use graceful_shutdown::{GracefulShutdown, server_tasks};
+use graceful_shutdown::GracefulShutdown;
 use http_server::HttpServer;
 use metrics::DnsMetrics;
 use rate_limiter::DnsRateLimiter;
 use resolver::DnsResolver;
+use server::{run_udp_server, run_tcp_server};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration first to get runtime settings
@@ -221,14 +223,14 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
     let udp_shutdown_rx = graceful_shutdown.subscribe();
     let tcp_shutdown_rx = graceful_shutdown.subscribe();
 
-    let udp_task = tokio::spawn(server_tasks::run_udp_server_graceful(
+    let udp_task = tokio::spawn(run_udp_server(
         config.clone(),
         resolver.clone(),
         query_semaphore.clone(),
         rate_limiter.clone(),
         udp_shutdown_rx,
     ));
-    let tcp_task = tokio::spawn(server_tasks::run_tcp_server_graceful(
+    let tcp_task = tokio::spawn(run_tcp_server(
         config.clone(),
         resolver.clone(),
         query_semaphore.clone(),

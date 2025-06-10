@@ -6,7 +6,7 @@ use axum::{
     routing::get,
 };
 use serde_json::json;
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::SystemTime};
 use tower_http::cors::CorsLayer;
 use tracing::{error, info};
 
@@ -48,6 +48,7 @@ impl HttpServer {
             rate_limiter: self.rate_limiter,
             metrics: self.metrics,
             config_reloader: self.config_reloader,
+            startup_time: SystemTime::now(),
         };
 
         let app = Router::new()
@@ -76,6 +77,7 @@ struct AppState {
     rate_limiter: Option<Arc<DnsRateLimiter>>,
     metrics: Arc<DnsMetrics>,
     config_reloader: Option<Arc<ConfigReloader>>,
+    startup_time: SystemTime,
 }
 
 /// Basic health check endpoint
@@ -228,8 +230,8 @@ async fn server_stats(State(state): State<AppState>) -> impl IntoResponse {
         "server": {
             "name": "Heimdall DNS Server",
             "version": env!("CARGO_PKG_VERSION"),
-            "uptime_seconds": std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            "uptime_seconds": SystemTime::now()
+                .duration_since(state.startup_time)
                 .unwrap_or_default()
                 .as_secs()
         },
