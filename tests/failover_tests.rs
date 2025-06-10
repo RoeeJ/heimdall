@@ -35,6 +35,7 @@ async fn test_automatic_failover() {
         blocking_threads: 512,
         max_concurrent_queries: 1000,
         rate_limit_config: RateLimitConfig::default(),
+        http_bind_addr: None,
     };
 
     let resolver = DnsResolver::new(config)
@@ -150,6 +151,7 @@ async fn test_health_based_server_ordering() {
         blocking_threads: 512,
         max_concurrent_queries: 1000,
         rate_limit_config: RateLimitConfig::default(),
+        http_bind_addr: None,
     };
 
     let resolver = DnsResolver::new(config)
@@ -230,6 +232,7 @@ async fn test_server_health_recovery() {
         blocking_threads: 512,
         max_concurrent_queries: 1000,
         rate_limit_config: RateLimitConfig::default(),
+        http_bind_addr: None,
     };
 
     let resolver = DnsResolver::new(config)

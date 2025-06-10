@@ -54,6 +54,9 @@ pub struct DnsConfig {
 
     /// Interval to save cache to disk (in seconds, 0 = disabled)
     pub cache_save_interval: u64,
+
+    /// HTTP server bind address for metrics and health checks (None = disabled)
+    pub http_bind_addr: Option<SocketAddr>,
 }
 
 impl Default for DnsConfig {
@@ -85,6 +88,7 @@ impl Default for DnsConfig {
             rate_limit_config: RateLimitConfig::default(),
             cache_file_path: None,    // No persistence by default
             cache_save_interval: 300, // Save every 5 minutes
+            http_bind_addr: Some("127.0.0.1:8080".parse().unwrap()), // HTTP server enabled by default
         }
     }
 }
@@ -204,6 +208,15 @@ impl DnsConfig {
         if let Ok(cache_save_interval) = std::env::var("HEIMDALL_CACHE_SAVE_INTERVAL") {
             if let Ok(interval) = cache_save_interval.parse::<u64>() {
                 config.cache_save_interval = interval;
+            }
+        }
+
+        // HTTP server configuration
+        if let Ok(http_bind_addr) = std::env::var("HEIMDALL_HTTP_BIND_ADDR") {
+            if http_bind_addr.to_lowercase() == "disabled" || http_bind_addr.is_empty() {
+                config.http_bind_addr = None;
+            } else if let Ok(addr) = http_bind_addr.parse() {
+                config.http_bind_addr = Some(addr);
             }
         }
 

@@ -1386,6 +1386,11 @@ impl DnsResolver {
         self.cache.as_ref().map(|cache| cache.stats())
     }
 
+    /// Get current cache size
+    pub fn cache_size(&self) -> Option<usize> {
+        self.cache.as_ref().map(|cache| cache.size())
+    }
+
     /// Get connection pool statistics
     pub async fn connection_pool_stats(&self) -> HashMap<SocketAddr, usize> {
         self.connection_pool.stats().await

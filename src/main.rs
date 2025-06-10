@@ -1,21 +1,26 @@
-use dns::DNSPacket;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, trace, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub mod cache;
 pub mod config;
+pub mod config_reload;
 pub mod dns;
 pub mod error;
+pub mod graceful_shutdown;
+pub mod http_server;
+pub mod metrics;
 pub mod rate_limiter;
 pub mod resolver;
 pub mod validation;
 
 use config::DnsConfig;
+use config_reload::{ConfigReloader, handle_config_changes};
+use graceful_shutdown::{GracefulShutdown, server_tasks};
+use http_server::HttpServer;
+use metrics::DnsMetrics;
 use rate_limiter::DnsRateLimiter;
 use resolver::DnsResolver;
 
@@ -88,6 +93,46 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
         config.rate_limit_config.global_queries_per_second
     );
 
+    // Create metrics registry
+    let metrics = Arc::new(DnsMetrics::new().expect("Failed to create metrics registry"));
+
+    // Update runtime metrics
+    metrics.update_runtime_config(
+        if config.worker_threads > 0 {
+            config.worker_threads
+        } else {
+            std::thread::available_parallelism()
+                .map(|p| p.get())
+                .unwrap_or(4)
+        },
+        config.max_concurrent_queries,
+    );
+
+    // Set up configuration hot-reloading
+    let config_file_path = std::env::var("HEIMDALL_CONFIG_FILE").ok();
+    let mut config_reloader = ConfigReloader::new(config.clone(), config_file_path);
+
+    if let Err(e) = config_reloader.start_watching().await {
+        warn!("Failed to start configuration watcher: {}", e);
+    } else {
+        info!("Configuration hot-reload enabled");
+        if let Ok(config_path) = std::env::var("HEIMDALL_CONFIG_FILE") {
+            info!("Watching config file: {}", config_path);
+        }
+        info!("Send SIGHUP to reload configuration from environment variables");
+    }
+
+    // Start configuration change handler
+    let config_change_task = config_reloader
+        .take_change_receiver()
+        .map(|change_rx| tokio::spawn(handle_config_changes(change_rx)));
+
+    // Wrap config reloader in Arc for sharing with HTTP server
+    let config_reloader = Arc::new(config_reloader);
+
+    // Create graceful shutdown coordinator
+    let graceful_shutdown = Arc::new(GracefulShutdown::new(resolver.clone()));
+
     // Start rate limiter cleanup task
     let rate_limiter_cleanup = rate_limiter.clone();
     let cleanup_interval = config.rate_limit_config.cleanup_interval_seconds;
@@ -133,18 +178,62 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
         None
     };
 
-    // Start UDP and TCP servers concurrently
-    let udp_task = tokio::spawn(run_udp_server(
+    // Start HTTP server for metrics and health checks if enabled
+    let http_task = if let Some(http_addr) = config.http_bind_addr {
+        info!("Starting HTTP server on {}", http_addr);
+        info!("Available endpoints:");
+        info!("  http://{}/health - Basic health check", http_addr);
+        info!(
+            "  http://{}/health/detailed - Detailed health status",
+            http_addr
+        );
+        info!("  http://{}/metrics - Prometheus metrics", http_addr);
+        info!("  http://{}/stats - JSON server statistics", http_addr);
+        info!("  http://{}/cache/stats - Cache statistics", http_addr);
+        info!(
+            "  http://{}/upstream/stats - Upstream server statistics",
+            http_addr
+        );
+        info!(
+            "  POST http://{}/config/reload - Manual configuration reload",
+            http_addr
+        );
+
+        let http_server = HttpServer::new(
+            resolver.clone(),
+            Some(rate_limiter.clone()),
+            metrics.clone(),
+            Some(config_reloader.clone()),
+            http_addr,
+        );
+
+        Some(tokio::spawn(async move {
+            if let Err(e) = http_server.start().await {
+                error!("HTTP server error: {:?}", e);
+            }
+        }))
+    } else {
+        info!("HTTP server disabled");
+        None
+    };
+
+    // Start UDP and TCP servers with graceful shutdown support
+    let udp_shutdown_rx = graceful_shutdown.subscribe();
+    let tcp_shutdown_rx = graceful_shutdown.subscribe();
+
+    let udp_task = tokio::spawn(server_tasks::run_udp_server_graceful(
         config.clone(),
         resolver.clone(),
         query_semaphore.clone(),
         rate_limiter.clone(),
+        udp_shutdown_rx,
     ));
-    let tcp_task = tokio::spawn(run_tcp_server(
+    let tcp_task = tokio::spawn(server_tasks::run_tcp_server_graceful(
         config.clone(),
         resolver.clone(),
         query_semaphore.clone(),
         rate_limiter.clone(),
+        tcp_shutdown_rx,
     ));
 
     info!("DNS server listening on {} (UDP and TCP)", config.bind_addr);
@@ -154,13 +243,11 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
         tokio::signal::ctrl_c()
             .await
             .expect("Failed to listen for shutdown signal");
-        info!("Shutdown signal received, saving cache before exit...");
+        info!("Shutdown signal received, initiating graceful shutdown...");
 
-        // Save cache before shutdown
-        if let Err(e) = resolver.save_cache().await {
-            error!("Failed to save cache during shutdown: {}", e);
-        } else {
-            info!("Cache saved successfully during shutdown");
+        // Trigger graceful shutdown
+        if let Err(e) = graceful_shutdown.shutdown().await {
+            error!("Error during graceful shutdown: {}", e);
         }
     };
 
@@ -185,229 +272,30 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
         } => {
             error!("Cache save task exited: {:?}", result);
         }
+        result = async {
+            if let Some(task) = http_task {
+                task.await
+            } else {
+                // If no HTTP task, wait forever
+                std::future::pending::<Result<(), tokio::task::JoinError>>().await
+            }
+        } => {
+            error!("HTTP server exited: {:?}", result);
+        }
+        result = async {
+            if let Some(task) = config_change_task {
+                task.await
+            } else {
+                // If no config change task, wait forever
+                std::future::pending::<Result<(), tokio::task::JoinError>>().await
+            }
+        } => {
+            error!("Configuration change handler exited: {:?}", result);
+        }
         _ = shutdown_signal => {
             info!("Heimdall DNS server shutting down gracefully");
         }
     }
 
     Ok(())
-}
-
-async fn run_udp_server(
-    config: DnsConfig,
-    resolver: Arc<DnsResolver>,
-    query_semaphore: Arc<Semaphore>,
-    rate_limiter: Arc<DnsRateLimiter>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Bind UDP socket
-    let sock = Arc::new(UdpSocket::bind(config.bind_addr).await?);
-    info!("UDP DNS server listening on {}", config.bind_addr);
-
-    // Pre-allocate buffer outside loop for efficiency
-    let mut buf = vec![0; 4096];
-
-    loop {
-        let (read_bytes, src_addr) = sock.recv_from(&mut buf).await?;
-
-        // Check rate limiting first (before semaphore to save resources)
-        if !rate_limiter.check_query_allowed(src_addr.ip()) {
-            warn!("Rate limit exceeded for {}, dropping query", src_addr.ip());
-            continue;
-        }
-
-        // Acquire semaphore permit before processing query
-        let permit = match query_semaphore.clone().try_acquire_owned() {
-            Ok(permit) => permit,
-            Err(_) => {
-                warn!(
-                    "Max concurrent queries reached, dropping query from {}",
-                    src_addr
-                );
-                continue;
-            }
-        };
-
-        let resolver_clone = resolver.clone();
-        let query_data = buf[..read_bytes].to_vec();
-        let sock_clone = sock.clone();
-
-        // Handle query in a separate task to avoid blocking the main UDP loop
-        tokio::spawn(async move {
-            let _permit = permit; // Keep permit alive for the duration of the query
-            match handle_dns_query(&query_data, &resolver_clone).await {
-                Ok(response_data) => {
-                    // Check if response is too large for UDP and client supports EDNS
-                    if response_data.len() > 512 {
-                        // Try to parse the query to check EDNS support
-                        if let Ok(query_packet) = dns::DNSPacket::parse(&query_data) {
-                            let max_udp_size = query_packet.max_udp_payload_size();
-                            if response_data.len() > max_udp_size as usize {
-                                warn!(
-                                    "Response too large for UDP ({}>{} bytes), client should retry with TCP",
-                                    response_data.len(),
-                                    max_udp_size
-                                );
-                                // TODO: Set TC (truncated) flag in response
-                            }
-                        }
-                    }
-
-                    if let Err(e) = sock_clone.send_to(&response_data, src_addr).await {
-                        error!("Failed to send UDP response to {}: {:?}", src_addr, e);
-                    }
-                }
-                Err(e) => {
-                    warn!("Failed to handle UDP query from {}: {:?}", src_addr, e);
-                }
-            }
-        });
-    }
-}
-
-async fn run_tcp_server(
-    config: DnsConfig,
-    resolver: Arc<DnsResolver>,
-    query_semaphore: Arc<Semaphore>,
-    rate_limiter: Arc<DnsRateLimiter>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Bind TCP listener
-    let listener = TcpListener::bind(config.bind_addr).await?;
-    info!("TCP DNS server listening on {}", config.bind_addr);
-
-    loop {
-        let (stream, src_addr) = listener.accept().await?;
-        let resolver = resolver.clone();
-        let query_semaphore = query_semaphore.clone();
-        let rate_limiter = rate_limiter.clone();
-
-        // Handle each TCP connection in a separate task
-        tokio::spawn(async move {
-            if let Err(e) =
-                handle_tcp_connection(stream, src_addr, resolver, query_semaphore, rate_limiter)
-                    .await
-            {
-                warn!("TCP connection error from {}: {:?}", src_addr, e);
-            }
-        });
-    }
-}
-
-async fn handle_tcp_connection(
-    mut stream: TcpStream,
-    src_addr: std::net::SocketAddr,
-    resolver: Arc<DnsResolver>,
-    query_semaphore: Arc<Semaphore>,
-    rate_limiter: Arc<DnsRateLimiter>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut length_buf = [0u8; 2];
-
-    loop {
-        // Read the 2-byte length prefix
-        match stream.read_exact(&mut length_buf).await {
-            Ok(_) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                // Client closed connection
-                debug!("TCP connection closed by client {}", src_addr);
-                break;
-            }
-            Err(e) => return Err(e.into()),
-        }
-
-        let message_length = u16::from_be_bytes(length_buf) as usize;
-
-        // Read the DNS message
-        let mut message_buf = vec![0; message_length];
-        stream.read_exact(&mut message_buf).await?;
-
-        // Check rate limiting
-        if !rate_limiter.check_query_allowed(src_addr.ip()) {
-            warn!(
-                "Rate limit exceeded for {}, closing TCP connection",
-                src_addr.ip()
-            );
-            break;
-        }
-
-        // Acquire semaphore permit for concurrent query limiting
-        let _permit = match query_semaphore.clone().try_acquire_owned() {
-            Ok(permit) => permit,
-            Err(_) => {
-                warn!(
-                    "Max concurrent queries reached, closing TCP connection from {}",
-                    src_addr
-                );
-                break;
-            }
-        };
-
-        // Parse and handle the DNS query
-        match handle_dns_query(&message_buf, &resolver).await {
-            Ok(response_data) => {
-                // Write length prefix followed by response
-                let response_length = response_data.len() as u16;
-                stream.write_all(&response_length.to_be_bytes()).await?;
-                stream.write_all(&response_data).await?;
-                stream.flush().await?;
-            }
-            Err(e) => {
-                warn!("Failed to handle TCP query from {}: {:?}", src_addr, e);
-                // For TCP, we should close the connection on errors
-                break;
-            }
-        }
-    }
-
-    Ok(())
-}
-
-async fn handle_dns_query(
-    buf: &[u8],
-    resolver: &DnsResolver,
-) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    // Parse the DNS packet
-    let packet = DNSPacket::parse(buf)?;
-
-    debug!(
-        "Received DNS query: id={}, questions={}, edns={}",
-        packet.header.id,
-        packet.header.qdcount,
-        if packet.supports_edns() { "yes" } else { "no" }
-    );
-    trace!("Full packet header: {:?}", packet.header);
-    if packet.supports_edns() {
-        debug!("EDNS info: {}", packet.edns_debug_info());
-    }
-
-    // Log the domain being queried
-    for question in &packet.questions {
-        let domain = question
-            .labels
-            .iter()
-            .filter(|l| !l.is_empty())
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(".");
-        if !domain.is_empty() {
-            info!("Query: {} {:?}", domain, question.qtype);
-        }
-    }
-
-    // Resolve the query using upstream servers
-    let response = match resolver.resolve(packet.clone(), packet.header.id).await {
-        Ok(response) => {
-            debug!(
-                "Successfully resolved query id={}, answers={}",
-                response.header.id, response.header.ancount
-            );
-            response
-        }
-        Err(e) => {
-            warn!("Failed to resolve query: {:?}", e);
-            resolver.create_servfail_response(&packet)
-        }
-    };
-
-    // Serialize response
-    let serialized = response.serialize()?;
-    Ok(serialized)
 }
