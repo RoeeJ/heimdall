@@ -20,6 +20,7 @@ pub struct DnsMetrics {
     query_duration: HistogramVec,
     concurrent_queries: IntGauge,
     malformed_packets: CounterVec,
+    truncated_responses: CounterVec,
 
     // Upstream server metrics
     upstream_requests: CounterVec,
@@ -98,6 +99,14 @@ impl DnsMetrics {
                 "Total number of malformed DNS packets received"
             ),
             &["protocol", "error_type"],
+        )?;
+
+        let truncated_responses = CounterVec::new(
+            opts!(
+                "heimdall_truncated_responses_total",
+                "Total number of responses truncated due to UDP size limits"
+            ),
+            &["protocol", "reason"],
         )?;
 
         // Upstream server metrics
@@ -188,6 +197,7 @@ impl DnsMetrics {
         registry.register(Box::new(query_duration.clone()))?;
         registry.register(Box::new(concurrent_queries.clone()))?;
         registry.register(Box::new(malformed_packets.clone()))?;
+        registry.register(Box::new(truncated_responses.clone()))?;
         registry.register(Box::new(upstream_requests.clone()))?;
         registry.register(Box::new(upstream_responses.clone()))?;
         registry.register(Box::new(upstream_response_time.clone()))?;
@@ -210,6 +220,7 @@ impl DnsMetrics {
             query_duration,
             concurrent_queries,
             malformed_packets,
+            truncated_responses,
             upstream_requests,
             upstream_responses,
             upstream_response_time,
@@ -348,6 +359,13 @@ impl DnsMetrics {
     pub fn record_malformed_packet(&self, protocol: &str, error_type: &str) {
         self.malformed_packets
             .with_label_values(&[protocol, error_type])
+            .inc();
+    }
+
+    /// Record a truncated response
+    pub fn record_truncated_response(&self, protocol: &str, reason: &str) {
+        self.truncated_responses
+            .with_label_values(&[protocol, reason])
             .inc();
     }
 
