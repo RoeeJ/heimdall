@@ -24,7 +24,7 @@ use http_server::HttpServer;
 use metrics::DnsMetrics;
 use rate_limiter::DnsRateLimiter;
 use resolver::DnsResolver;
-use server::{run_udp_server, run_tcp_server};
+use server::{run_tcp_server, run_udp_server};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration first to get runtime settings
