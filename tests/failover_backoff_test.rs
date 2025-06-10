@@ -32,6 +32,7 @@ async fn test_exponential_backoff_for_failed_servers() {
         blocking_threads: 512,
         max_concurrent_queries: 1000,
         rate_limit_config: RateLimitConfig::default(),
+        http_bind_addr: None,
     };
 
     let resolver = DnsResolver::new(config)
@@ -130,6 +131,7 @@ async fn test_successful_failover_to_backup_servers() {
         blocking_threads: 512,
         max_concurrent_queries: 1000,
         rate_limit_config: RateLimitConfig::default(),
+        http_bind_addr: None,
     };
 
     let resolver = DnsResolver::new(config)
@@ -253,6 +255,7 @@ async fn test_health_recovery_after_reset() {
         blocking_threads: 512,
         max_concurrent_queries: 1000,
         rate_limit_config: RateLimitConfig::default(),
+        http_bind_addr: None,
     };
 
     let resolver = DnsResolver::new(config)

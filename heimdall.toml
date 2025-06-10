@@ -1,0 +1,9 @@
+# Heimdall DNS Server Configuration
+bind_addr = "127.0.0.1:1053"
+upstream_servers = ["1.1.1.1:53", "8.8.8.8:53", "8.8.4.4:53"]
+enable_caching = true
+max_cache_size = 10000
+http_bind_addr = "127.0.0.1:8080"
+
+[rate_limiting]
+enable = false
