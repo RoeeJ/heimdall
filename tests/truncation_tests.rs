@@ -31,7 +31,7 @@ async fn test_create_truncated_response() {
         http_bind_addr: None,
     };
 
-    let resolver = DnsResolver::new(config)
+    let resolver = DnsResolver::new(config, None)
         .await
         .expect("Failed to create resolver");
 
@@ -96,7 +96,7 @@ async fn test_udp_size_limits_basic() {
         http_bind_addr: None,
     };
 
-    let _resolver = DnsResolver::new(config)
+    let _resolver = DnsResolver::new(config, None)
         .await
         .expect("Failed to create resolver");
 
@@ -150,7 +150,7 @@ async fn test_truncated_response_serialization() {
         http_bind_addr: None,
     };
 
-    let resolver = DnsResolver::new(config)
+    let resolver = DnsResolver::new(config, None)
         .await
         .expect("Failed to create resolver");
 

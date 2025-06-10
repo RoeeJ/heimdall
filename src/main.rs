@@ -79,8 +79,11 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
         config.max_concurrent_queries
     );
 
-    // Create resolver (shared between UDP and TCP)
-    let resolver = Arc::new(DnsResolver::new(config.clone()).await?);
+    // Create metrics registry first
+    let metrics = Arc::new(DnsMetrics::new().expect("Failed to create metrics registry"));
+
+    // Create resolver with metrics reference
+    let resolver = Arc::new(DnsResolver::new(config.clone(), Some(metrics.clone())).await?);
 
     // Create semaphore for limiting concurrent queries
     let query_semaphore = Arc::new(Semaphore::new(config.max_concurrent_queries));
@@ -94,9 +97,6 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
         config.rate_limit_config.queries_per_second_per_ip,
         config.rate_limit_config.global_queries_per_second
     );
-
-    // Create metrics registry
-    let metrics = Arc::new(DnsMetrics::new().expect("Failed to create metrics registry"));
 
     // Update runtime metrics
     metrics.update_runtime_config(

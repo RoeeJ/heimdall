@@ -172,6 +172,21 @@ metrics:
     scrapeTimeout: 10s
     labels: {}
 
+# Keel automatic update configuration
+keel:
+  # Keel annotations for automatic image updates
+  annotations:
+    # Policy: force (always use :latest tag and force pull)
+    keel.sh/policy: force
+    # Trigger type: poll (default) or push
+    keel.sh/trigger: poll
+    # Poll schedule (cron expression) - check every 5 minutes
+    keel.sh/pollSchedule: "@every 5m"
+    # Force update even if tag hasn't changed
+    keel.sh/force: "true"
+    # Match image tag pattern (for force policy, typically :latest)
+    keel.sh/match-tag: "true"
+
 # Environment variables (additional)
 env:
   - name: RUST_LOG

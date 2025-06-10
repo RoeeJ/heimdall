@@ -205,7 +205,7 @@ async fn test_query_deduplication() {
         ..Default::default()
     };
 
-    let resolver = Arc::new(DnsResolver::new(config).await.unwrap());
+    let resolver = Arc::new(DnsResolver::new(config, None).await.unwrap());
 
     // Create identical queries
     let mut query = DNSPacket::default();
@@ -314,7 +314,7 @@ async fn test_parallel_vs_sequential_queries() {
 #[tokio::test]
 async fn test_connection_pooling_stats() {
     let config = DnsConfig::default();
-    let resolver = DnsResolver::new(config).await.unwrap();
+    let resolver = DnsResolver::new(config, None).await.unwrap();
 
     // Make a few queries to populate connection pool
     for i in 0..3 {

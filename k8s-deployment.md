@@ -103,6 +103,37 @@ This sets up:
 - ✅ ReplicaSet cleanup (keeps only 3 old versions)
 - ✅ Zero-touch deployment pipeline
 
+## Option 4: Automatic Updates with Keel
+
+The Helm chart includes built-in support for [Keel](https://keel.sh/) automatic updates. When deployed with default settings, Keel will:
+
+- ✅ Monitor the container registry for new images
+- ✅ Automatically update deployments when new patch versions are released
+- ✅ Poll for updates every 5 minutes
+- ✅ Match semantic version tags (e.g., v1.2.3)
+
+### Enabling Keel Updates
+
+Keel annotations are included by default in the Helm chart. To customize:
+
+```yaml
+# values.yaml
+keel:
+  annotations:
+    keel.sh/policy: minor       # Update minor and patch versions
+    keel.sh/pollSchedule: "@every 1h"  # Check hourly
+    keel.sh/approvals: "1"      # Require manual approval
+```
+
+### Disabling Keel Updates
+
+To disable automatic updates:
+
+```yaml
+keel:
+  annotations: {}  # Empty annotations disable Keel
+```
+
 ### Manual ArgoCD Application
 
 If you prefer manual setup, apply the pre-configured application:

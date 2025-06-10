@@ -35,7 +35,7 @@ async fn test_exponential_backoff_for_failed_servers() {
         http_bind_addr: None,
     };
 
-    let resolver = DnsResolver::new(config)
+    let resolver = DnsResolver::new(config, None)
         .await
         .expect("Failed to create resolver");
 
@@ -134,7 +134,7 @@ async fn test_successful_failover_to_backup_servers() {
         http_bind_addr: None,
     };
 
-    let resolver = DnsResolver::new(config)
+    let resolver = DnsResolver::new(config, None)
         .await
         .expect("Failed to create resolver");
 
@@ -258,7 +258,7 @@ async fn test_health_recovery_after_reset() {
         http_bind_addr: None,
     };
 
-    let resolver = DnsResolver::new(config)
+    let resolver = DnsResolver::new(config, None)
         .await
         .expect("Failed to create resolver");
     let server_addr: SocketAddr = "1.1.1.1:53".parse().unwrap();

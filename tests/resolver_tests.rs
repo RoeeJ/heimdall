@@ -67,7 +67,7 @@ fn test_config_from_env() {
 #[tokio::test]
 async fn test_resolver_creation() {
     let config = DnsConfig::default();
-    let resolver = DnsResolver::new(config).await;
+    let resolver = DnsResolver::new(config, None).await;
     assert!(resolver.is_ok());
 }
 
@@ -79,7 +79,7 @@ fn test_servfail_response() {
     // We can't easily test the resolver without network access,
     // but we can test the error response generation
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let resolver = rt.block_on(async { DnsResolver::new(config).await.unwrap() });
+    let resolver = rt.block_on(async { DnsResolver::new(config, None).await.unwrap() });
 
     let servfail = resolver.create_servfail_response(&query);
     assert!(servfail.header.qr); // Response
@@ -93,7 +93,7 @@ fn test_nxdomain_response() {
     let query = create_test_query();
 
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let resolver = rt.block_on(async { DnsResolver::new(config).await.unwrap() });
+    let resolver = rt.block_on(async { DnsResolver::new(config, None).await.unwrap() });
 
     let nxdomain = resolver.create_nxdomain_response(&query);
     assert!(nxdomain.header.qr); // Response

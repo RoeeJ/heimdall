@@ -32,7 +32,7 @@ pub struct DnsMetrics {
     // Upstream server metrics
     upstream_requests: CounterVec,
     upstream_responses: CounterVec,
-    upstream_response_time: HistogramVec,
+    pub upstream_response_time: HistogramVec,
     upstream_health_status: GaugeVec,
     upstream_consecutive_failures: GaugeVec,
 
@@ -361,11 +361,8 @@ impl DnsMetrics {
                 .with_label_values(&[&server_label])
                 .set(stats.consecutive_failures as f64);
 
-            if let Some(avg_time) = stats.avg_response_time {
-                self.upstream_response_time
-                    .with_label_values(&[&server_label])
-                    .observe(avg_time.as_secs_f64());
-            }
+            // Note: Individual response times are now recorded directly in the resolver
+            // This prevents the histogram buckets from all incrementing at the same rate
         }
 
         // Update connection pool metrics

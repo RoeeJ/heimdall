@@ -129,6 +129,47 @@ The deployment includes:
 - Minimal capabilities (only NET_BIND_SERVICE for port 53)
 - Security contexts properly configured
 
+## Automatic Updates with Keel
+
+The Heimdall chart includes built-in support for [Keel](https://keel.sh/), which provides automated Kubernetes deployment updates when new container images are available.
+
+### Default Keel Configuration
+
+By default, the chart is configured with the following Keel settings:
+
+| Parameter | Description | Default |
+| --------- | ----------- | ------- |
+| `keel.annotations."keel.sh/policy"` | Update policy (major/minor/patch/all) | `patch` |
+| `keel.annotations."keel.sh/trigger"` | Trigger type (poll/push) | `poll` |
+| `keel.annotations."keel.sh/pollSchedule"` | Poll schedule (cron expression) | `@every 5m` |
+| `keel.annotations."keel.sh/approvals"` | Number of approvals required | `0` (auto-approve) |
+| `keel.annotations."keel.sh/match-tag"` | Match semantic version tags | `true` |
+
+### Customizing Keel Behavior
+
+You can customize Keel's behavior by overriding values:
+
+```yaml
+# values.yaml
+keel:
+  annotations:
+    # Only update minor and patch versions
+    keel.sh/policy: minor
+    # Check for updates every hour
+    keel.sh/pollSchedule: "@every 1h"
+    # Require manual approval
+    keel.sh/approvals: "1"
+```
+
+### Disabling Keel
+
+To disable automatic updates, remove the Keel annotations:
+
+```yaml
+keel:
+  annotations: {}
+```
+
 ## Upgrading
 
 ```bash

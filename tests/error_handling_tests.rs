@@ -24,7 +24,7 @@ async fn test_refused_response_for_zone_transfers() {
         ..Default::default()
     };
 
-    let _resolver = DnsResolver::new(config).await.unwrap();
+    let _resolver = DnsResolver::new(config, None).await.unwrap();
 
     // Create AXFR query
     let mut axfr_query = DNSPacket::default();
@@ -62,7 +62,7 @@ async fn test_refused_response_for_any_queries() {
         ..Default::default()
     };
 
-    let _resolver = DnsResolver::new(config).await.unwrap();
+    let _resolver = DnsResolver::new(config, None).await.unwrap();
 
     // Create ANY query
     let mut any_query = DNSPacket::default();
@@ -95,7 +95,7 @@ async fn test_notimpl_response_for_unsupported_opcodes() {
         ..Default::default()
     };
 
-    let _resolver = DnsResolver::new(config).await.unwrap();
+    let _resolver = DnsResolver::new(config, None).await.unwrap();
 
     // Create query with UPDATE opcode
     let mut update_query = DNSPacket::default();
@@ -131,7 +131,7 @@ async fn test_formerr_response_for_malformed_queries() {
         ..Default::default()
     };
 
-    let _resolver = DnsResolver::new(config).await.unwrap();
+    let _resolver = DnsResolver::new(config, None).await.unwrap();
 
     // Create query with no questions (qdcount=1 but empty questions)
     let mut malformed_query = DNSPacket::default();
@@ -159,7 +159,7 @@ async fn test_servfail_response() {
         ..Default::default()
     };
 
-    let _resolver = DnsResolver::new(config).await.unwrap();
+    let _resolver = DnsResolver::new(config, None).await.unwrap();
 
     // Create normal query
     let mut query = DNSPacket::default();
@@ -252,7 +252,7 @@ async fn test_refused_response_for_ixfr() {
         ..Default::default()
     };
 
-    let _resolver = DnsResolver::new(config).await.unwrap();
+    let _resolver = DnsResolver::new(config, None).await.unwrap();
 
     // Create IXFR query
     let mut ixfr_query = DNSPacket::default();
@@ -300,7 +300,7 @@ async fn test_normal_query_not_refused() {
         ..Default::default()
     };
 
-    let _resolver = DnsResolver::new(config).await.unwrap();
+    let _resolver = DnsResolver::new(config, None).await.unwrap();
 
     // Create normal A query
     let mut query = DNSPacket::default();
