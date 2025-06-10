@@ -6,6 +6,7 @@ use crate::dns::{
     resource::DNSResource,
 };
 use crate::error::{DnsError, Result};
+use crate::metrics::DnsMetrics;
 
 /// Helper struct for SOA record fields to avoid too many function parameters
 #[derive(Debug, Clone)]
@@ -260,7 +261,6 @@ impl ConnectionPool {
     }
 }
 
-#[derive(Debug)]
 pub struct DnsResolver {
     config: DnsConfig,
     #[allow(dead_code)]
@@ -272,10 +272,13 @@ pub struct DnsResolver {
     connection_pool: ConnectionPool,
     /// Health tracking for upstream servers
     server_health: Arc<DashMap<SocketAddr, ServerHealth>>,
+    /// Metrics collector (optional)
+    #[allow(dead_code)]
+    metrics: Option<Arc<DnsMetrics>>,
 }
 
 impl DnsResolver {
-    pub async fn new(config: DnsConfig) -> Result<Self> {
+    pub async fn new(config: DnsConfig, metrics: Option<Arc<DnsMetrics>>) -> Result<Self> {
         // Bind to a random port for upstream queries
         let client_socket = UdpSocket::bind("0.0.0.0:0")
             .await
@@ -335,6 +338,7 @@ impl DnsResolver {
             in_flight_queries: Arc::new(DashMap::new()),
             connection_pool: ConnectionPool::new(5), // Pool up to 5 connections per server
             server_health,
+            metrics,
         })
     }
 
@@ -660,6 +664,13 @@ impl DnsResolver {
                                 // Record successful response
                                 if let Some(health) = self.server_health.get(&upstream_addr) {
                                     health.record_success(elapsed);
+                                    
+                                    // Record individual response time metric
+                                    if let Some(metrics) = &self.metrics {
+                                        metrics.upstream_response_time
+                                            .with_label_values(&[&upstream_addr.to_string()])
+                                            .observe(elapsed.as_secs_f64());
+                                    }
                                 }
 
                                 debug!(
@@ -764,6 +775,14 @@ impl DnsResolver {
                     // Record successful response
                     if let Some(health) = self.server_health.get(&upstream_addr) {
                         health.record_success(response_time);
+                        
+                        // Record individual response time metric
+                        if let Some(metrics) = &self.metrics {
+                            metrics.upstream_response_time
+                                .with_label_values(&[&upstream_addr.to_string()])
+                                .observe(response_time.as_secs_f64());
+                        }
+                        
                         debug!(
                             "Successfully resolved query from upstream {} (attempt {}, response_time: {:?})",
                             upstream_addr,

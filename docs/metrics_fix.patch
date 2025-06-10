@@ -1,0 +1,85 @@
+diff --git a/src/resolver.rs b/src/resolver.rs
+index abc123..def456 100644
+--- a/src/resolver.rs
++++ b/src/resolver.rs
+@@ -7,6 +7,7 @@ use crate::dns::{
+ };
+ use crate::error::{DnsError, Result};
++use crate::metrics::DnsMetrics;
+ 
+ /// Helper struct for SOA record fields to avoid too many function parameters
+ #[derive(Debug, Clone)]
+@@ -272,6 +273,8 @@ pub struct DnsResolver {
+     connection_pool: ConnectionPool,
+     /// Health tracking for upstream servers
+     server_health: Arc<DashMap<SocketAddr, ServerHealth>>,
++    /// Metrics collector (optional)
++    metrics: Option<Arc<DnsMetrics>>,
+ }
+ 
+ impl DnsResolver {
+@@ -279,7 +282,7 @@ impl DnsResolver {
++    pub async fn new(config: DnsConfig, metrics: Option<Arc<DnsMetrics>>) -> Result<Self> {
+         // Bind to a random port for upstream queries
+         let client_socket = UdpSocket::bind("0.0.0.0:0")
+@@ -338,6 +341,7 @@ impl DnsResolver {
+             in_flight_queries: Arc::new(DashMap::new()),
+             connection_pool: ConnectionPool::new(config.connection_pool_size),
+             server_health,
++            metrics,
+         })
+     }
+ 
+@@ -658,6 +662,11 @@ impl DnsResolver {
+                     // Record successful response
+                     if let Some(health) = self.server_health.get(&upstream_addr) {
+                         health.record_success(elapsed);
++                        
++                        // Record individual response time metric
++                        if let Some(metrics) = &self.metrics {
++                            metrics.upstream_response_time.with_label_values(&[&upstream_addr.to_string()]).observe(elapsed.as_secs_f64());
++                        }
+                     }
+                     
+                     debug!(
+@@ -762,6 +771,11 @@ impl DnsResolver {
+             // Record successful response
+             if let Some(health) = self.server_health.get(&upstream_addr) {
+                 health.record_success(response_time);
++                
++                // Record individual response time metric
++                if let Some(metrics) = &self.metrics {
++                    metrics.upstream_response_time.with_label_values(&[&upstream_addr.to_string()]).observe(response_time.as_secs_f64());
++                }
+             }
+
+diff --git a/src/metrics.rs b/src/metrics.rs
+index 123abc..456def 100644
+--- a/src/metrics.rs
++++ b/src/metrics.rs
+@@ -362,11 +362,8 @@ impl DnsMetrics {
+                 .with_label_values(&[&server_label])
+                 .set(stats.consecutive_failures as f64);
+ 
+-            if let Some(avg_time) = stats.avg_response_time {
+-                self.upstream_response_time
+-                    .with_label_values(&[&server_label])
+-                    .observe(avg_time.as_secs_f64());
+-            }
++            // Note: Individual response times are now recorded directly in the resolver
++            // This prevents the histogram buckets from all incrementing at the same rate
+         }
+
+diff --git a/src/main.rs b/src/main.rs
+index 789abc..012def 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -123,7 +123,7 @@ async fn main() -> Result<()> {
+     }
+ 
+     // Create the DNS resolver
+-    let resolver = Arc::new(DnsResolver::new(config.clone()).await?);
++    let resolver = Arc::new(DnsResolver::new(config.clone(), Some(metrics.clone())).await?);
+ 
+     // Create rate limiter if enabled
+     let rate_limiter = if config.enable_rate_limiting {

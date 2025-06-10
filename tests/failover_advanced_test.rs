@@ -36,7 +36,7 @@ async fn test_consecutive_failures_mark_unhealthy() {
         http_bind_addr: None,
     };
 
-    let resolver = DnsResolver::new(config)
+    let resolver = DnsResolver::new(config, None)
         .await
         .expect("Failed to create resolver");
 
@@ -156,7 +156,7 @@ async fn test_health_based_priority_ordering() {
         http_bind_addr: None,
     };
 
-    let resolver = DnsResolver::new(config)
+    let resolver = DnsResolver::new(config, None)
         .await
         .expect("Failed to create resolver");
 
@@ -257,7 +257,7 @@ async fn test_server_health_reset() {
         http_bind_addr: None,
     };
 
-    let resolver = DnsResolver::new(config)
+    let resolver = DnsResolver::new(config, None)
         .await
         .expect("Failed to create resolver");
     let test_server: SocketAddr = "192.0.2.1:53".parse().unwrap();

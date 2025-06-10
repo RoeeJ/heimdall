@@ -38,7 +38,7 @@ fn create_test_query(id: u16, opcode: u8, domain: &str, qtype: DNSResourceType) 
 /// Create a test resolver instance
 async fn create_test_resolver() -> DnsResolver {
     let config = DnsConfig::default();
-    DnsResolver::new(config).await.unwrap()
+    DnsResolver::new(config, None).await.unwrap()
 }
 
 #[tokio::test]
