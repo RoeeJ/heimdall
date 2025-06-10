@@ -49,8 +49,14 @@ metadata:
   namespace: heimdall-dns
   labels:
     app: heimdall
+  annotations:
+    # Enable ArgoCD image updater
+    argocd-image-updater.argoproj.io/image-list: heimdall=ghcr.io/roeej/heimdall:latest
+    argocd-image-updater.argoproj.io/heimdall.update-strategy: latest
 spec:
   replicas: 3
+  # Limit the number of old ReplicaSets to keep  
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: heimdall

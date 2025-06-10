@@ -2,9 +2,12 @@
 
 replicaCount: 3
 
+# Deployment configuration
+revisionHistoryLimit: 3  # Number of old ReplicaSets to keep
+
 image:
   repository: ghcr.io/roeej/heimdall
-  pullPolicy: IfNotPresent
+  pullPolicy: Always  # Always pull latest image for continuous deployment
   # Overrides the image tag whose default is the chart appVersion.
   tag: "latest"
 

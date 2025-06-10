@@ -88,45 +88,36 @@ Edit `k8s-manifest.yaml` to customize:
 - Environment variables
 - Storage size
 
-## Option 3: Deploy with ArgoCD
+## Option 3: Deploy with ArgoCD (Automated CI/CD)
 
-### Create ArgoCD Application
-
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: heimdall-dns
-  namespace: argocd
-spec:
-  project: default
-  source:
-    repoURL: https://github.com/RoeeJ/heimdall
-    targetRevision: HEAD
-    path: helm/heimdall
-    helm:
-      values: |
-        service:
-          type: LoadBalancer
-        persistence:
-          enabled: true
-          size: 2Gi
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: dns-system
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-    - CreateNamespace=true
-```
-
-Apply the ArgoCD application:
+### Quick Setup with Automated Updates
 
 ```bash
-kubectl apply -f argocd-app.yaml
+# Run the automated setup script
+./scripts/setup-argocd.sh
 ```
+
+This sets up:
+- ✅ ArgoCD Application for Heimdall
+- ✅ Automatic image updates when GHA pushes new images  
+- ✅ ReplicaSet cleanup (keeps only 3 old versions)
+- ✅ Zero-touch deployment pipeline
+
+### Manual ArgoCD Application
+
+If you prefer manual setup, apply the pre-configured application:
+
+```bash
+kubectl apply -f .argocd/application.yaml
+```
+
+**Features:**
+- **Automatic sync** when code changes
+- **Image updates** when GHA pushes new images
+- **Self-healing** if resources are modified
+- **Revision cleanup** to prevent ReplicaSet accumulation
+
+For detailed ArgoCD setup instructions, see [argocd-setup.md](argocd-setup.md).
 
 ## Verifying the Deployment
 
