@@ -40,8 +40,8 @@ dig google.com @127.0.0.1 -p 1053
 # Test iterative queries (use +norecurse instead of +trace due to port limitation)
 dig google.com @127.0.0.1 -p 1053 +norecurse
 
-# Note: dig +trace doesn't work properly with non-standard ports (1053)
-# This is a known limitation of dig, not Heimdall
+# dig +trace now works with Heimdall (root zone query fix implemented)
+dig google.com @127.0.0.1 -p 1053 +trace
 
 # Use the provided watch script for continuous testing
 ./watch.sh
@@ -101,24 +101,27 @@ The codebase implements a production-ready DNS server with both UDP and TCP supp
 - **Dual Protocol Support**: Concurrent UDP and TCP listeners with automatic fallback
 - **Intelligent Caching**: Thread-safe cache with TTL respect and zero-copy rkyv persistence
 - **Compression Handling**: Full DNS compression pointer parsing and reconstruction
-- **Error Handling**: Comprehensive error handling with SERVFAIL responses
+- **Enhanced Error Handling**: RFC-compliant REFUSED, NOTIMPL, FORMERR, and SERVFAIL responses
 - **High Performance**: Sub-millisecond cached responses, zero-copy optimizations
 - **Advanced Performance Features**: Query deduplication, connection pooling, parallel queries
 - **Security & Validation**: Input validation, rate limiting (per-IP & global), attack detection
 - **Health Monitoring**: Automatic failover with exponential backoff and health tracking
 - **Configurable Runtime**: Custom Tokio thread pool with concurrency limiting
 - **Regression Testing**: Automated performance benchmarking and regression detection
-- **Protocol Compliance**: Proper DNS packet validation and response generation
+- **Protocol Compliance**: Proper DNS packet validation, opcode handling, and response generation
+- **RFC 2308 Compliance**: Complete negative caching with SOA-based TTL handling
 
 ### Packet Flow
 1. **Receive**: UDP/TCP socket receives DNS query
 2. **Parse**: Complete packet parsing with compression pointer support
-3. **Cache Check**: Check cache for existing valid responses
-4. **Resolve**: Forward to upstream servers if cache miss
-5. **TCP Fallback**: Automatic TCP retry if UDP response truncated
-6. **Parse Response**: Full response parsing with rdata reconstruction
-7. **Cache Store**: Store response in cache with TTL awareness
-8. **Send**: Return properly formatted response to client
+3. **Validate**: Check opcode, validate query structure, apply security policies
+4. **Error Check**: Return REFUSED/NOTIMPL/FORMERR for invalid queries
+5. **Cache Check**: Check cache for existing valid responses (including negative cache)
+6. **Resolve**: Forward to upstream servers if cache miss
+7. **TCP Fallback**: Automatic TCP retry if UDP response truncated
+8. **Parse Response**: Full response parsing with rdata reconstruction
+9. **Cache Store**: Store response in cache with TTL awareness
+10. **Send**: Return properly formatted response to client
 
 ### Key Implementation Details
 - Uses `bitstream-io` for bit-level DNS packet manipulation
@@ -168,22 +171,29 @@ The codebase implements a production-ready DNS server with both UDP and TCP supp
   - [x] Configuration hot-reloading (file watching + SIGHUP + HTTP endpoint)
   - [x] Graceful shutdown handling (coordinated shutdown of all server components)
 
-### 🚀 Phase 4: Advanced DNS Features (FUTURE)
-- [ ] **Phase 4.1**: Authoritative DNS
+### 🚀 Phase 4: Enhanced DNS Features & RFC Compliance (IN PROGRESS)
+- [x] **Phase 4.1**: Core RFC Compliance ✅ COMPLETED
+  - [x] Complete negative caching (RFC 2308) with SOA-based TTL handling
+  - [x] Enhanced error handling (REFUSED, NOTIMPL, FORMERR responses)
+  - [x] Comprehensive DNS record type support (85 types)
+  - [x] Opcode validation with proper error responses
+  - [x] Extended RCODE support (all RFC-defined codes)
+- [ ] **Phase 4.2**: DNSSEC Validation
+  - [ ] Signature validation implementation
+  - [ ] Chain of trust verification
+  - [ ] Trust anchor management
+- [ ] **Phase 4.3**: Authoritative DNS Support
   - [ ] Zone file parsing and serving
   - [ ] SOA record management
   - [ ] Dynamic zone updates
-- [ ] **Phase 4.2**: Advanced Resolution
+- [ ] **Phase 4.4**: Advanced Resolution
   - [ ] Full iterative resolution implementation
-  - [ ] Custom root server configuration  
-  - [ ] Negative caching (NXDOMAIN responses)
-- [ ] **Phase 4.3**: Monitoring & Analytics
-  - [ ] Query analytics and reporting
-  - [ ] Performance monitoring dashboard
-  - [ ] Alerting on resolution failures
+  - [ ] Custom root server configuration
 
 ## Development Reminders
 - Whenever we complete any major steps, commit and push to git
 - All core DNS functionality is now complete and fully tested
 - Server handles both UDP and TCP with proper compression support
 - Caching provides excellent performance with sub-ms response times
+- RFC compliance is a priority - enhanced error handling and negative caching complete
+- Always run `cargo fmt` and `cargo clippy` before committing

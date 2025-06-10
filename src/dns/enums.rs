@@ -474,3 +474,61 @@ impl ResponseCode {
         }
     }
 }
+
+/// DNS Opcodes as defined in RFC 1035 and subsequent RFCs
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum DnsOpcode {
+    /// Query - Standard DNS query (RFC 1035)
+    Query = 0,
+    /// Inverse Query - Obsolete (RFC 3425)
+    IQuery = 1,
+    /// Status - Server status request (RFC 1035)
+    Status = 2,
+    /// Unassigned
+    Unassigned3 = 3,
+    /// Notify - Zone change notification (RFC 1996)
+    Notify = 4,
+    /// Update - Dynamic DNS update (RFC 2136)
+    Update = 5,
+    /// DNS Stateful Operations (RFC 8490)
+    DSO = 6,
+}
+
+impl DnsOpcode {
+    /// Convert opcode to u8 for DNS packet encoding
+    pub fn to_u8(self) -> u8 {
+        self as u8
+    }
+
+    /// Convert u8 to opcode
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(DnsOpcode::Query),
+            1 => Some(DnsOpcode::IQuery),
+            2 => Some(DnsOpcode::Status),
+            3 => Some(DnsOpcode::Unassigned3),
+            4 => Some(DnsOpcode::Notify),
+            5 => Some(DnsOpcode::Update),
+            6 => Some(DnsOpcode::DSO),
+            _ => None, // Values 7-15 are unassigned
+        }
+    }
+
+    /// Check if this opcode is implemented
+    pub fn is_implemented(self) -> bool {
+        matches!(self, DnsOpcode::Query) // Only QUERY is currently implemented
+    }
+
+    /// Get human-readable description of the opcode
+    pub fn description(self) -> &'static str {
+        match self {
+            DnsOpcode::Query => "Standard query",
+            DnsOpcode::IQuery => "Inverse query (obsolete)",
+            DnsOpcode::Status => "Server status request",
+            DnsOpcode::Unassigned3 => "Unassigned",
+            DnsOpcode::Notify => "Zone change notification",
+            DnsOpcode::Update => "Dynamic DNS update",
+            DnsOpcode::DSO => "DNS Stateful Operations",
+        }
+    }
+}

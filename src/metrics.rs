@@ -27,6 +27,7 @@ pub struct DnsMetrics {
     concurrent_queries: IntGauge,
     malformed_packets: CounterVec,
     truncated_responses: CounterVec,
+    error_responses: CounterVec,
 
     // Upstream server metrics
     upstream_requests: CounterVec,
@@ -136,6 +137,14 @@ impl DnsMetrics {
             &["protocol", "reason"],
         )?;
 
+        let error_responses = CounterVec::new(
+            opts!(
+                "heimdall_error_responses_total",
+                "Total number of error responses by type"
+            ),
+            &["response_type", "protocol"],
+        )?;
+
         // Upstream server metrics
         let upstream_requests = CounterVec::new(
             opts!(
@@ -229,6 +238,7 @@ impl DnsMetrics {
         registry.register(Box::new(concurrent_queries.clone()))?;
         registry.register(Box::new(malformed_packets.clone()))?;
         registry.register(Box::new(truncated_responses.clone()))?;
+        registry.register(Box::new(error_responses.clone()))?;
         registry.register(Box::new(upstream_requests.clone()))?;
         registry.register(Box::new(upstream_responses.clone()))?;
         registry.register(Box::new(upstream_response_time.clone()))?;
@@ -256,6 +266,7 @@ impl DnsMetrics {
             concurrent_queries,
             malformed_packets,
             truncated_responses,
+            error_responses,
             upstream_requests,
             upstream_responses,
             upstream_response_time,
@@ -421,6 +432,13 @@ impl DnsMetrics {
     pub fn record_rate_limit_drop(&self, limiter_type: &str, client_ip: &str) {
         self.rate_limit_drops
             .with_label_values(&[limiter_type, client_ip])
+            .inc();
+    }
+
+    /// Record an error response (REFUSED, NOTIMPL, FORMERR, etc.)
+    pub fn record_error_response(&self, response_type: &str, protocol: &str) {
+        self.error_responses
+            .with_label_values(&[response_type, protocol])
             .inc();
     }
 
