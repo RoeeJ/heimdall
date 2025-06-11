@@ -19,6 +19,7 @@
 - Production-ready for enterprise DNS forwarding with clustering and high availability
 
 **Recent Achievements**: 
+- ✅ **Modern DNS Record Types**: Added parsing for HTTPS/SVCB, LOC, NAPTR, DNAME, and SPF records
 - ✅ **UDP Truncation Support**: Full RFC 1035 compliance with TC flag and automatic TCP retry
 - ✅ **Redis L2 Cache**: Distributed caching across replicas with automatic failover
 - ✅ **Cluster Coordination**: Redis-based member registry with health tracking
@@ -231,15 +232,16 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
   - [✅] All zone management types supported
   - [✅] Bidirectional type mapping (u16 ↔ enum)
   - [✅] Comprehensive test coverage for all types
-- [✅] **RDATA Parsing Implementation** - **CRITICAL TYPES COMPLETED**
+- [✅] **RDATA Parsing Implementation** - **CRITICAL + MODERN TYPES COMPLETED**
   - [✅] Basic types parsed: A, AAAA, MX, NS, CNAME, PTR, TXT (7 types)
   - [✅] Critical types parsed: SOA, SRV, CAA (3 types)
   - [✅] DNSSEC types parsed: DNSKEY, RRSIG, DS, NSEC, NSEC3 (5 types)
   - [✅] Security types parsed: TLSA, SSHFP (2 types)
-  - [ ] Modern types: HTTPS, SVCB (0/2 types)
-  - [ ] Service discovery: LOC, NAPTR, DNAME (0/3 types)
-  - [ ] Remaining 68 types for complete coverage
-  - **Status**: 17/85 types implemented (20%) - All critical types complete!
+  - [✅] Modern types: HTTPS, SVCB (2/2 types)
+  - [✅] Service discovery: LOC, NAPTR, DNAME (3/3 types)
+  - [✅] Email authentication: SPF (1 type)
+  - [ ] Remaining 62 types for complete coverage
+  - **Status**: 23/85 types implemented (27%) - All critical and modern types complete!
 - [✅] **UDP Truncation Support (RFC 1035 Section 4.2.1)** - **COMPLETED**
   - [✅] Automatic TC flag setting for oversized UDP responses
   - [✅] Configurable UDP buffer size (512-4096 bytes)
