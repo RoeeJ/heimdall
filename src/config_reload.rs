@@ -199,7 +199,13 @@ impl ConfigReloader {
         config: &Arc<RwLock<DnsConfig>>,
         change_tx: &mpsc::UnboundedSender<ConfigChange>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let new_config = DnsConfig::from_env();
+        let new_config = match DnsConfig::from_env() {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                error!("Failed to reload configuration from environment: {}", e);
+                return Err(Box::new(e));
+            }
+        };
 
         // Get current config and update
         let old_config = {
@@ -235,13 +241,16 @@ impl ConfigReloader {
         let toml_value: toml::Value = toml::from_str(content)?;
 
         // Start with environment-based config
-        let mut config = DnsConfig::from_env();
+        let mut config = match DnsConfig::from_env() {
+            Ok(cfg) => cfg,
+            Err(e) => return Err(Box::new(e)),
+        };
 
         // Apply TOML overrides
         if let Some(bind_addr) = toml_value.get("bind_addr").and_then(|v| v.as_str()) {
-            if let Ok(addr) = bind_addr.parse() {
-                config.bind_addr = addr;
-            }
+            config.bind_addr = bind_addr
+                .parse()
+                .map_err(|_| format!("Invalid bind address in config file: {}", bind_addr))?;
         }
 
         if let Some(upstream_servers) = toml_value
@@ -266,6 +275,9 @@ impl ConfigReloader {
             .get("max_cache_size")
             .and_then(|v| v.as_integer())
         {
+            if max_cache_size <= 0 {
+                return Err("max_cache_size must be positive".into());
+            }
             config.max_cache_size = max_cache_size as usize;
         }
 
@@ -281,10 +293,17 @@ impl ConfigReloader {
         if let Some(http_addr) = toml_value.get("http_bind_addr").and_then(|v| v.as_str()) {
             if http_addr == "disabled" {
                 config.http_bind_addr = None;
-            } else if let Ok(addr) = http_addr.parse() {
-                config.http_bind_addr = Some(addr);
+            } else {
+                config.http_bind_addr = Some(http_addr.parse().map_err(|_| {
+                    format!("Invalid HTTP bind address in config file: {}", http_addr)
+                })?);
             }
         }
+
+        // Validate the final configuration
+        config
+            .validate()
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
         Ok(config)
     }

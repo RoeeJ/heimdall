@@ -1,3 +1,4 @@
+use crate::error::ConfigError;
 use dashmap::DashMap;
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use std::net::IpAddr;
@@ -52,6 +53,46 @@ impl Default for RateLimitConfig {
     }
 }
 
+impl RateLimitConfig {
+    /// Validate the rate limit configuration
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        if self.enable_rate_limiting {
+            // When rate limiting is enabled, all values must be non-zero
+            if self.queries_per_second_per_ip == 0 {
+                return Err(ConfigError::InvalidRateLimit(
+                    "Queries per second per IP must be greater than 0".to_string(),
+                ));
+            }
+            if self.burst_size_per_ip == 0 {
+                return Err(ConfigError::InvalidRateLimit(
+                    "Burst size per IP must be greater than 0".to_string(),
+                ));
+            }
+            if self.global_queries_per_second == 0 {
+                return Err(ConfigError::InvalidRateLimit(
+                    "Global queries per second must be greater than 0".to_string(),
+                ));
+            }
+            if self.global_burst_size == 0 {
+                return Err(ConfigError::InvalidRateLimit(
+                    "Global burst size must be greater than 0".to_string(),
+                ));
+            }
+            if self.errors_per_second_per_ip == 0 {
+                return Err(ConfigError::InvalidRateLimit(
+                    "Errors per second per IP must be greater than 0".to_string(),
+                ));
+            }
+            if self.nxdomain_per_second_per_ip == 0 {
+                return Err(ConfigError::InvalidRateLimit(
+                    "NXDOMAIN per second per IP must be greater than 0".to_string(),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 type IpRateLimiter = DefaultDirectRateLimiter;
 
 /// DNS-specific rate limiter with per-IP and global limiting
@@ -73,20 +114,29 @@ pub struct DnsRateLimiter {
 }
 
 impl DnsRateLimiter {
-    pub fn new(config: RateLimitConfig) -> Self {
+    pub fn new(config: RateLimitConfig) -> Result<Self, ConfigError> {
+        // Validate the configuration first
+        config.validate()?;
+
+        // Validate config values for NonZeroU32
+        let global_qps = NonZeroU32::new(config.global_queries_per_second).ok_or_else(|| {
+            ConfigError::InvalidRateLimit("Global QPS must be greater than 0".to_string())
+        })?;
+        let global_burst = NonZeroU32::new(config.global_burst_size).ok_or_else(|| {
+            ConfigError::InvalidRateLimit("Global burst size must be greater than 0".to_string())
+        })?;
+
         // Create global rate limiter
-        let global_quota =
-            Quota::per_second(NonZeroU32::new(config.global_queries_per_second).unwrap())
-                .allow_burst(NonZeroU32::new(config.global_burst_size).unwrap());
+        let global_quota = Quota::per_second(global_qps).allow_burst(global_burst);
         let global_limiter = RateLimiter::direct(global_quota);
 
-        Self {
+        Ok(Self {
             config,
             per_ip_limiters: DashMap::new(),
             global_limiter,
             error_limiters: DashMap::new(),
             nxdomain_limiters: DashMap::new(),
-        }
+        })
     }
 
     /// Check if a query from the given IP should be allowed
@@ -165,12 +215,17 @@ impl DnsRateLimiter {
     ) -> dashmap::mapref::one::Ref<IpAddr, IpRateLimiter> {
         // Use entry API to avoid race conditions
         if !self.per_ip_limiters.contains_key(&ip) {
-            let quota =
-                Quota::per_second(NonZeroU32::new(self.config.queries_per_second_per_ip).unwrap())
-                    .allow_burst(NonZeroU32::new(self.config.burst_size_per_ip).unwrap());
+            // These should be validated during construction, so we can use expect here
+            let qps = NonZeroU32::new(self.config.queries_per_second_per_ip)
+                .expect("QPS per IP was validated during construction");
+            let burst = NonZeroU32::new(self.config.burst_size_per_ip)
+                .expect("Burst size per IP was validated during construction");
+            let quota = Quota::per_second(qps).allow_burst(burst);
             self.per_ip_limiters.insert(ip, RateLimiter::direct(quota));
         }
-        self.per_ip_limiters.get(&ip).unwrap()
+        self.per_ip_limiters
+            .get(&ip)
+            .expect("Just inserted if not present")
     }
 
     fn get_or_create_error_limiter(
@@ -178,11 +233,14 @@ impl DnsRateLimiter {
         ip: IpAddr,
     ) -> dashmap::mapref::one::Ref<IpAddr, IpRateLimiter> {
         if !self.error_limiters.contains_key(&ip) {
-            let quota =
-                Quota::per_second(NonZeroU32::new(self.config.errors_per_second_per_ip).unwrap());
+            let errors_per_sec = NonZeroU32::new(self.config.errors_per_second_per_ip)
+                .expect("Errors per second was validated during construction");
+            let quota = Quota::per_second(errors_per_sec);
             self.error_limiters.insert(ip, RateLimiter::direct(quota));
         }
-        self.error_limiters.get(&ip).unwrap()
+        self.error_limiters
+            .get(&ip)
+            .expect("Just inserted if not present")
     }
 
     fn get_or_create_nxdomain_limiter(
@@ -190,12 +248,15 @@ impl DnsRateLimiter {
         ip: IpAddr,
     ) -> dashmap::mapref::one::Ref<IpAddr, IpRateLimiter> {
         if !self.nxdomain_limiters.contains_key(&ip) {
-            let quota =
-                Quota::per_second(NonZeroU32::new(self.config.nxdomain_per_second_per_ip).unwrap());
+            let nxdomain_per_sec = NonZeroU32::new(self.config.nxdomain_per_second_per_ip)
+                .expect("NXDOMAIN per second was validated during construction");
+            let quota = Quota::per_second(nxdomain_per_sec);
             self.nxdomain_limiters
                 .insert(ip, RateLimiter::direct(quota));
         }
-        self.nxdomain_limiters.get(&ip).unwrap()
+        self.nxdomain_limiters
+            .get(&ip)
+            .expect("Just inserted if not present")
     }
 
     /// Clean up old rate limiter entries to prevent memory leaks
@@ -240,7 +301,7 @@ mod tests {
     #[test]
     fn test_rate_limiter_creation() {
         let config = RateLimitConfig::default();
-        let limiter = DnsRateLimiter::new(config);
+        let limiter = DnsRateLimiter::new(config).expect("Default config should be valid");
 
         let stats = limiter.get_stats();
         assert_eq!(stats.active_ip_limiters, 0);
@@ -255,7 +316,7 @@ mod tests {
             ..Default::default()
         };
 
-        let limiter = DnsRateLimiter::new(config);
+        let limiter = DnsRateLimiter::new(config).expect("Valid config for test");
         let test_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
 
         // First few queries should pass
@@ -275,7 +336,7 @@ mod tests {
             ..Default::default()
         };
 
-        let limiter = DnsRateLimiter::new(config);
+        let limiter = DnsRateLimiter::new(config).expect("Valid config for test");
         let ip1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
         let ip2 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
 
@@ -297,7 +358,7 @@ mod tests {
             ..Default::default()
         };
 
-        let limiter = DnsRateLimiter::new(config);
+        let limiter = DnsRateLimiter::new(config).expect("Valid config for test");
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
 
         // Should be limited by global limit, not per-IP limit
@@ -314,7 +375,7 @@ mod tests {
             ..Default::default()
         };
 
-        let limiter = DnsRateLimiter::new(config);
+        let limiter = DnsRateLimiter::new(config).expect("Valid config for test");
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
 
         // First error response should be allowed
@@ -331,7 +392,7 @@ mod tests {
             ..Default::default()
         };
 
-        let limiter = DnsRateLimiter::new(config);
+        let limiter = DnsRateLimiter::new(config).expect("Valid config for test");
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
 
         // Should always allow when disabled
@@ -348,7 +409,7 @@ mod tests {
             enable_rate_limiting: true,
             ..Default::default()
         };
-        let limiter = DnsRateLimiter::new(config);
+        let limiter = DnsRateLimiter::new(config).expect("Valid config for test");
 
         // Add some entries
         for i in 1..=10 {
@@ -374,7 +435,7 @@ mod tests {
             ..Default::default()
         };
 
-        let limiter = DnsRateLimiter::new(config);
+        let limiter = DnsRateLimiter::new(config).expect("Valid config for test");
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
 
         // Exhaust rate limit

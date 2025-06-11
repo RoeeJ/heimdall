@@ -29,7 +29,13 @@ use server::{run_tcp_server, run_udp_server};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration first to get runtime settings
-    let config = DnsConfig::from_env();
+    let config = match DnsConfig::from_env() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("Configuration error: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     // Build custom Tokio runtime with configurable thread pool
     let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();
@@ -90,7 +96,15 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
     let query_semaphore = Arc::new(Semaphore::new(config.max_concurrent_queries));
 
     // Create rate limiter
-    let rate_limiter = Arc::new(DnsRateLimiter::new(config.rate_limit_config.clone()));
+    let rate_limiter = Arc::new(
+        match DnsRateLimiter::new(config.rate_limit_config.clone()) {
+            Ok(rl) => rl,
+            Err(e) => {
+                error!("Failed to create rate limiter: {}", e);
+                std::process::exit(1);
+            }
+        },
+    );
 
     info!(
         "Rate limiting enabled: {}, per-IP limit: {} QPS, global limit: {} QPS",

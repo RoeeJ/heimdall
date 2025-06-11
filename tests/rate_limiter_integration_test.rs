@@ -14,7 +14,7 @@ fn test_rate_limiter_integration() {
         ..Default::default()
     };
 
-    let rate_limiter = DnsRateLimiter::new(config);
+    let rate_limiter = DnsRateLimiter::new(config).expect("Failed to create rate limiter");
     let test_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
 
     // First few queries should pass
@@ -36,7 +36,7 @@ fn test_disabled_rate_limiting() {
         ..Default::default()
     };
 
-    let rate_limiter = DnsRateLimiter::new(config);
+    let rate_limiter = DnsRateLimiter::new(config).expect("Failed to create rate limiter");
     let test_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
 
     // Should allow unlimited queries when disabled
@@ -53,7 +53,7 @@ fn test_error_response_limiting() {
         ..Default::default()
     };
 
-    let rate_limiter = DnsRateLimiter::new(config);
+    let rate_limiter = DnsRateLimiter::new(config).expect("Failed to create rate limiter");
     let test_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
 
     // First error response should be allowed
@@ -75,7 +75,7 @@ async fn test_rate_recovery_over_time() {
         ..Default::default()
     };
 
-    let rate_limiter = DnsRateLimiter::new(config);
+    let rate_limiter = DnsRateLimiter::new(config).expect("Failed to create rate limiter");
     let test_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
 
     // Exhaust rate limit
@@ -95,7 +95,7 @@ fn test_rate_limiter_stats() {
         enable_rate_limiting: true,
         ..Default::default()
     };
-    let rate_limiter = DnsRateLimiter::new(config);
+    let rate_limiter = DnsRateLimiter::new(config).expect("Failed to create rate limiter");
 
     // Initially no active limiters
     let stats = rate_limiter.get_stats();
@@ -124,7 +124,7 @@ fn test_multiple_ips() {
         ..Default::default()
     };
 
-    let rate_limiter = DnsRateLimiter::new(config);
+    let rate_limiter = DnsRateLimiter::new(config).expect("Failed to create rate limiter");
 
     // Test multiple IPs to ensure proper isolation
     for i in 1..=10 {

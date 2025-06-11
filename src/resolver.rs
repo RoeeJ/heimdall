@@ -1266,7 +1266,7 @@ impl DnsResolver {
 
         // Get the first question to resolve
         if query.questions.is_empty() {
-            return Err(DnsError::InvalidPacket("No questions in query".to_string()));
+            return Err(DnsError::Parse("No questions in query".to_string()));
         }
 
         let question = &query.questions[0];

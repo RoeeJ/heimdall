@@ -192,7 +192,7 @@ async fn handle_dns_query(
                 "invalid_label"
             } else if e.to_string().contains("BufferTooSmall") {
                 "buffer_too_small"
-            } else if e.to_string().contains("InvalidPacket") {
+            } else if e.to_string().contains("Parse error") {
                 "invalid_packet"
             } else {
                 "parse_error"

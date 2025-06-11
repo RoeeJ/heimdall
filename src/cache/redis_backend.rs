@@ -67,11 +67,11 @@ impl RedisCache {
     /// Create a new Redis cache backend
     pub async fn new(redis_url: &str, key_prefix: String, default_ttl: u64) -> Result<Self> {
         let client = redis::Client::open(redis_url)
-            .map_err(|e| DnsError::Io(format!("Failed to create Redis client: {}", e)))?;
+            .map_err(|e| DnsError::Redis(format!("Failed to create Redis client: {}", e)))?;
 
         let connection_manager = ConnectionManager::new(client)
             .await
-            .map_err(|e| DnsError::Io(format!("Failed to connect to Redis: {}", e)))?;
+            .map_err(|e| DnsError::Redis(format!("Failed to connect to Redis: {}", e)))?;
 
         info!("Connected to Redis at {}", redis_url);
 
@@ -93,7 +93,7 @@ impl RedisCache {
         let _: String = redis::cmd("PING")
             .query_async(&mut conn)
             .await
-            .map_err(|e| DnsError::Io(format!("Redis ping failed: {}", e)))?;
+            .map_err(|e| DnsError::Redis(format!("Redis ping failed: {}", e)))?;
         Ok(())
     }
 
