@@ -48,14 +48,14 @@ fn test_config_default() {
 #[test]
 fn test_config_from_env() {
     // Test with no environment variables (should use defaults)
-    let config = DnsConfig::from_env();
+    let config = DnsConfig::from_env().expect("Should create config with defaults");
     assert_eq!(config.bind_addr.port(), 1053);
 
     // Test environment variable override
     unsafe {
         std::env::set_var("HEIMDALL_BIND_ADDR", "0.0.0.0:5353");
     }
-    let config = DnsConfig::from_env();
+    let config = DnsConfig::from_env().expect("Should create config with valid env var");
     assert_eq!(config.bind_addr.port(), 5353);
 
     // Clean up

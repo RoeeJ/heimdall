@@ -97,14 +97,20 @@ impl ClusterRegistry {
             pod_ip: self.pod_ip.clone(),
             last_heartbeat: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("System time should be after UNIX epoch")
                 .as_secs(),
             status: MemberStatus::Healthy,
             stats,
         };
 
         let key = format!("{}:members:{}", self.key_prefix, self.member_id);
-        let value = serde_json::to_string(&member).unwrap();
+        let value = serde_json::to_string(&member).map_err(|e| {
+            RedisError::from((
+                redis::ErrorKind::TypeError,
+                "Failed to serialize member",
+                e.to_string(),
+            ))
+        })?;
 
         // Set with TTL
         let _: () = conn.set_ex(&key, value, self.ttl_seconds).await?;
@@ -131,14 +137,20 @@ impl ClusterRegistry {
             pod_ip: self.pod_ip.clone(),
             last_heartbeat: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("System time should be after UNIX epoch")
                 .as_secs(),
             status,
             stats,
         };
 
         let key = format!("{}:members:{}", self.key_prefix, self.member_id);
-        let value = serde_json::to_string(&member).unwrap();
+        let value = serde_json::to_string(&member).map_err(|e| {
+            RedisError::from((
+                redis::ErrorKind::TypeError,
+                "Failed to serialize member",
+                e.to_string(),
+            ))
+        })?;
 
         let _: () = conn.set_ex(&key, value, self.ttl_seconds).await?;
         Ok(())
@@ -198,7 +210,7 @@ impl ClusterRegistry {
         let members = self.get_members().await;
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("System time should be after UNIX epoch")
             .as_secs();
 
         let total = members.len();
