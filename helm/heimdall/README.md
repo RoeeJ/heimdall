@@ -150,14 +150,16 @@ Key metrics exposed by Heimdall:
 
 | Metric | Description | Type |
 |--------|-------------|------|
-| `dns_queries_total` | Total DNS queries by type | Counter |
-| `dns_responses_total` | Total DNS responses by response code | Counter |
-| `dns_request_duration` | DNS request duration in seconds | Histogram |
-| `cache_hits_total` | Total cache hits | Counter |
-| `cache_misses_total` | Total cache misses | Counter |
-| `cache_size` | Current number of entries in cache | Gauge |
-| `upstream_errors_total` | Total upstream DNS errors | Counter |
-| `rate_limit_exceeded_total` | Total rate limit violations | Counter |
+| `heimdall_queries_total` | Total DNS queries by protocol, type, and response code | Counter |
+| `heimdall_query_duration_seconds` | DNS query processing duration in seconds | Histogram |
+| `heimdall_cache_hits_total` | Total cache hits | Counter |
+| `heimdall_cache_misses_total` | Total cache misses | Counter |
+| `heimdall_cache_size` | Current number of entries in cache | Gauge |
+| `heimdall_cache_hit_rate` | Cache hit rate percentage (0-100) | Gauge |
+| `heimdall_error_responses_total` | Total error responses by type | Counter |
+| `heimdall_upstream_response_time_seconds` | Upstream DNS response time | Histogram |
+| `heimdall_upstream_health_status` | Upstream server health (1=healthy, 0=unhealthy) | Gauge |
+| `heimdall_rate_limit_drops_total` | Total queries dropped due to rate limiting | Counter |
 
 ### ServiceMonitor (Prometheus Operator)
 
