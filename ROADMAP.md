@@ -204,7 +204,8 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
 - [✅] Health check endpoints
 - [✅] Configuration hot-reloading
 - [✅] Graceful shutdown handling
-- [ ] Structured logging with correlation IDs
+- [✅] **Comprehensive Observability Analysis** - See `/docs/OBSERVABILITY_STRATEGY.md`
+- [ ] Structured logging with correlation IDs (deferred to Phase 5)
 
 ## Phase 4: Enhanced DNS Features & RFC Compliance ⭐ **COMPLETED**
 **Goal**: Achieve comprehensive RFC compliance and implement missing DNS features for production deployment
@@ -251,31 +252,31 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
   - [✅] Comprehensive test coverage for truncation scenarios
   - **Status**: Full RFC compliance for DNS message truncation
 
-### 4.2 Security & Validation (Short-term - 2 months) 🎯 **NEXT MAJOR FOCUS**
-- [ ] **DNSSEC Validation (RFC 4033-4035)** - 4-6 weeks
+### 4.2 Security & Validation 🎯 **NEXT MAJOR FOCUS**
+- [ ] **DNSSEC Validation (RFC 4033-4035)**
   - [ ] Signature validation implementation
   - [ ] Chain of trust verification from root to target
   - [ ] Trust anchor management and updates
   - [ ] NSEC/NSEC3 authenticated denial of existence
   - [ ] Support for RSA, ECDSA, EdDSA signature algorithms
 
-### 4.3 Authoritative DNS Support (Medium-term - 3-4 months)
-- [ ] **Zone Management (RFC 1035)** - 4-6 weeks
+### 4.3 Authoritative DNS Support
+- [ ] **Zone Management (RFC 1035)**
   - [ ] Zone file parsing and storage (RFC 1035 format)
   - [ ] SOA record handling and authority designation
   - [ ] Authoritative response generation with AA flag
   - [ ] Glue record handling for in-bailiwick nameservers
-- [ ] **Zone Transfer Support** - 3-4 weeks
+- [ ] **Zone Transfer Support**
   - [ ] AXFR (full zone transfer) implementation
   - [ ] IXFR (incremental zone transfer) support
   - [ ] Secondary zone synchronization from primaries
-- [ ] **DNS Notify (RFC 1996)** - 2-3 weeks
+- [ ] **DNS Notify (RFC 1996)**
   - [ ] NOTIFY opcode support and processing
   - [ ] Zone change notification system
   - [ ] Multi-master notification handling
 
-### 4.4 Dynamic Operations (Medium-term - 2 months)
-- [ ] **Dynamic DNS Updates (RFC 2136)** - 6-8 weeks
+### 4.4 Dynamic Operations
+- [ ] **Dynamic DNS Updates (RFC 2136)**
   - [ ] UPDATE opcode handling and processing
   - [ ] TSIG authentication support for secure updates
   - [ ] Dynamic record modification (add/delete/replace)
@@ -509,3 +510,4 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
 - **Architecture**: See `/ARCHITECTURE.md` for system design overview
 - **Malformed Packet Handling**: See `/docs/MALFORMED_PACKET_HANDLING.md`
 - **UDP Truncation**: See `/docs/UDP_TRUNCATION.md` for TC flag implementation
+- **Observability Strategy**: See `/docs/OBSERVABILITY_STRATEGY.md` for monitoring & metrics
