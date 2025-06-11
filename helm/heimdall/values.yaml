@@ -57,7 +57,7 @@ config:
   maxConcurrentQueries: 1000
   
   # Resolver settings
-  upstreamTimeout: 2000  # milliseconds
+  upstreamTimeout: 2  # seconds (max: 300)
   maxRetries: 3
   enableParallelQueries: true
 
