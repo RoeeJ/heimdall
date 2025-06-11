@@ -244,8 +244,8 @@ impl DNSResource {
 
                         Ok(rdata)
                     }
-                    super::enums::DNSResourceType::TXT => {
-                        // TXT records: reconstruct length-prefixed strings
+                    super::enums::DNSResourceType::TXT | super::enums::DNSResourceType::SPF => {
+                        // TXT/SPF records: reconstruct length-prefixed strings
                         let mut rdata = Vec::new();
 
                         // Remove quotes and split by spaces to get individual strings
@@ -524,6 +524,11 @@ impl DNSResource {
                             Ok(self.rdata.clone())
                         }
                     }
+                    super::enums::DNSResourceType::HTTPS | super::enums::DNSResourceType::SVCB => {
+                        // For HTTPS/SVCB, the parsing is complex enough that we'll just use the original rdata
+                        // Real applications would need to implement proper serialization of SvcParams
+                        Ok(self.rdata.clone())
+                    }
                     _ => {
                         // For other record types, use original rdata
                         Ok(self.rdata.clone())
@@ -651,8 +656,8 @@ impl DNSResource {
                     self.parse_simple_domain(&self.rdata).ok()
                 }
             }
-            DNSResourceType::TXT => {
-                // TXT record: length-prefixed strings
+            DNSResourceType::TXT | DNSResourceType::SPF => {
+                // TXT/SPF record: length-prefixed strings
                 let mut result = Vec::new();
                 let mut pos = 0;
 
@@ -1165,6 +1170,373 @@ impl DNSResource {
 
                 Some(format!("{} {} {}", algorithm, fp_type, fingerprint))
             }
+            DNSResourceType::DNAME => {
+                // DNAME record: Target domain name
+                if self.rdata.is_empty() {
+                    return Ok(());
+                }
+
+                // Parse domain name starting from the beginning
+                let domain = {
+                    let mut reader = BitReader::<_, bitstream_io::BigEndian>::new(&self.rdata[..]);
+                    let mut temp_component = Self::default();
+
+                    match temp_component.read_labels_with_buffer(&mut reader, Some(packet_buf)) {
+                        Ok(labels) => {
+                            if labels.is_empty() {
+                                ".".to_string()
+                            } else {
+                                labels.join(".")
+                            }
+                        }
+                        Err(_) => {
+                            // Fallback to simple parsing
+                            self.parse_simple_domain(&self.rdata)
+                                .unwrap_or_else(|_| ".".to_string())
+                        }
+                    }
+                };
+
+                Some(domain)
+            }
+            DNSResourceType::NAPTR => {
+                // NAPTR record: Order (2) Preference (2) Flags Services Regexp Replacement
+                if self.rdata.len() < 4 {
+                    return Ok(());
+                }
+
+                let order = u16::from_be_bytes([self.rdata[0], self.rdata[1]]);
+                let preference = u16::from_be_bytes([self.rdata[2], self.rdata[3]]);
+                let mut pos = 4;
+
+                // Parse FLAGS (character-string)
+                if pos >= self.rdata.len() {
+                    return Ok(());
+                }
+                let flags_len = self.rdata[pos] as usize;
+                pos += 1;
+                let flags = if pos + flags_len <= self.rdata.len() {
+                    std::str::from_utf8(&self.rdata[pos..pos + flags_len])
+                        .unwrap_or("")
+                        .to_string()
+                } else {
+                    String::new()
+                };
+                pos += flags_len;
+
+                // Parse SERVICES (character-string)
+                if pos >= self.rdata.len() {
+                    return Ok(());
+                }
+                let services_len = self.rdata[pos] as usize;
+                pos += 1;
+                let services = if pos + services_len <= self.rdata.len() {
+                    std::str::from_utf8(&self.rdata[pos..pos + services_len])
+                        .unwrap_or("")
+                        .to_string()
+                } else {
+                    String::new()
+                };
+                pos += services_len;
+
+                // Parse REGEXP (character-string)
+                if pos >= self.rdata.len() {
+                    return Ok(());
+                }
+                let regexp_len = self.rdata[pos] as usize;
+                pos += 1;
+                let regexp = if pos + regexp_len <= self.rdata.len() {
+                    std::str::from_utf8(&self.rdata[pos..pos + regexp_len])
+                        .unwrap_or("")
+                        .to_string()
+                } else {
+                    String::new()
+                };
+                pos += regexp_len;
+
+                // Parse REPLACEMENT (domain-name)
+                let replacement = if pos < self.rdata.len() {
+                    // Parse domain name (no compression in RDATA)
+                    let mut labels = Vec::new();
+                    while pos < self.rdata.len() {
+                        let len = self.rdata[pos] as usize;
+                        if len == 0 {
+                            break;
+                        }
+                        pos += 1;
+                        if pos + len <= self.rdata.len() {
+                            if let Ok(label) = std::str::from_utf8(&self.rdata[pos..pos + len]) {
+                                labels.push(label.to_string());
+                            }
+                            pos += len;
+                        } else {
+                            break;
+                        }
+                    }
+                    if labels.is_empty() {
+                        ".".to_string()
+                    } else {
+                        labels.join(".")
+                    }
+                } else {
+                    ".".to_string()
+                };
+
+                Some(format!(
+                    "{} {} \"{}\" \"{}\" \"{}\" {}",
+                    order, preference, flags, services, regexp, replacement
+                ))
+            }
+            DNSResourceType::LOC => {
+                // LOC record: Version (1) Size (1) Horiz_Pre (1) Vert_Pre (1)
+                // Latitude (4) Longitude (4) Altitude (4)
+                if self.rdata.len() != 16 {
+                    return Ok(());
+                }
+
+                let version = self.rdata[0];
+                if version != 0 {
+                    return Ok(()); // Only version 0 is supported
+                }
+
+                let size = self.rdata[1];
+                let horiz_pre = self.rdata[2];
+                let vert_pre = self.rdata[3];
+
+                // Parse coordinates
+                let latitude = i32::from_be_bytes([
+                    self.rdata[4],
+                    self.rdata[5],
+                    self.rdata[6],
+                    self.rdata[7],
+                ]);
+                let longitude = i32::from_be_bytes([
+                    self.rdata[8],
+                    self.rdata[9],
+                    self.rdata[10],
+                    self.rdata[11],
+                ]);
+                let altitude = i32::from_be_bytes([
+                    self.rdata[12],
+                    self.rdata[13],
+                    self.rdata[14],
+                    self.rdata[15],
+                ]);
+
+                // Convert to human-readable format
+                const EQUATOR: u32 = 0x80000000; // 2^31
+
+                // Convert latitude (thousandths of arc-seconds)
+                let lat_total = ((latitude as u32).wrapping_sub(EQUATOR) as i32).unsigned_abs();
+                let lat_deg = lat_total / 3_600_000;
+                let lat_min = (lat_total % 3_600_000) / 60_000;
+                let lat_sec = ((lat_total % 60_000) as f64) / 1000.0;
+                let lat_dir = if latitude as u32 >= EQUATOR { "N" } else { "S" };
+
+                // Convert longitude
+                let lon_total = ((longitude as u32).wrapping_sub(EQUATOR) as i32).unsigned_abs();
+                let lon_deg = lon_total / 3_600_000;
+                let lon_min = (lon_total % 3_600_000) / 60_000;
+                let lon_sec = ((lon_total % 60_000) as f64) / 1000.0;
+                let lon_dir = if longitude as u32 >= EQUATOR { "E" } else { "W" };
+
+                // Convert altitude (centimeters from -100000m)
+                let alt_meters = ((altitude as i64 - 10_000_000) as f64) / 100.0;
+
+                // Convert size/precision values
+                let size_cm = Self::decode_loc_size(size);
+                let hp_cm = Self::decode_loc_size(horiz_pre);
+                let vp_cm = Self::decode_loc_size(vert_pre);
+
+                Some(format!(
+                    "{} {:02} {:06.3} {} {} {:02} {:06.3} {} {:.2}m {:.2}m {:.2}m {:.2}m",
+                    lat_deg,
+                    lat_min,
+                    lat_sec,
+                    lat_dir,
+                    lon_deg,
+                    lon_min,
+                    lon_sec,
+                    lon_dir,
+                    alt_meters,
+                    size_cm / 100.0,
+                    hp_cm / 100.0,
+                    vp_cm / 100.0
+                ))
+            }
+            DNSResourceType::HTTPS | DNSResourceType::SVCB => {
+                // HTTPS/SVCB record: Priority (2) Target Name (var) SvcParams (var)
+                if self.rdata.len() < 3 {
+                    return Ok(());
+                }
+
+                let priority = u16::from_be_bytes([self.rdata[0], self.rdata[1]]);
+
+                // Parse target name
+                let mut pos = 2;
+                let target = {
+                    // Parse domain name manually to track position
+                    let mut labels = Vec::new();
+                    let mut domain_pos = pos;
+
+                    while domain_pos < self.rdata.len() {
+                        let len = self.rdata[domain_pos];
+                        if len == 0 {
+                            domain_pos += 1;
+                            break;
+                        } else if len & 0xC0 == 0xC0 {
+                            // Compression pointer - we need the full packet buffer for this
+                            if domain_pos + 1 < self.rdata.len() {
+                                let _offset = (((len & 0x3F) as u16) << 8)
+                                    | (self.rdata[domain_pos + 1] as u16);
+                                // For now, we'll skip compression pointers in HTTPS/SVCB
+                                domain_pos += 2;
+                                break;
+                            }
+                            break;
+                        } else {
+                            let label_len = len as usize;
+                            domain_pos += 1;
+                            if domain_pos + label_len <= self.rdata.len() {
+                                if let Ok(label) = std::str::from_utf8(
+                                    &self.rdata[domain_pos..domain_pos + label_len],
+                                ) {
+                                    labels.push(label.to_string());
+                                }
+                                domain_pos += label_len;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+
+                    pos = domain_pos;
+
+                    if labels.is_empty() {
+                        ".".to_string()
+                    } else {
+                        labels.join(".")
+                    }
+                };
+
+                // For AliasMode (priority 0), no SvcParams allowed
+                if priority == 0 {
+                    Some(format!("{} {}", priority, target))
+                } else {
+                    // Parse SvcParams for ServiceMode
+                    let mut params = Vec::new();
+                    while pos + 4 <= self.rdata.len() {
+                        let key = u16::from_be_bytes([self.rdata[pos], self.rdata[pos + 1]]);
+                        let length =
+                            u16::from_be_bytes([self.rdata[pos + 2], self.rdata[pos + 3]]) as usize;
+                        pos += 4;
+
+                        if pos + length > self.rdata.len() {
+                            break;
+                        }
+
+                        let value_bytes = &self.rdata[pos..pos + length];
+                        pos += length;
+
+                        // Parse known SvcParam types
+                        let param_str = match key {
+                            0 => {
+                                // mandatory - list of mandatory keys
+                                let mut keys = Vec::new();
+                                for i in (0..length).step_by(2) {
+                                    if i + 1 < length {
+                                        keys.push(u16::from_be_bytes([
+                                            value_bytes[i],
+                                            value_bytes[i + 1],
+                                        ]));
+                                    }
+                                }
+                                format!(
+                                    "mandatory={}",
+                                    keys.iter()
+                                        .map(|k| k.to_string())
+                                        .collect::<Vec<_>>()
+                                        .join(",")
+                                )
+                            }
+                            1 => {
+                                // alpn - application protocols
+                                let mut protocols = Vec::new();
+                                let mut i = 0;
+                                while i < length {
+                                    let proto_len = value_bytes[i] as usize;
+                                    i += 1;
+                                    if i + proto_len <= length {
+                                        if let Ok(proto) =
+                                            std::str::from_utf8(&value_bytes[i..i + proto_len])
+                                        {
+                                            protocols.push(proto.to_string());
+                                        }
+                                        i += proto_len;
+                                    }
+                                }
+                                format!("alpn={}", protocols.join(","))
+                            }
+                            2 => "no-default-alpn".to_string(),
+                            3 => {
+                                // port
+                                if length == 2 {
+                                    let port = u16::from_be_bytes([value_bytes[0], value_bytes[1]]);
+                                    format!("port={}", port)
+                                } else {
+                                    "port=<invalid>".to_string()
+                                }
+                            }
+                            4 => {
+                                // ipv4hint - IPv4 addresses
+                                let mut addrs = Vec::new();
+                                for i in (0..length).step_by(4) {
+                                    if i + 3 < length {
+                                        addrs.push(format!(
+                                            "{}.{}.{}.{}",
+                                            value_bytes[i],
+                                            value_bytes[i + 1],
+                                            value_bytes[i + 2],
+                                            value_bytes[i + 3]
+                                        ));
+                                    }
+                                }
+                                format!("ipv4hint={}", addrs.join(","))
+                            }
+                            5 => format!(
+                                "ech={}",
+                                base64::Engine::encode(
+                                    &base64::engine::general_purpose::STANDARD,
+                                    value_bytes
+                                )
+                            ),
+                            6 => {
+                                // ipv6hint - IPv6 addresses
+                                let mut addrs = Vec::new();
+                                for i in (0..length).step_by(16) {
+                                    if i + 15 < length {
+                                        let mut parts = Vec::new();
+                                        for j in (0..16).step_by(2) {
+                                            let part = u16::from_be_bytes([
+                                                value_bytes[i + j],
+                                                value_bytes[i + j + 1],
+                                            ]);
+                                            parts.push(format!("{:x}", part));
+                                        }
+                                        addrs.push(parts.join(":"));
+                                    }
+                                }
+                                format!("ipv6hint={}", addrs.join(","))
+                            }
+                            _ => format!("key{}={}", key, hex::encode(value_bytes)),
+                        };
+
+                        params.push(param_str);
+                    }
+
+                    Some(format!("{} {} {}", priority, target, params.join(" ")))
+                }
+            }
             _ => None, // For other record types, don't parse for now
         };
 
@@ -1195,6 +1567,13 @@ impl DNSResource {
         }
 
         Ok(labels.join("."))
+    }
+
+    /// Decode LOC size/precision format (base and exponent)
+    fn decode_loc_size(encoded: u8) -> f64 {
+        let base = (encoded >> 4) & 0x0F;
+        let exponent = encoded & 0x0F;
+        (base as f64) * 10f64.powf(exponent as f64)
     }
 }
 
