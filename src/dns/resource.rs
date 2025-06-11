@@ -1338,7 +1338,11 @@ impl DNSResource {
                 let lon_deg = lon_total / 3_600_000;
                 let lon_min = (lon_total % 3_600_000) / 60_000;
                 let lon_sec = ((lon_total % 60_000) as f64) / 1000.0;
-                let lon_dir = if longitude as u32 >= EQUATOR { "E" } else { "W" };
+                let lon_dir = if longitude as u32 >= EQUATOR {
+                    "E"
+                } else {
+                    "W"
+                };
 
                 // Convert altitude (centimeters from -100000m)
                 let alt_meters = ((altitude as i64 - 10_000_000) as f64) / 100.0;
