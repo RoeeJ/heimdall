@@ -414,7 +414,7 @@ data:
                 "uid": "${datasource}"
               },
               "expr": "sum by (type) (rate(dns_queries_total{job=\"$job\",namespace=\"$namespace\"}[5m]))",
-              "legendFormat": "{{type}}",
+              "legendFormat": "{{ "{{type}}" }}",
               "refId": "A"
             }
           ],
