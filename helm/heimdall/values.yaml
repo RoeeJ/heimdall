@@ -165,12 +165,94 @@ readinessProbe:
 # Monitoring
 metrics:
   enabled: true
+  
+  # ServiceMonitor for Prometheus Operator
   serviceMonitor:
     enabled: false
+    # Namespace where the ServiceMonitor will be created (defaults to release namespace)
     namespace: ""
+    # Scrape interval
     interval: 30s
+    # Scrape timeout
     scrapeTimeout: 10s
+    # Additional labels for ServiceMonitor
     labels: {}
+    # Additional relabelings
+    relabelings: []
+    # Additional metric relabelings
+    metricRelabelings: []
+  
+  # PodMonitor as alternative to ServiceMonitor
+  podMonitor:
+    enabled: false
+    # Namespace where the PodMonitor will be created (defaults to release namespace)
+    namespace: ""
+    # Scrape interval
+    interval: 30s
+    # Scrape timeout
+    scrapeTimeout: 10s
+    # Additional labels for PodMonitor
+    labels: {}
+    # Additional relabelings
+    relabelings: []
+    # Additional metric relabelings
+    metricRelabelings: []
+  
+  # PrometheusRule for alerting
+  prometheusRule:
+    enabled: false
+    # Namespace where the PrometheusRule will be created (defaults to release namespace)
+    namespace: ""
+    # Rule evaluation interval
+    interval: 30s
+    # Additional labels for PrometheusRule
+    labels: {}
+    # Alert configurations
+    alerts:
+      # High query rate alert
+      highQueryRate:
+        enabled: true
+        threshold: 1000  # queries per second
+        for: 5m
+      # High error rate alert
+      highErrorRate:
+        enabled: true
+        threshold: 0.05  # 5% error rate
+        for: 5m
+      # Low cache hit rate alert
+      lowCacheHitRate:
+        enabled: true
+        threshold: 0.5  # 50% cache hit rate
+        for: 10m
+      # High response time alert
+      highResponseTime:
+        enabled: true
+        threshold: 0.5  # 500ms
+        for: 5m
+      # Upstream failures alert
+      upstreamFailures:
+        enabled: true
+        threshold: 10  # errors per second
+        for: 5m
+      # Pod availability alert
+      podAvailability:
+        enabled: true
+        threshold: 0.5  # 50% of pods available
+        for: 5m
+    # Additional custom rules
+    additionalRules: []
+  
+  # Grafana Dashboard
+  grafanaDashboard:
+    enabled: false
+    # Namespace where the dashboard ConfigMap will be created
+    namespace: ""
+    # Label that Grafana sidecar uses to discover dashboards
+    sidecarLabel: "grafana_dashboard"
+    # Additional labels for the ConfigMap
+    labels: {}
+    # Additional annotations for the ConfigMap
+    annotations: {}
 
 # Keel automatic update configuration
 keel:
