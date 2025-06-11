@@ -1,12 +1,13 @@
 # Heimdall DNS Server Helm Chart
 
-This Helm chart deploys the Heimdall DNS server on a Kubernetes cluster.
+This Helm chart deploys the Heimdall DNS server on a Kubernetes cluster with built-in Prometheus monitoring support.
 
 ## Prerequisites
 
 - Kubernetes 1.21+
 - Helm 3.0+
 - LoadBalancer support in your Kubernetes cluster (for external IP assignment)
+- (Optional) Prometheus Operator for automatic monitoring setup
 
 ## Installation
 
@@ -104,6 +105,26 @@ nslookup google.com <EXTERNAL-IP>
 
 ## Monitoring
 
+Heimdall provides comprehensive Prometheus monitoring with automatic setup when Prometheus Operator is installed.
+
+### Quick Start
+
+Enable monitoring with default settings:
+
+```yaml
+# values.yaml
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+  prometheusRule:
+    enabled: true
+  grafanaDashboard:
+    enabled: true
+```
+
+### Metrics Endpoint
+
 The Heimdall DNS server exposes Prometheus metrics on port 8080:
 
 ```bash
@@ -115,6 +136,95 @@ curl http://localhost:8080/metrics
 
 # Health check
 curl http://localhost:8080/health
+```
+
+### Available Metrics
+
+Key metrics exposed by Heimdall:
+
+| Metric | Description | Type |
+|--------|-------------|------|
+| `dns_queries_total` | Total DNS queries by type | Counter |
+| `dns_responses_total` | Total DNS responses by response code | Counter |
+| `dns_request_duration` | DNS request duration in seconds | Histogram |
+| `cache_hits_total` | Total cache hits | Counter |
+| `cache_misses_total` | Total cache misses | Counter |
+| `cache_size` | Current number of entries in cache | Gauge |
+| `upstream_errors_total` | Total upstream DNS errors | Counter |
+| `rate_limit_exceeded_total` | Total rate limit violations | Counter |
+
+### ServiceMonitor (Prometheus Operator)
+
+When Prometheus Operator is installed, the chart automatically creates a ServiceMonitor:
+
+```yaml
+metrics:
+  serviceMonitor:
+    enabled: true
+    # Custom scrape interval
+    interval: 30s
+    # Custom labels for Prometheus selection
+    labels:
+      prometheus: kube-prometheus
+```
+
+### PrometheusRule (Alerting)
+
+Pre-configured alerts are included:
+
+```yaml
+metrics:
+  prometheusRule:
+    enabled: true
+    alerts:
+      highQueryRate:
+        threshold: 1000  # queries/sec
+      highErrorRate:
+        threshold: 0.05  # 5% error rate
+      lowCacheHitRate:
+        threshold: 0.5   # 50% cache hit rate
+      highResponseTime:
+        threshold: 0.5   # 500ms P95
+```
+
+### Grafana Dashboard
+
+An auto-discoverable Grafana dashboard is included:
+
+```yaml
+metrics:
+  grafanaDashboard:
+    enabled: true
+    # Label that Grafana uses to discover dashboards
+    sidecarLabel: "grafana_dashboard"
+```
+
+The dashboard provides:
+- Query rate and types
+- Cache hit rate
+- Response time percentiles (P50, P95, P99)
+- Error rates by response code
+- Upstream failures
+- Pod availability
+
+### Custom Monitoring Setup
+
+If not using Prometheus Operator, you can manually configure Prometheus:
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: 'heimdall'
+    kubernetes_sd_configs:
+      - role: service
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_service_name]
+        regex: heimdall
+        action: keep
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_service_name]
+        target_label: service
 ```
 
 ## High Availability

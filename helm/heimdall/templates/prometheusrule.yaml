@@ -1,0 +1,107 @@
+{{- if and .Values.metrics.enabled .Values.metrics.prometheusRule.enabled }}
+{{- if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1" }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "heimdall.fullname" . }}
+  {{- if .Values.metrics.prometheusRule.namespace }}
+  namespace: {{ .Values.metrics.prometheusRule.namespace }}
+  {{- else }}
+  namespace: {{ .Release.Namespace }}
+  {{- end }}
+  labels:
+    {{- include "heimdall.labels" . | nindent 4 }}
+    {{- with .Values.metrics.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: heimdall.rules
+      interval: {{ .Values.metrics.prometheusRule.interval | default "30s" }}
+      rules:
+        # High query rate alert
+        - alert: HeimdallHighQueryRate
+          expr: |
+            rate(dns_queries_total[5m]) > {{ .Values.metrics.prometheusRule.alerts.highQueryRate.threshold | default 1000 }}
+          for: {{ .Values.metrics.prometheusRule.alerts.highQueryRate.for | default "5m" }}
+          labels:
+            severity: warning
+            service: heimdall
+          annotations:
+            summary: "High DNS query rate detected"
+            description: "DNS query rate is {{ $value | humanize }} queries/sec (threshold: {{ .Values.metrics.prometheusRule.alerts.highQueryRate.threshold | default 1000 }})"
+
+        # High error rate alert
+        - alert: HeimdallHighErrorRate
+          expr: |
+            (
+              rate(dns_responses_total{rcode!="NoError"}[5m]) /
+              rate(dns_responses_total[5m])
+            ) > {{ .Values.metrics.prometheusRule.alerts.highErrorRate.threshold | default 0.05 }}
+          for: {{ .Values.metrics.prometheusRule.alerts.highErrorRate.for | default "5m" }}
+          labels:
+            severity: critical
+            service: heimdall
+          annotations:
+            summary: "High DNS error rate detected"
+            description: "DNS error rate is {{ $value | humanizePercentage }} (threshold: {{ .Values.metrics.prometheusRule.alerts.highErrorRate.threshold | default 0.05 | humanizePercentage }})"
+
+        # Cache hit rate low
+        - alert: HeimdallLowCacheHitRate
+          expr: |
+            (
+              rate(cache_hits_total[5m]) /
+              (rate(cache_hits_total[5m]) + rate(cache_misses_total[5m]))
+            ) < {{ .Values.metrics.prometheusRule.alerts.lowCacheHitRate.threshold | default 0.5 }}
+          for: {{ .Values.metrics.prometheusRule.alerts.lowCacheHitRate.for | default "10m" }}
+          labels:
+            severity: warning
+            service: heimdall
+          annotations:
+            summary: "Low DNS cache hit rate"
+            description: "Cache hit rate is {{ $value | humanizePercentage }} (threshold: {{ .Values.metrics.prometheusRule.alerts.lowCacheHitRate.threshold | default 0.5 | humanizePercentage }})"
+
+        # High response time
+        - alert: HeimdallHighResponseTime
+          expr: |
+            histogram_quantile(0.95, rate(dns_request_duration_bucket[5m])) > {{ .Values.metrics.prometheusRule.alerts.highResponseTime.threshold | default 0.5 }}
+          for: {{ .Values.metrics.prometheusRule.alerts.highResponseTime.for | default "5m" }}
+          labels:
+            severity: warning
+            service: heimdall
+          annotations:
+            summary: "High DNS response time detected"
+            description: "95th percentile response time is {{ $value | humanizeDuration }} (threshold: {{ .Values.metrics.prometheusRule.alerts.highResponseTime.threshold | default 0.5 }}s)"
+
+        # Upstream failures
+        - alert: HeimdallUpstreamFailures
+          expr: |
+            rate(upstream_errors_total[5m]) > {{ .Values.metrics.prometheusRule.alerts.upstreamFailures.threshold | default 10 }}
+          for: {{ .Values.metrics.prometheusRule.alerts.upstreamFailures.for | default "5m" }}
+          labels:
+            severity: critical
+            service: heimdall
+          annotations:
+            summary: "High rate of upstream DNS failures"
+            description: "Upstream error rate is {{ $value | humanize }} errors/sec (threshold: {{ .Values.metrics.prometheusRule.alerts.upstreamFailures.threshold | default 10 }})"
+
+        # Pod availability
+        - alert: HeimdallPodAvailability
+          expr: |
+            (
+              count(up{job="{{ include "heimdall.fullname" . }}"} == 1) /
+              count(up{job="{{ include "heimdall.fullname" . }}"})
+            ) < {{ .Values.metrics.prometheusRule.alerts.podAvailability.threshold | default 0.5 }}
+          for: {{ .Values.metrics.prometheusRule.alerts.podAvailability.for | default "5m" }}
+          labels:
+            severity: critical
+            service: heimdall
+          annotations:
+            summary: "Heimdall DNS service degraded"
+            description: "Only {{ $value | humanizePercentage }} of pods are available (threshold: {{ .Values.metrics.prometheusRule.alerts.podAvailability.threshold | default 0.5 | humanizePercentage }})"
+
+        {{- with .Values.metrics.prometheusRule.additionalRules }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+{{- end }}
+{{- end }}
