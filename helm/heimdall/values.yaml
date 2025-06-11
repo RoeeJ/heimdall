@@ -168,7 +168,7 @@ metrics:
   
   # ServiceMonitor for Prometheus Operator
   serviceMonitor:
-    enabled: false
+    enabled: true
     # Namespace where the ServiceMonitor will be created (defaults to release namespace)
     namespace: ""
     # Scrape interval
@@ -184,7 +184,7 @@ metrics:
   
   # PodMonitor as alternative to ServiceMonitor
   podMonitor:
-    enabled: false
+    enabled: false  # Disabled by default since ServiceMonitor is enabled
     # Namespace where the PodMonitor will be created (defaults to release namespace)
     namespace: ""
     # Scrape interval
@@ -200,7 +200,7 @@ metrics:
   
   # PrometheusRule for alerting
   prometheusRule:
-    enabled: false
+    enabled: true
     # Namespace where the PrometheusRule will be created (defaults to release namespace)
     namespace: ""
     # Rule evaluation interval
@@ -244,7 +244,7 @@ metrics:
   
   # Grafana Dashboard
   grafanaDashboard:
-    enabled: false
+    enabled: true
     # Namespace where the dashboard ConfigMap will be created
     namespace: ""
     # Label that Grafana sidecar uses to discover dashboards

@@ -105,22 +105,28 @@ nslookup google.com <EXTERNAL-IP>
 
 ## Monitoring
 
-Heimdall provides comprehensive Prometheus monitoring with automatic setup when Prometheus Operator is installed.
+Heimdall provides comprehensive Prometheus monitoring that is **enabled by default** when Prometheus Operator is installed. The chart automatically detects if Prometheus CRDs are available and creates the appropriate resources.
 
-### Quick Start
+### Default Configuration
 
-Enable monitoring with default settings:
+By default, the following monitoring resources are created (if CRDs are available):
+- **ServiceMonitor** - For automatic Prometheus scraping
+- **PrometheusRule** - Pre-configured alerts for DNS health
+- **Grafana Dashboard** - Comprehensive visualization
+
+To disable monitoring:
 
 ```yaml
 # values.yaml
 metrics:
-  enabled: true
+  enabled: false  # Disable all monitoring
+  # Or selectively disable components:
   serviceMonitor:
-    enabled: true
+    enabled: false
   prometheusRule:
-    enabled: true
+    enabled: false
   grafanaDashboard:
-    enabled: true
+    enabled: false
 ```
 
 ### Metrics Endpoint
