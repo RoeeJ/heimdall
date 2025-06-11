@@ -117,7 +117,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(dns_queries_total{job=\"$job\",namespace=\"$namespace\"}[5m]))",
+              "expr": "sum(rate(heimdall_queries_total{job=\"$job\",namespace=\"$namespace\"}[5m]))",
               "refId": "A"
             }
           ],
@@ -184,7 +184,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "(sum(rate(cache_hits_total{job=\"$job\",namespace=\"$namespace\"}[5m])) / (sum(rate(cache_hits_total{job=\"$job\",namespace=\"$namespace\"}[5m])) + sum(rate(cache_misses_total{job=\"$job\",namespace=\"$namespace\"}[5m])))) * 100",
+              "expr": "heimdall_cache_hit_rate{job=\"$job\",namespace=\"$namespace\"}",
               "refId": "A"
             }
           ],
@@ -249,7 +249,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum(rate(dns_request_duration_bucket{job=\"$job\",namespace=\"$namespace\"}[5m])) by (le)) * 1000",
+              "expr": "histogram_quantile(0.95, sum(rate(heimdall_query_duration_seconds_bucket{job=\"$job\",namespace=\"$namespace\"}[5m])) by (le)) * 1000",
               "refId": "A"
             }
           ],
@@ -316,7 +316,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "(sum(rate(dns_responses_total{job=\"$job\",namespace=\"$namespace\",rcode!=\"NoError\"}[5m])) / sum(rate(dns_responses_total{job=\"$job\",namespace=\"$namespace\"}[5m]))) * 100",
+              "expr": "(sum(rate(heimdall_error_responses_total{job=\"$job\",namespace=\"$namespace\"}[5m])) / sum(rate(heimdall_queries_total{job=\"$job\",namespace=\"$namespace\"}[5m]))) * 100",
               "refId": "A"
             }
           ],
@@ -413,8 +413,8 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum by (type) (rate(dns_queries_total{job=\"$job\",namespace=\"$namespace\"}[5m]))",
-              "legendFormat": "{{ "{{type}}" }}",
+              "expr": "sum by (query_type) (rate(heimdall_queries_total{job=\"$job\",namespace=\"$namespace\"}[5m]))",
+              "legendFormat": "{{ "{{query_type}}" }}",
               "refId": "A"
             }
           ],
@@ -498,7 +498,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.5, sum(rate(dns_request_duration_bucket{job=\"$job\",namespace=\"$namespace\"}[5m])) by (le)) * 1000",
+              "expr": "histogram_quantile(0.5, sum(rate(heimdall_query_duration_seconds_bucket{job=\"$job\",namespace=\"$namespace\"}[5m])) by (le)) * 1000",
               "legendFormat": "p50",
               "refId": "A"
             },
@@ -507,7 +507,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum(rate(dns_request_duration_bucket{job=\"$job\",namespace=\"$namespace\"}[5m])) by (le)) * 1000",
+              "expr": "histogram_quantile(0.95, sum(rate(heimdall_query_duration_seconds_bucket{job=\"$job\",namespace=\"$namespace\"}[5m])) by (le)) * 1000",
               "legendFormat": "p95",
               "refId": "B"
             },
@@ -516,13 +516,386 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.99, sum(rate(dns_request_duration_bucket{job=\"$job\",namespace=\"$namespace\"}[5m])) by (le)) * 1000",
+              "expr": "histogram_quantile(0.99, sum(rate(heimdall_query_duration_seconds_bucket{job=\"$job\",namespace=\"$namespace\"}[5m])) by (le)) * 1000",
               "legendFormat": "p99",
               "refId": "C"
             }
           ],
           "title": "Response Time Percentiles",
           "type": "timeseries"
+        },
+        {
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 14
+          },
+          "id": 20,
+          "panels": [],
+          "title": "Cache Performance",
+          "type": "row"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "tooltip": false,
+                  "viz": false,
+                  "legend": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 15
+          },
+          "id": 22,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "9.0.0",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "rate(heimdall_cache_hits_total{job=\"$job\",namespace=\"$namespace\"}[5m])",
+              "legendFormat": "Hits",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "rate(heimdall_cache_misses_total{job=\"$job\",namespace=\"$namespace\"}[5m])",
+              "legendFormat": "Misses",
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "rate(heimdall_cache_evictions_total{job=\"$job\",namespace=\"$namespace\"}[5m])",
+              "legendFormat": "Evictions",
+              "refId": "C"
+            }
+          ],
+          "title": "Cache Operations",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "displayMode": "auto"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 15
+          },
+          "id": 24,
+          "options": {
+            "showHeader": true,
+            "sortBy": []
+          },
+          "pluginVersion": "9.0.0",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "heimdall_cache_size{job=\"$job\",namespace=\"$namespace\"}",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Cache Size",
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true
+                },
+                "indexByName": {},
+                "renameByName": {
+                  "Value": "Entries",
+                  "pod": "Pod"
+                }
+              }
+            }
+          ],
+          "type": "table"
+        },
+        {
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 23
+          },
+          "id": 30,
+          "panels": [],
+          "title": "Upstream Servers",
+          "type": "row"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "tooltip": false,
+                  "viz": false,
+                  "legend": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "ms"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 24
+          },
+          "id": 32,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "9.0.0",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (server, le) (rate(heimdall_upstream_response_time_seconds_bucket{job=\"$job\",namespace=\"$namespace\"}[5m]))) * 1000",
+              "legendFormat": "{{ "{{server}}" }}",
+              "refId": "A"
+            }
+          ],
+          "title": "Upstream Response Time (P95)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "displayMode": "auto"
+              },
+              "mappings": [
+                {
+                  "options": {
+                    "0": {
+                      "color": "red",
+                      "index": 0,
+                      "text": "Unhealthy"
+                    },
+                    "1": {
+                      "color": "green",
+                      "index": 1,
+                      "text": "Healthy"
+                    }
+                  },
+                  "type": "value"
+                }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 24
+          },
+          "id": 34,
+          "options": {
+            "showHeader": true,
+            "sortBy": []
+          },
+          "pluginVersion": "9.0.0",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "heimdall_upstream_health_status{job=\"$job\",namespace=\"$namespace\"}",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Upstream Health Status",
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "job": true,
+                  "namespace": true
+                },
+                "indexByName": {},
+                "renameByName": {
+                  "Value": "Status",
+                  "server": "Server"
+                }
+              }
+            }
+          ],
+          "type": "table"
         }
       ],
       "refresh": "10s",
@@ -563,7 +936,7 @@ data:
             "name": "namespace",
             "options": [],
             "query": {
-              "query": "label_values(dns_queries_total, namespace)",
+              "query": "label_values(heimdall_queries_total, namespace)",
               "refId": "PrometheusVariableQueryEditor-VariableQuery"
             },
             "refresh": 1,
@@ -584,7 +957,7 @@ data:
             "name": "job",
             "options": [],
             "query": {
-              "query": "label_values(dns_queries_total{namespace=\"$namespace\"}, job)",
+              "query": "label_values(heimdall_queries_total{namespace=\"$namespace\"}, job)",
               "refId": "PrometheusVariableQueryEditor-VariableQuery"
             },
             "refresh": 1,
