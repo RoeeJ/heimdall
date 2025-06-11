@@ -29,7 +29,7 @@ spec:
             service: heimdall
           annotations:
             summary: "High DNS query rate detected"
-            description: "DNS query rate is {{ $value | humanize }} queries/sec (threshold: {{ .Values.metrics.prometheusRule.alerts.highQueryRate.threshold | default 1000 }})"
+            description: "DNS query rate is {{ "{{ $value | humanize }}" }} queries/sec (threshold: {{ .Values.metrics.prometheusRule.alerts.highQueryRate.threshold | default 1000 }})"
 
         # High error rate alert
         - alert: HeimdallHighErrorRate
@@ -44,7 +44,7 @@ spec:
             service: heimdall
           annotations:
             summary: "High DNS error rate detected"
-            description: "DNS error rate is {{ $value | humanizePercentage }} (threshold: {{ .Values.metrics.prometheusRule.alerts.highErrorRate.threshold | default 0.05 | humanizePercentage }})"
+            description: "DNS error rate is {{ "{{ $value | humanizePercentage }}" }} (threshold: {{ mul (.Values.metrics.prometheusRule.alerts.highErrorRate.threshold | default 0.05) 100 }}%)"
 
         # Cache hit rate low
         - alert: HeimdallLowCacheHitRate
@@ -59,7 +59,7 @@ spec:
             service: heimdall
           annotations:
             summary: "Low DNS cache hit rate"
-            description: "Cache hit rate is {{ $value | humanizePercentage }} (threshold: {{ .Values.metrics.prometheusRule.alerts.lowCacheHitRate.threshold | default 0.5 | humanizePercentage }})"
+            description: "Cache hit rate is {{ "{{ $value | humanizePercentage }}" }} (threshold: {{ mul (.Values.metrics.prometheusRule.alerts.lowCacheHitRate.threshold | default 0.5) 100 }}%)"
 
         # High response time
         - alert: HeimdallHighResponseTime
@@ -71,7 +71,7 @@ spec:
             service: heimdall
           annotations:
             summary: "High DNS response time detected"
-            description: "95th percentile response time is {{ $value | humanizeDuration }} (threshold: {{ .Values.metrics.prometheusRule.alerts.highResponseTime.threshold | default 0.5 }}s)"
+            description: "95th percentile response time is {{ "{{ $value | humanizeDuration }}" }} (threshold: {{ .Values.metrics.prometheusRule.alerts.highResponseTime.threshold | default 0.5 }}s)"
 
         # Upstream failures
         - alert: HeimdallUpstreamFailures
@@ -83,7 +83,7 @@ spec:
             service: heimdall
           annotations:
             summary: "High rate of upstream DNS failures"
-            description: "Upstream error rate is {{ $value | humanize }} errors/sec (threshold: {{ .Values.metrics.prometheusRule.alerts.upstreamFailures.threshold | default 10 }})"
+            description: "Upstream error rate is {{ "{{ $value | humanize }}" }} errors/sec (threshold: {{ .Values.metrics.prometheusRule.alerts.upstreamFailures.threshold | default 10 }})"
 
         # Pod availability
         - alert: HeimdallPodAvailability
@@ -98,7 +98,7 @@ spec:
             service: heimdall
           annotations:
             summary: "Heimdall DNS service degraded"
-            description: "Only {{ $value | humanizePercentage }} of pods are available (threshold: {{ .Values.metrics.prometheusRule.alerts.podAvailability.threshold | default 0.5 | humanizePercentage }})"
+            description: "Only {{ "{{ $value | humanizePercentage }}" }} of pods are available (threshold: {{ mul (.Values.metrics.prometheusRule.alerts.podAvailability.threshold | default 0.5) 100 }}%)"
 
         {{- with .Values.metrics.prometheusRule.additionalRules }}
         {{- toYaml . | nindent 8 }}
