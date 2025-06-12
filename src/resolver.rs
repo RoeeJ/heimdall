@@ -1023,7 +1023,7 @@ impl DnsResolver {
     ) -> Result<DNSPacket> {
         // Clone query to modify for DNSSEC if needed
         let mut query_to_send = query.clone();
-        
+
         // Set DNSSEC DO flag if validation is enabled
         if self.dnssec_validator.is_some() {
             // Ensure EDNS is present
@@ -1033,7 +1033,7 @@ impl DnsResolver {
                 edns.set_do_flag(true);
             }
         }
-        
+
         // Serialize the query
         let query_bytes = query_to_send
             .serialize()

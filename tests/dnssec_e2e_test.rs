@@ -39,7 +39,11 @@ async fn test_dnssec_validation_cloudflare() {
     packet.add_edns(4096, true);
 
     // Perform the query with a timeout
-    let result = timeout(Duration::from_secs(10), resolver.resolve(packet.clone(), 1234)).await;
+    let result = timeout(
+        Duration::from_secs(10),
+        resolver.resolve(packet.clone(), 1234),
+    )
+    .await;
 
     match result {
         Ok(Ok(response)) => {
@@ -47,18 +51,27 @@ async fn test_dnssec_validation_cloudflare() {
             println!("  Answer count: {}", response.answers.len());
             println!("  Authority count: {}", response.authorities.len());
             println!("  Additional count: {}", response.resources.len());
-            
+
             // Check if we got answers
             assert!(!response.answers.is_empty(), "Should have received answers");
-            
+
             // Check if DNSSEC records were included
-            let has_rrsig = response.answers.iter().any(|rr| rr.rtype == DNSResourceType::RRSIG)
-                || response.authorities.iter().any(|rr| rr.rtype == DNSResourceType::RRSIG);
-            
+            let has_rrsig = response
+                .answers
+                .iter()
+                .any(|rr| rr.rtype == DNSResourceType::RRSIG)
+                || response
+                    .authorities
+                    .iter()
+                    .any(|rr| rr.rtype == DNSResourceType::RRSIG);
+
             println!("  Has RRSIG: {}", has_rrsig);
-            
+
             // With DNSSEC enabled and DO flag set, we should get RRSIG records
-            assert!(has_rrsig, "Should have received RRSIG records with DO flag set");
+            assert!(
+                has_rrsig,
+                "Should have received RRSIG records with DO flag set"
+            );
         }
         Ok(Err(e)) => panic!("DNS query failed: {:?}", e),
         Err(_) => panic!("Query timed out"),
@@ -72,9 +85,7 @@ async fn test_dnssec_validation_failure() {
     let config = DnsConfig {
         dnssec_enabled: true,
         dnssec_strict: true, // Strict mode - reject bogus responses
-        upstream_servers: vec![
-            "1.1.1.1:53".parse().unwrap(),
-        ],
+        upstream_servers: vec!["1.1.1.1:53".parse().unwrap()],
         ..Default::default()
     };
 
@@ -97,12 +108,19 @@ async fn test_dnssec_validation_failure() {
     packet.add_edns(4096, true);
 
     // Perform the query
-    let result = timeout(Duration::from_secs(10), resolver.resolve(packet.clone(), 1235)).await;
+    let result = timeout(
+        Duration::from_secs(10),
+        resolver.resolve(packet.clone(), 1235),
+    )
+    .await;
 
     match result {
         Ok(Ok(response)) => {
             // In strict mode, we should get SERVFAIL for bogus DNSSEC
-            assert_eq!(response.header.rcode, 2, "Should return SERVFAIL for bogus DNSSEC");
+            assert_eq!(
+                response.header.rcode, 2,
+                "Should return SERVFAIL for bogus DNSSEC"
+            );
         }
         Ok(Err(_)) => {
             // This is also acceptable - the resolver might reject the query
@@ -135,10 +153,13 @@ async fn test_dnssec_do_flag_propagation() {
     packet.questions.push(question);
 
     // Don't add EDNS explicitly - the resolver should add it with DO flag
-    
+
     // Note: We can't easily test the actual query sent upstream without mocking,
     // but we can verify that the resolver handles queries correctly when DNSSEC is enabled
-    assert!(resolver.is_dnssec_enabled(), "DNSSEC validator should be present");
+    assert!(
+        resolver.is_dnssec_enabled(),
+        "DNSSEC validator should be present"
+    );
 }
 
 #[test]
