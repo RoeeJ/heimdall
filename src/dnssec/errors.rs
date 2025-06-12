@@ -54,7 +54,9 @@ impl fmt::Display for DnsSecError {
             Self::DsDigestMismatch => write!(f, "DS record digest does not match DNSKEY"),
             Self::InvalidPublicKey => write!(f, "Invalid DNSKEY public key format"),
             Self::InvalidSignature => write!(f, "Invalid RRSIG signature format"),
-            Self::DenialOfExistenceFailed => write!(f, "NSEC/NSEC3 denial of existence validation failed"),
+            Self::DenialOfExistenceFailed => {
+                write!(f, "NSEC/NSEC3 denial of existence validation failed")
+            }
             Self::TooManyIterations => write!(f, "Too many validation iterations"),
             Self::InvalidNsec3Parameters => write!(f, "Invalid NSEC3 parameters"),
             Self::TrustAnchorNotFound => write!(f, "Trust anchor not found for validation"),

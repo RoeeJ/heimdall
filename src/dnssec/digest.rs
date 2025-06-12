@@ -28,22 +28,22 @@ impl DigestType {
             _ => None,
         }
     }
-    
+
     /// Convert to digest type number
     pub fn to_u8(self) -> u8 {
         self as u8
     }
-    
+
     /// Check if digest type is supported
     pub fn is_supported(&self) -> bool {
         matches!(self, Self::Sha1 | Self::Sha256 | Self::Sha384)
     }
-    
+
     /// Check if digest type is recommended (RFC 8624)
     pub fn is_recommended(&self) -> bool {
         matches!(self, Self::Sha256)
     }
-    
+
     /// Get the expected digest length in bytes
     pub fn digest_len(&self) -> usize {
         match self {
@@ -54,13 +54,17 @@ impl DigestType {
             Self::Sha384 => 48,
         }
     }
-    
+
     /// Calculate digest of data using this algorithm
     pub fn digest(&self, data: &[u8]) -> Option<Vec<u8>> {
         match self {
             Self::Sha1 => {
                 use ring::digest;
-                Some(digest::digest(&digest::SHA1_FOR_LEGACY_USE_ONLY, data).as_ref().to_vec())
+                Some(
+                    digest::digest(&digest::SHA1_FOR_LEGACY_USE_ONLY, data)
+                        .as_ref()
+                        .to_vec(),
+                )
             }
             Self::Sha256 => {
                 use ring::digest;
