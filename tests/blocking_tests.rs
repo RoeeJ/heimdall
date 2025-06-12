@@ -48,6 +48,34 @@ fn test_blocker_basic_blocking() {
     // Test case insensitivity
     assert!(blocker.is_blocked("ADS.EXAMPLE.COM"));
     assert!(blocker.is_blocked("Tracker.Com"));
+
+    // Test subdomain blocking - tracker.com should block subdomains
+    assert!(blocker.is_blocked("sub.tracker.com"));
+    assert!(blocker.is_blocked("deep.sub.tracker.com"));
+
+    // Adding subdomain of already blocked domain should not increase count
+    blocker.add_blocked_domain("sub.tracker.com");
+    assert_eq!(blocker.get_stats().total_blocked_domains, 3); // Still 3, not 4
+}
+
+#[test]
+fn test_blocker_domain_and_subdomain_blocking() {
+    let blocker = DnsBlocker::new(BlockingMode::NxDomain, true);
+
+    // Add a domain to blocklist (not wildcard)
+    blocker.add_blocked_domain("doubleclick.net");
+
+    // Should block the domain itself
+    assert!(blocker.is_blocked("doubleclick.net"));
+
+    // Should also block all subdomains
+    assert!(blocker.is_blocked("ads.doubleclick.net"));
+    assert!(blocker.is_blocked("stats.doubleclick.net"));
+    assert!(blocker.is_blocked("deep.nested.doubleclick.net"));
+
+    // Should not block unrelated domains
+    assert!(!blocker.is_blocked("notdoubleclick.net"));
+    assert!(!blocker.is_blocked("doubleclick.com"));
 }
 
 #[test]
@@ -57,16 +85,23 @@ fn test_blocker_allowlist() {
     // Add blocked domains
     blocker.add_blocked_domain("*.example.com");
     blocker.add_blocked_domain("ads.site.com");
+    blocker.add_blocked_domain("tracker.com"); // This will block subdomains too
 
     // Add allowlist entries
     blocker.add_to_allowlist("safe.example.com");
     blocker.add_to_allowlist("ads.site.com"); // This should override the block
+    blocker.add_to_allowlist("good.tracker.com"); // Allow specific subdomain
 
     // Test allowlist overrides
     assert!(!blocker.is_blocked("safe.example.com")); // Allowlisted
     assert!(!blocker.is_blocked("ads.site.com")); // Allowlisted
     assert!(blocker.is_blocked("other.example.com")); // Still blocked by wildcard
     assert!(blocker.is_blocked("sub.other.example.com")); // Still blocked by wildcard
+
+    // Test subdomain blocking with allowlist
+    assert!(blocker.is_blocked("tracker.com")); // Base domain blocked
+    assert!(blocker.is_blocked("bad.tracker.com")); // Subdomain blocked
+    assert!(!blocker.is_blocked("good.tracker.com")); // Specifically allowlisted
 }
 
 #[test]
@@ -375,4 +410,102 @@ fn test_blocker_clear_and_reload() {
     blocker.add_blocked_domain("new.com");
     assert_eq!(blocker.get_stats().total_blocked_domains, 1);
     assert!(blocker.is_blocked("new.com"));
+}
+
+#[test]
+fn test_domain_deduplication() {
+    let blocker = DnsBlocker::new(BlockingMode::NxDomain, true);
+
+    // Add various subdomains first
+    blocker.add_blocked_domain("test1.ads.com");
+    blocker.add_blocked_domain("tralala.ads.com");
+    blocker.add_blocked_domain("super.ads.com");
+    assert_eq!(blocker.get_stats().total_blocked_domains, 3); // Each subdomain is separate
+
+    // Now add the registrable domain - this should remove the subdomains
+    blocker.add_blocked_domain("ads.com");
+    assert_eq!(blocker.get_stats().total_blocked_domains, 1); // Only ads.com remains
+
+    // All domains and subdomains should be blocked
+    assert!(blocker.is_blocked("ads.com"));
+    assert!(blocker.is_blocked("test1.ads.com"));
+    assert!(blocker.is_blocked("tralala.ads.com"));
+    assert!(blocker.is_blocked("super.ads.com"));
+    assert!(blocker.is_blocked("deep.nested.ads.com"));
+    assert!(blocker.is_blocked("any.other.subdomain.ads.com"));
+
+    // But not unrelated domains
+    assert!(!blocker.is_blocked("notads.com"));
+
+    // Test that adding a subdomain after parent is already blocked doesn't increase count
+    blocker.add_blocked_domain("new.ads.com");
+    assert_eq!(blocker.get_stats().total_blocked_domains, 1); // Still just ads.com
+}
+
+#[test]
+fn test_no_tld_blocking() {
+    let blocker = DnsBlocker::new(BlockingMode::NxDomain, true);
+
+    // These should not get reduced to just "com"
+    blocker.add_blocked_domain("ads.com");
+    blocker.add_blocked_domain("tracker.com");
+
+    // Should have 2 entries, not deduplicated to "com"
+    assert_eq!(blocker.get_stats().total_blocked_domains, 2);
+
+    // The domains should be blocked
+    assert!(blocker.is_blocked("ads.com"));
+    assert!(blocker.is_blocked("tracker.com"));
+
+    // But "com" itself should not be blocked
+    assert!(!blocker.is_blocked("com"));
+    assert!(!blocker.is_blocked("example.com"));
+}
+
+#[test]
+fn test_deduplication_with_different_tlds() {
+    let blocker = DnsBlocker::new(BlockingMode::NxDomain, true);
+
+    // These should not deduplicate together since they have different TLDs
+    blocker.add_blocked_domain("sub.example.com");
+    blocker.add_blocked_domain("sub.example.org");
+    blocker.add_blocked_domain("sub.example.net");
+
+    // Should have 3 entries (example.com, example.org, example.net)
+    assert_eq!(blocker.get_stats().total_blocked_domains, 3);
+
+    // Each domain and its subdomains should be blocked
+    assert!(blocker.is_blocked("example.com"));
+    assert!(blocker.is_blocked("sub.example.com"));
+    assert!(blocker.is_blocked("example.org"));
+    assert!(blocker.is_blocked("sub.example.org"));
+    assert!(blocker.is_blocked("example.net"));
+    assert!(blocker.is_blocked("sub.example.net"));
+}
+
+#[test]
+fn test_multi_part_tld_deduplication() {
+    let blocker = DnsBlocker::new(BlockingMode::NxDomain, true);
+
+    // Test with multi-part TLDs like .co.uk
+    blocker.add_blocked_domain("test.example.co.uk");
+    blocker.add_blocked_domain("another.example.co.uk");
+    blocker.add_blocked_domain("deep.nested.example.co.uk");
+
+    // Should still have 3 since they're all subdomains of example.co.uk
+    assert_eq!(blocker.get_stats().total_blocked_domains, 3);
+
+    // Now add the registrable domain
+    blocker.add_blocked_domain("example.co.uk");
+    assert_eq!(blocker.get_stats().total_blocked_domains, 1); // Only example.co.uk remains
+
+    // All should be blocked
+    assert!(blocker.is_blocked("example.co.uk"));
+    assert!(blocker.is_blocked("test.example.co.uk"));
+    assert!(blocker.is_blocked("another.example.co.uk"));
+    assert!(blocker.is_blocked("new.subdomain.example.co.uk"));
+
+    // But not other .co.uk domains
+    assert!(!blocker.is_blocked("other.co.uk"));
+    assert!(!blocker.is_blocked("co.uk")); // Can't block TLD
 }

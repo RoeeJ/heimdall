@@ -414,6 +414,11 @@ impl DnsResolver {
                 config.blocking_enable_wildcards,
             ));
 
+            // Initialize the Public Suffix List for domain deduplication
+            if let Err(e) = blocker.initialize_psl().await {
+                warn!("Failed to initialize PSL: {}", e);
+            }
+
             // Load allowlist
             for domain in &config.allowlist {
                 blocker.add_to_allowlist(domain);
