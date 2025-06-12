@@ -179,11 +179,6 @@ impl PublicSuffixList {
             return None;
         }
 
-        // Single label domains (TLDs) return themselves
-        if labels.len() == 1 {
-            return Some(domain.to_string());
-        }
-
         let suffix_len = self.find_public_suffix_len(&labels);
 
         // The registrable domain is one label longer than the public suffix
@@ -195,8 +190,11 @@ impl PublicSuffixList {
             // No public suffix found, assume simple TLD
             let registrable_labels = &labels[labels.len() - 2..];
             Some(registrable_labels.join("."))
+        } else if suffix_len == 0 && labels.len() == 1 {
+            // Single label domain with no PSL info - return it as-is
+            Some(domain.to_string())
         } else {
-            // Domain is a public suffix itself (but not a single TLD)
+            // Domain is a public suffix itself
             None
         }
     }
