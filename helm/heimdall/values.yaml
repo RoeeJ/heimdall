@@ -133,6 +133,17 @@ persistence:
   # Use existingClaim if you have a pre-created PVC
   # existingClaim: ""
 
+# Persistence for blocklists
+# Required for automatic blocklist updates to work
+# Without this, blocklists will be lost on pod restart
+blocklistPersistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 500Mi  # Sufficient for most blocklists
+  # Use existingClaim if you have a pre-created PVC
+  # existingClaim: ""
+
 podAnnotations: {}
 
 podSecurityContext:

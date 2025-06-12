@@ -69,6 +69,9 @@ helm install heimdall ./helm/heimdall
 # Install with Redis enabled (default)
 helm install heimdall ./helm/heimdall --set redis.enabled=true
 
+# Install with custom blocklist storage size
+helm install heimdall ./helm/heimdall --set blocklistPersistence.size=1Gi
+
 # Get the external IP
 kubectl get svc heimdall
 

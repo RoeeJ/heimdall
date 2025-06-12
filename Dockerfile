@@ -104,12 +104,18 @@ RUN apt-get update && apt-get install -y \
 # Create non-root user
 RUN useradd -m -u 1001 -s /bin/bash appuser
 
+# Create blocklist directory with correct permissions
+RUN mkdir -p /heimdall/blocklists && chown -R appuser:appuser /heimdall
+
 # Copy the binary from builder stage
 COPY --from=builder /app/target/release/heimdall /usr/local/bin/heimdall
 
 # Set ownership and permissions
 RUN chown appuser:appuser /usr/local/bin/heimdall && \
     chmod +x /usr/local/bin/heimdall
+
+# Set working directory
+WORKDIR /heimdall
 
 # Switch to non-root user
 USER appuser

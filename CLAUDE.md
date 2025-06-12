@@ -216,3 +216,10 @@ The codebase implements a production-ready DNS server with both UDP and TCP supp
 - Modern DNS record types (HTTPS/SVCB, LOC, NAPTR, DNAME, SPF) are fully supported
 - Distributed systems features (Redis L2 cache, cluster coordination) are operational
 - Always run `cargo fmt` and `cargo clippy` before committing
+
+## Volume Mappings
+- **Cache**: `/cache` - Used for persistent cache storage (rkyv format)
+- **Blocklists**: `/heimdall/blocklists` - Used for downloaded blocklist files
+- **Temporary**: `/tmp` - Used for temporary files during operations
+
+The Docker container sets WORKDIR to `/heimdall` so that blocklists are created in the mounted volume.
