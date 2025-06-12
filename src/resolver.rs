@@ -5,9 +5,9 @@ use crate::dns::{
     enums::{DNSResourceClass, DNSResourceType, ResponseCode},
     resource::DNSResource,
 };
+use crate::dnssec::{DnsSecValidator, TrustAnchorStore, ValidationResult};
 use crate::error::{DnsError, Result};
 use crate::metrics::DnsMetrics;
-use crate::dnssec::{DnsSecValidator, TrustAnchorStore, ValidationResult};
 
 /// Helper struct for SOA record fields to avoid too many function parameters
 #[derive(Debug, Clone)]
@@ -952,17 +952,17 @@ impl DnsResolver {
                     if retry > 0 {
                         debug!("Query succeeded on retry {}", retry);
                     }
-                    
+
                     // Perform DNSSEC validation if enabled
                     if let Some(dnssec_validator) = &self.dnssec_validator {
                         if !query.questions.is_empty() {
                             let qname = query.questions[0].labels.join(".");
                             let qtype = query.questions[0].qtype;
-                            
+
                             let validation_result = dnssec_validator
                                 .validate_with_denial(&response, &qname, qtype)
                                 .await;
-                                
+
                             match validation_result {
                                 ValidationResult::Secure => {
                                     debug!("DNSSEC validation successful for {}", qname);
@@ -974,7 +974,10 @@ impl DnsResolver {
                                     warn!("DNSSEC validation failed for {}: {}", qname, reason);
                                     if self.config.dnssec_strict {
                                         // In strict mode, treat bogus responses as failures
-                                        return Err(DnsError::Parse(format!("DNSSEC validation failed: {}", reason)));
+                                        return Err(DnsError::Parse(format!(
+                                            "DNSSEC validation failed: {}",
+                                            reason
+                                        )));
                                     }
                                     // In non-strict mode, still return the response but log the warning
                                 }
@@ -984,7 +987,7 @@ impl DnsResolver {
                             }
                         }
                     }
-                    
+
                     return Ok(response);
                 }
                 Err(e) => {

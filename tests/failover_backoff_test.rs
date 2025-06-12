@@ -35,7 +35,8 @@ async fn test_exponential_backoff_for_failed_servers() {
         http_bind_addr: None,
         redis_config: Default::default(),
         dnssec_enabled: false,
-        dnssec_strict: false,    };
+        dnssec_strict: false,
+    };
 
     let resolver = DnsResolver::new(config, None)
         .await
@@ -136,7 +137,8 @@ async fn test_successful_failover_to_backup_servers() {
         http_bind_addr: None,
         redis_config: Default::default(),
         dnssec_enabled: false,
-        dnssec_strict: false,    };
+        dnssec_strict: false,
+    };
 
     let resolver = DnsResolver::new(config, None)
         .await
@@ -262,7 +264,8 @@ async fn test_health_recovery_after_reset() {
         http_bind_addr: None,
         redis_config: Default::default(),
         dnssec_enabled: false,
-        dnssec_strict: false,    };
+        dnssec_strict: false,
+    };
 
     let resolver = DnsResolver::new(config, None)
         .await

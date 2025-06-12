@@ -76,33 +76,33 @@ impl DnsSecAlgorithm {
             _ => None,
         }
     }
-    
+
     /// Convert to algorithm number
     pub fn to_u8(self) -> u8 {
         self as u8
     }
-    
+
     /// Check if algorithm is supported for validation
     pub fn is_supported(&self) -> bool {
-        matches!(self,
-            Self::RsaSha1 |
-            Self::RsaSha256 |
-            Self::RsaSha512 |
-            Self::EcdsaP256Sha256 |
-            Self::EcdsaP384Sha384 |
-            Self::Ed25519
+        matches!(
+            self,
+            Self::RsaSha1
+                | Self::RsaSha256
+                | Self::RsaSha512
+                | Self::EcdsaP256Sha256
+                | Self::EcdsaP384Sha384
+                | Self::Ed25519
         )
     }
-    
+
     /// Check if algorithm is recommended (RFC 8624)
     pub fn is_recommended(&self) -> bool {
-        matches!(self,
-            Self::RsaSha256 |
-            Self::EcdsaP256Sha256 |
-            Self::Ed25519
+        matches!(
+            self,
+            Self::RsaSha256 | Self::EcdsaP256Sha256 | Self::Ed25519
         )
     }
-    
+
     /// Get the signature algorithm name for ring
     pub fn ring_algorithm(&self) -> Option<&'static dyn ring::signature::VerificationAlgorithm> {
         match self {

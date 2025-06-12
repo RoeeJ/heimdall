@@ -36,7 +36,8 @@ async fn test_consecutive_failures_mark_unhealthy() {
         http_bind_addr: None,
         redis_config: Default::default(),
         dnssec_enabled: false,
-        dnssec_strict: false,    };
+        dnssec_strict: false,
+    };
 
     let resolver = DnsResolver::new(config, None)
         .await
@@ -158,7 +159,8 @@ async fn test_health_based_priority_ordering() {
         http_bind_addr: None,
         redis_config: Default::default(),
         dnssec_enabled: false,
-        dnssec_strict: false,    };
+        dnssec_strict: false,
+    };
 
     let resolver = DnsResolver::new(config, None)
         .await
@@ -261,7 +263,8 @@ async fn test_server_health_reset() {
         http_bind_addr: None,
         redis_config: Default::default(),
         dnssec_enabled: false,
-        dnssec_strict: false,    };
+        dnssec_strict: false,
+    };
 
     let resolver = DnsResolver::new(config, None)
         .await

@@ -93,7 +93,7 @@ fn test_dns_error_source() {
     // Test source() method for DnsError
     let config_error = ConfigError::InvalidBindAddress("test".to_string());
     let dns_error = DnsError::Config(config_error.clone());
-    
+
     // Config errors should have source
     assert!(dns_error.source().is_some());
     assert_eq!(
@@ -125,7 +125,7 @@ fn test_dns_error_source() {
 fn test_dns_error_from_io_error() {
     let io_error = io::Error::new(io::ErrorKind::ConnectionRefused, "connection refused");
     let dns_error: DnsError = io_error.into();
-    
+
     match dns_error {
         DnsError::Io(msg) => assert!(msg.contains("connection refused")),
         _ => panic!("Expected DnsError::Io"),
@@ -136,7 +136,7 @@ fn test_dns_error_from_io_error() {
 fn test_dns_error_from_config_error() {
     let config_error = ConfigError::InvalidBindAddress("127.0.0.1:999999".to_string());
     let dns_error: DnsError = config_error.into();
-    
+
     match dns_error {
         DnsError::Config(err) => {
             assert_eq!(err.to_string(), "Invalid bind address: 127.0.0.1:999999");
@@ -158,7 +158,7 @@ fn test_result_type_alias() {
 
     assert_eq!(success_fn().unwrap(), "success");
     assert!(error_fn().is_err());
-    
+
     match error_fn() {
         Err(DnsError::Timeout) => (),
         _ => panic!("Expected timeout error"),
@@ -195,13 +195,13 @@ fn test_nested_config_error() {
     // Test nested error handling
     let config_error = ConfigError::ParseError("malformed config".to_string());
     let dns_error = DnsError::from(config_error);
-    
+
     // Check the full error chain
     assert_eq!(
         dns_error.to_string(),
         "Configuration error: Parse error: malformed config"
     );
-    
+
     // Check source chain
     assert!(dns_error.source().is_some());
 }
