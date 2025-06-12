@@ -217,7 +217,6 @@ async fn test_concurrent_queries() {
 
     // Send 10 concurrent queries
     for i in 0..10 {
-        let addr = addr.clone();
         let handle = tokio::spawn(async move {
             let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let domain = format!("test{}.example.com", i);
@@ -487,7 +486,6 @@ async fn test_max_concurrent_queries_limit() {
     // Send 5 queries simultaneously
     let mut handles = vec![];
     for i in 0..5 {
-        let addr = addr.clone();
         let handle = tokio::spawn(async move {
             let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let query = create_dns_query_bytes(&format!("slow{}.com", i), 1);

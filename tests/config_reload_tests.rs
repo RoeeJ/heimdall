@@ -286,7 +286,7 @@ enable_caching = false
         .expect("Expected change notification");
 
     // Only caching should change
-    assert_eq!(change.new_config.enable_caching, false);
+    assert!(!change.new_config.enable_caching);
     assert_eq!(change.new_config.bind_addr, initial_bind_addr); // Unchanged
 }
 
