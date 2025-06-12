@@ -156,11 +156,15 @@ impl DnsBlocker {
         // Check wildcard patterns if enabled
         if self.enable_wildcards {
             // Check if domain matches any wildcard pattern
+            // For pattern "example.com" stored from "*.example.com",
+            // it should match "sub.example.com" but NOT "example.com" itself
             let parts: Vec<&str> = domain_lower.split('.').collect();
-            for i in 0..parts.len() {
-                let wildcard = parts[i..].join(".");
-                if self.blocked_patterns.contains_key(&wildcard) {
-                    debug!("Domain {} blocked (wildcard match: {})", domain, wildcard);
+            // Start from 1 to skip checking the full domain against patterns
+            // This ensures *.example.com doesn't match example.com itself
+            for i in 1..parts.len() {
+                let suffix = parts[i..].join(".");
+                if self.blocked_patterns.contains_key(&suffix) {
+                    debug!("Domain {} blocked (wildcard match: *.{})", domain, suffix);
                     self.stats.record_blocked();
                     return true;
                 }
@@ -396,7 +400,7 @@ mod tests {
 
         assert!(blocker.is_blocked("ads.doubleclick.net"));
         assert!(blocker.is_blocked("tracker.ads.doubleclick.net"));
-        assert!(blocker.is_blocked("doubleclick.net"));
+        assert!(!blocker.is_blocked("doubleclick.net")); // Wildcard should NOT match base domain
         assert!(!blocker.is_blocked("notdoubleclick.net"));
     }
 
