@@ -36,6 +36,8 @@ async fn test_exponential_backoff_for_failed_servers() {
         redis_config: Default::default(),
         dnssec_enabled: false,
         dnssec_strict: false,
+        zone_files: vec![],
+        authoritative_enabled: false,
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -138,6 +140,8 @@ async fn test_successful_failover_to_backup_servers() {
         redis_config: Default::default(),
         dnssec_enabled: false,
         dnssec_strict: false,
+        zone_files: vec![],
+        authoritative_enabled: false,
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -265,6 +269,8 @@ async fn test_health_recovery_after_reset() {
         redis_config: Default::default(),
         dnssec_enabled: false,
         dnssec_strict: false,
+        zone_files: vec![],
+        authoritative_enabled: false,
     };
 
     let resolver = DnsResolver::new(config, None)

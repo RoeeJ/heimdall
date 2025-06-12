@@ -39,6 +39,8 @@ async fn test_automatic_failover() {
         redis_config: Default::default(),
         dnssec_enabled: false,
         dnssec_strict: false,
+        zone_files: vec![],
+        authoritative_enabled: false,
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -158,6 +160,8 @@ async fn test_health_based_server_ordering() {
         redis_config: Default::default(),
         dnssec_enabled: false,
         dnssec_strict: false,
+        zone_files: vec![],
+        authoritative_enabled: false,
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -242,6 +246,8 @@ async fn test_server_health_recovery() {
         redis_config: Default::default(),
         dnssec_enabled: false,
         dnssec_strict: false,
+        zone_files: vec![],
+        authoritative_enabled: false,
     };
 
     let resolver = DnsResolver::new(config, None)

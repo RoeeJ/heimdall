@@ -37,6 +37,8 @@ async fn test_consecutive_failures_mark_unhealthy() {
         redis_config: Default::default(),
         dnssec_enabled: false,
         dnssec_strict: false,
+        zone_files: vec![],
+        authoritative_enabled: false,
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -160,6 +162,8 @@ async fn test_health_based_priority_ordering() {
         redis_config: Default::default(),
         dnssec_enabled: false,
         dnssec_strict: false,
+        zone_files: vec![],
+        authoritative_enabled: false,
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -264,6 +268,8 @@ async fn test_server_health_reset() {
         redis_config: Default::default(),
         dnssec_enabled: false,
         dnssec_strict: false,
+        zone_files: vec![],
+        authoritative_enabled: false,
     };
 
     let resolver = DnsResolver::new(config, None)
