@@ -1866,9 +1866,15 @@ impl DnsResolver {
         // Place records in appropriate section based on type and response code
         match rcode {
             ResponseCode::NoError => {
-                if authoritative {
-                    // Authoritative answer - records go in answer section
-                    response.answers = records;
+                if authoritative && !records.is_empty() {
+                    // Check if this is a NODATA response (SOA record only)
+                    if records.len() == 1 && records[0].rtype == DNSResourceType::SOA {
+                        // NODATA - SOA goes in authority section
+                        response.authorities = records;
+                    } else {
+                        // Authoritative answer - records go in answer section
+                        response.answers = records;
+                    }
                 } else {
                     // Delegation - NS records go in authority section
                     response.authorities = records;

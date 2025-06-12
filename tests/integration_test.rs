@@ -4,13 +4,10 @@ use tokio::net::UdpSocket;
 use tokio::time::timeout;
 
 #[tokio::test]
+#[ignore] // This test requires the server to be running
 async fn test_dns_server_responds_to_query() {
     // This test requires the server to be running
-    // It can be skipped in CI by checking for an environment variable
-    if std::env::var("SKIP_INTEGRATION_TESTS").is_ok() {
-        println!("Integration test skipped (SKIP_INTEGRATION_TESTS set)");
-        return;
-    }
+    // Run with: cargo test --test integration_test -- --ignored
 
     // Create a client socket
     let client_socket = UdpSocket::bind("127.0.0.1:0")
