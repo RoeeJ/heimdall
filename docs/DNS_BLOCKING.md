@@ -13,6 +13,7 @@ To disable blocking, set `HEIMDALL_BLOCKING_ENABLED=false`.
 
 - **Multiple blocklist formats**: Supports hosts files, AdBlock Plus, Pi-hole, dnsmasq, unbound, and simple domain lists
 - **Efficient lookups**: Uses concurrent hashmaps for O(1) domain lookups
+- **Automatic subdomain blocking**: When a domain is blocked, all its subdomains are automatically blocked too
 - **Wildcard support**: Block entire domain hierarchies with `*.domain.com` patterns
 - **Allowlisting**: Override blocks for specific domains
 - **Multiple blocking modes**: Choose how blocked queries are handled
@@ -228,12 +229,78 @@ HEIMDALL_BLOCKLISTS=\
 /etc/heimdall/custom.txt:adblock:CustomList
 ```
 
-## Wildcard Blocking
+## Domain and Subdomain Blocking
 
-When enabled, Heimdall supports wildcard patterns:
+### Automatic Subdomain Blocking
+
+When you block a domain, Heimdall automatically blocks all its subdomains. This provides comprehensive protection without needing to list every possible subdomain.
 
 ```
-# Block all subdomains
+# If you block:
+doubleclick.net
+
+# These are automatically blocked too:
+ads.doubleclick.net
+stats.doubleclick.net
+any.subdomain.doubleclick.net
+deep.nested.subdomain.doubleclick.net
+```
+
+This feature ensures that malicious actors cannot bypass blocks by simply creating new subdomains.
+
+### Intelligent Domain Deduplication
+
+Heimdall uses the Public Suffix List (PSL) to intelligently deduplicate blocked domains. This optimization reduces memory usage and improves lookup performance.
+
+#### How It Works
+
+1. **Automatic Deduplication**: When you add multiple subdomains of the same registrable domain, Heimdall automatically consolidates them:
+   ```
+   # Add these domains:
+   test1.ads.com
+   test2.ads.com  
+   sub.ads.com
+   
+   # Then add the parent:
+   ads.com
+   
+   # Result: Only ads.com is stored (covers all subdomains)
+   ```
+
+2. **Multi-Level TLD Support**: Heimdall correctly handles multi-level TLDs like `.co.uk`, `.com.br`, etc.:
+   ```
+   # example.co.uk is the registrable domain for:
+   sub.example.co.uk
+   test.example.co.uk
+   
+   # example.com.br is the registrable domain for:
+   www.example.com.br
+   mail.example.com.br
+   ```
+
+3. **TLD Protection**: Top-level domains (TLDs) are never blocked to prevent breaking the internet:
+   ```
+   # Blocking these:
+   example.com
+   test.com
+   
+   # Does NOT block all .com domains
+   # Each domain is handled independently
+   ```
+
+#### Benefits
+
+- **Memory Efficiency**: Reduces memory usage by storing only necessary domains
+- **Faster Lookups**: Fewer domains to check means faster blocking decisions  
+- **Automatic Coverage**: Adding a parent domain automatically covers all subdomains
+- **Smart Updates**: The PSL is downloaded and updated automatically on startup
+
+### Wildcard Blocking
+
+For more specific control, Heimdall also supports wildcard patterns:
+
+```
+# Block all subdomains but NOT the base domain
 *.doubleclick.net
 
 # This will block:
@@ -242,6 +309,10 @@ When enabled, Heimdall supports wildcard patterns:
 # - any.subdomain.doubleclick.net
 # But NOT doubleclick.net itself
 ```
+
+The difference between regular domain blocking and wildcard blocking:
+- `doubleclick.net` - Blocks the domain AND all subdomains
+- `*.doubleclick.net` - Blocks ONLY subdomains, not the base domain
 
 ## Allowlisting
 
