@@ -4,6 +4,7 @@ use tokio::sync::Semaphore;
 use tracing::{debug, error, info, trace, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+pub mod blocking;
 pub mod cache;
 pub mod cluster_registry;
 pub mod config;

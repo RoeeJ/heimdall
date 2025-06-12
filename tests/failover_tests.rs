@@ -41,6 +41,14 @@ async fn test_automatic_failover() {
         dnssec_strict: false,
         zone_files: vec![],
         authoritative_enabled: false,
+        blocking_enabled: false,
+        blocking_mode: "nxdomain".to_string(),
+        blocking_custom_ip: None,
+        blocking_enable_wildcards: false,
+        blocklists: vec![],
+        allowlist: vec![],
+        blocklist_auto_update: false,
+        blocklist_update_interval: 86400,
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -162,6 +170,14 @@ async fn test_health_based_server_ordering() {
         dnssec_strict: false,
         zone_files: vec![],
         authoritative_enabled: false,
+        blocking_enabled: false,
+        blocking_mode: "nxdomain".to_string(),
+        blocking_custom_ip: None,
+        blocking_enable_wildcards: false,
+        blocklists: vec![],
+        allowlist: vec![],
+        blocklist_auto_update: false,
+        blocklist_update_interval: 86400,
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -248,6 +264,14 @@ async fn test_server_health_recovery() {
         dnssec_strict: false,
         zone_files: vec![],
         authoritative_enabled: false,
+        blocking_enabled: false,
+        blocking_mode: "nxdomain".to_string(),
+        blocking_custom_ip: None,
+        blocking_enable_wildcards: false,
+        blocklists: vec![],
+        allowlist: vec![],
+        blocklist_auto_update: false,
+        blocklist_update_interval: 86400,
     };
 
     let resolver = DnsResolver::new(config, None)

@@ -34,6 +34,14 @@ async fn test_create_truncated_response() {
         dnssec_strict: false,
         zone_files: vec![],
         authoritative_enabled: false,
+        blocking_enabled: false,
+        blocking_mode: "nxdomain".to_string(),
+        blocking_custom_ip: None,
+        blocking_enable_wildcards: false,
+        blocklists: vec![],
+        allowlist: vec![],
+        blocklist_auto_update: false,
+        blocklist_update_interval: 86400,
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -104,6 +112,14 @@ async fn test_udp_size_limits_basic() {
         dnssec_strict: false,
         zone_files: vec![],
         authoritative_enabled: false,
+        blocking_enabled: false,
+        blocking_mode: "nxdomain".to_string(),
+        blocking_custom_ip: None,
+        blocking_enable_wildcards: false,
+        blocklists: vec![],
+        allowlist: vec![],
+        blocklist_auto_update: false,
+        blocklist_update_interval: 86400,
     };
 
     let _resolver = DnsResolver::new(config, None)
@@ -163,6 +179,14 @@ async fn test_truncated_response_serialization() {
         dnssec_strict: false,
         zone_files: vec![],
         authoritative_enabled: false,
+        blocking_enabled: false,
+        blocking_mode: "nxdomain".to_string(),
+        blocking_custom_ip: None,
+        blocking_enable_wildcards: false,
+        blocklists: vec![],
+        allowlist: vec![],
+        blocklist_auto_update: false,
+        blocklist_update_interval: 86400,
     };
 
     let resolver = DnsResolver::new(config, None)

@@ -74,6 +74,30 @@ pub struct DnsConfig {
 
     /// Whether to enable authoritative DNS serving
     pub authoritative_enabled: bool,
+
+    /// Whether to enable DNS blocking
+    pub blocking_enabled: bool,
+
+    /// Blocking mode (nxdomain, zero_ip, custom_ip, refused)
+    pub blocking_mode: String,
+
+    /// Custom IP to return for blocked domains (if mode is custom_ip)
+    pub blocking_custom_ip: Option<String>,
+
+    /// Enable wildcard blocking (*.domain.com)
+    pub blocking_enable_wildcards: bool,
+
+    /// Blocklist file paths with format: path:format:name
+    pub blocklists: Vec<String>,
+
+    /// Allowlist domains (never blocked)
+    pub allowlist: Vec<String>,
+
+    /// Auto-update blocklists
+    pub blocklist_auto_update: bool,
+
+    /// Blocklist update interval in seconds
+    pub blocklist_update_interval: u64,
 }
 
 impl Default for DnsConfig {
@@ -125,6 +149,18 @@ impl Default for DnsConfig {
             dnssec_strict: false,  // Non-strict by default
             zone_files: vec![],    // No zones by default
             authoritative_enabled: false, // Disabled by default
+            blocking_enabled: true, // Enabled by default
+            blocking_mode: "zero_ip".to_string(), // Use zero_ip as default (common choice)
+            blocking_custom_ip: None,
+            blocking_enable_wildcards: true,
+            blocklists: vec![
+                // Default blocklists in path:format:name format
+                "blocklists/stevenblack-hosts.txt:hosts:StevenBlack".to_string(),
+                "blocklists/malware-domains.txt:hosts:MalwareDomains".to_string(),
+            ],
+            allowlist: vec![],
+            blocklist_auto_update: true, // Enable auto-updates by default
+            blocklist_update_interval: 86400, // 24 hours
         }
     }
 }
@@ -333,6 +369,52 @@ impl DnsConfig {
             config.authoritative_enabled = parse_bool(&authoritative_enabled, false);
         }
 
+        // Blocking configuration
+        if let Ok(blocking_enabled) = std::env::var("HEIMDALL_BLOCKING_ENABLED") {
+            config.blocking_enabled = parse_bool(&blocking_enabled, false);
+        }
+
+        if let Ok(blocking_mode) = std::env::var("HEIMDALL_BLOCKING_MODE") {
+            config.blocking_mode = blocking_mode.to_lowercase();
+        }
+
+        if let Ok(custom_ip) = std::env::var("HEIMDALL_BLOCKING_CUSTOM_IP") {
+            config.blocking_custom_ip = Some(custom_ip);
+        }
+
+        if let Ok(enable_wildcards) = std::env::var("HEIMDALL_BLOCKING_ENABLE_WILDCARDS") {
+            config.blocking_enable_wildcards = parse_bool(&enable_wildcards, true);
+        }
+
+        if let Ok(blocklists) = std::env::var("HEIMDALL_BLOCKLISTS") {
+            config.blocklists = blocklists
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+        }
+
+        if let Ok(allowlist) = std::env::var("HEIMDALL_ALLOWLIST") {
+            config.allowlist = allowlist
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+        }
+
+        if let Ok(auto_update) = std::env::var("HEIMDALL_BLOCKLIST_AUTO_UPDATE") {
+            config.blocklist_auto_update = parse_bool(&auto_update, false);
+        }
+
+        if let Ok(update_interval) = std::env::var("HEIMDALL_BLOCKLIST_UPDATE_INTERVAL") {
+            config.blocklist_update_interval = update_interval.parse::<u64>().map_err(|_| {
+                ConfigError::ParseError(format!(
+                    "Invalid blocklist update interval: {}",
+                    update_interval
+                ))
+            })?;
+        }
+
         // Redis configuration (auto-detected)
         config.redis_config = RedisConfig::from_env();
 
@@ -379,6 +461,54 @@ impl DnsConfig {
                 return Err(ConfigError::InvalidRateLimit(
                     "Global QPS must be greater than 0 when rate limiting is enabled".to_string(),
                 ));
+            }
+        }
+
+        // Blocking configuration validation
+        if self.blocking_enabled {
+            match self.blocking_mode.as_str() {
+                "nxdomain" | "zero_ip" | "refused" => {}
+                "custom_ip" => {
+                    if self.blocking_custom_ip.is_none() {
+                        return Err(ConfigError::ParseError(
+                            "Blocking mode 'custom_ip' requires HEIMDALL_BLOCKING_CUSTOM_IP to be set".to_string(),
+                        ));
+                    }
+                    // Validate IP address
+                    if let Some(ref ip) = self.blocking_custom_ip {
+                        use std::net::IpAddr;
+                        ip.parse::<IpAddr>().map_err(|_| {
+                            ConfigError::ParseError(format!("Invalid custom blocking IP: {}", ip))
+                        })?;
+                    }
+                }
+                _ => {
+                    return Err(ConfigError::ParseError(format!(
+                        "Invalid blocking mode: {}. Must be one of: nxdomain, zero_ip, custom_ip, refused",
+                        self.blocking_mode
+                    )));
+                }
+            }
+
+            // Validate blocklist format
+            for blocklist in &self.blocklists {
+                let parts: Vec<&str> = blocklist.split(':').collect();
+                if parts.len() != 3 {
+                    return Err(ConfigError::ParseError(format!(
+                        "Invalid blocklist format: {}. Expected: path:format:name",
+                        blocklist
+                    )));
+                }
+                // Validate format
+                match parts[1] {
+                    "domain_list" | "hosts" | "adblock" | "pihole" | "dnsmasq" | "unbound" => {}
+                    _ => {
+                        return Err(ConfigError::ParseError(format!(
+                            "Invalid blocklist format '{}'. Must be one of: domain_list, hosts, adblock, pihole, dnsmasq, unbound",
+                            parts[1]
+                        )));
+                    }
+                }
             }
         }
 
