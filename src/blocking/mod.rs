@@ -166,6 +166,12 @@ impl DnsBlocker {
     /// Get the registrable domain (eTLD+1) using the Public Suffix List
     /// For example: "test1.ads.com" -> "ads.com", "test.example.co.uk" -> "example.co.uk"
     fn get_registrable_domain(&self, domain: &str) -> Option<String> {
+        // For blocking purposes, single-label domains (TLDs) should return themselves
+        // to prevent accidentally blocking entire TLDs
+        if !domain.contains('.') {
+            return Some(domain.to_string());
+        }
+        
         self.psl.get_registrable_domain(domain)
     }
 
