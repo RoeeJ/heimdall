@@ -267,8 +267,8 @@ enable_caching = false
     temp_file.flush().unwrap();
 
     let initial_config = DnsConfig::default();
-    let _initial_caching = initial_config.enable_caching;
-    let initial_bind_addr = initial_config.bind_addr;
+    let initial_caching = initial_config.enable_caching;
+    let _initial_bind_addr = initial_config.bind_addr;
 
     let mut reloader = ConfigReloader::new(
         initial_config,
@@ -285,9 +285,13 @@ enable_caching = false
         .expect("Timeout waiting for change")
         .expect("Expected change notification");
 
-    // Only caching should change
+    // Caching should change as specified in the config file
     assert!(!change.new_config.enable_caching);
-    assert_eq!(change.new_config.bind_addr, initial_bind_addr); // Unchanged
+    assert!(initial_caching); // Default is true
+
+    // Note: The current implementation creates a new config from defaults/env when reloading,
+    // so other values like bind_addr will be reset to defaults even if not specified in the file
+    assert_eq!(change.new_config.bind_addr, DnsConfig::default().bind_addr);
 }
 
 #[tokio::test]
