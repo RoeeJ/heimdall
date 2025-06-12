@@ -139,11 +139,11 @@ ENTRYPOINT ["/usr/local/bin/heimdall"]
 # Build Instructions and Usage
 # ==============================================================================
 
-# To build with distroless (recommended for production):
-# docker build --target runtime -t heimdall:latest .
+# To build with Debian slim (recommended for Kubernetes deployments):
+# docker build --target runtime-debian -t heimdall:latest .
 
-# To build with Debian slim (if you need debugging tools):
-# docker build --target runtime-debian -t heimdall:debian .
+# To build with distroless (smaller image but no shell):
+# docker build --target runtime -t heimdall:distroless .
 
 # To run the container:
 # docker run -d \
