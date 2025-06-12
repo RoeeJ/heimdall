@@ -172,8 +172,8 @@ kubectl get svc heimdall -n heimdall-dns
 # Using dig
 dig google.com @<EXTERNAL-IP>
 
-# Using nslookup
-nslookup google.com <EXTERNAL-IP>
+# Using dig (recommended)
+dig google.com @<EXTERNAL-IP>
 
 # Using host
 host google.com <EXTERNAL-IP>
