@@ -171,7 +171,7 @@ impl DnsBlocker {
         if !domain.contains('.') {
             return Some(domain.to_string());
         }
-        
+
         self.psl.get_registrable_domain(domain)
     }
 
