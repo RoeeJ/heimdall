@@ -94,8 +94,8 @@ readinessProbe:
     - -c
     - |
       # Test actual DNS resolution
-      nslookup -timeout=2 google.com 127.0.0.1:1053 && \
-      nslookup -timeout=2 -vc google.com 127.0.0.1:1053
+      dig @127.0.0.1 -p 1053 +short +timeout=2 google.com A && \
+      dig @127.0.0.1 -p 1053 +tcp +short +timeout=2 google.com A
   initialDelaySeconds: 5
   periodSeconds: 2
   timeoutSeconds: 3

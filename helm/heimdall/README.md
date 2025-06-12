@@ -98,9 +98,6 @@ Configure your clients to use this IP as their DNS server:
 ```bash
 # Test with dig
 dig google.com @<EXTERNAL-IP>
-
-# Test with nslookup
-nslookup google.com <EXTERNAL-IP>
 ```
 
 ## Monitoring
