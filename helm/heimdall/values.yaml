@@ -5,6 +5,17 @@ replicaCount: 3
 # Deployment configuration
 revisionHistoryLimit: 3  # Number of old ReplicaSets to keep
 
+# Rolling update strategy for zero downtime
+deploymentStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1        # Only one extra pod during updates
+    maxUnavailable: 0  # Never remove pods until new ones are ready
+
+# Pod lifecycle settings
+terminationGracePeriodSeconds: 60  # Give DNS queries time to complete
+minReadySeconds: 10  # Wait 10s after pod is ready before routing traffic
+
 image:
   repository: ghcr.io/roeej/heimdall
   pullPolicy: Always  # Always pull latest image for continuous deployment
@@ -72,6 +83,19 @@ service:
   httpPort: 8080
   httpProtocol: TCP
   
+  # Session affinity to prevent DNS query disruptions
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800  # 3 hours
+  
+  # Route traffic only to local node pods for better performance
+  # and to ensure traffic goes only to ready endpoints
+  externalTrafficPolicy: Local
+  
+  # Critical: Only route traffic to ready pods
+  publishNotReadyAddresses: false
+  
   # Optional: specify loadBalancerIP if you want a specific IP
   # loadBalancerIP: ""
   
@@ -95,10 +119,10 @@ autoscaling:
   targetCPUUtilizationPercentage: 80
   targetMemoryUtilizationPercentage: 80
 
-# Pod disruption budget
+# Pod disruption budget - ensure high availability
 podDisruptionBudget:
   enabled: true
-  minAvailable: 1
+  minAvailable: 2  # With 3 replicas, always keep 2 available
 
 # Persistence for cache
 persistence:
@@ -144,23 +168,44 @@ affinity:
         topologyKey: kubernetes.io/hostname
 
 # Probes configuration
-livenessProbe:
-  httpGet:
-    path: /health
-    port: http
-  initialDelaySeconds: 10
-  periodSeconds: 10
-  timeoutSeconds: 5
-  failureThreshold: 3
-
-readinessProbe:
+# Startup probe allows time for initial cache loading and blocklist downloads
+startupProbe:
   httpGet:
     path: /health
     port: http
   initialDelaySeconds: 5
-  periodSeconds: 5
+  periodSeconds: 2
+  timeoutSeconds: 5
+  failureThreshold: 30  # 60 seconds to start
+
+# Liveness probe - less aggressive to avoid unnecessary restarts
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 5  # 50 seconds of failure before restart
+
+# Readiness probe - tests actual DNS functionality
+readinessProbe:
+  exec:
+    command:
+    - /bin/sh
+    - -c
+    - |
+      # Test UDP DNS resolution
+      nslookup -timeout=2 google.com 127.0.0.1:1053 >/dev/null 2>&1 || exit 1
+      # Test TCP DNS resolution  
+      nslookup -timeout=2 -vc google.com 127.0.0.1:1053 >/dev/null 2>&1 || exit 1
+      # Check HTTP health endpoint
+      wget -q -O - --timeout=1 http://127.0.0.1:8080/health | grep -q "ok" || exit 1
+  initialDelaySeconds: 5
+  periodSeconds: 2  # Quick detection
   timeoutSeconds: 3
-  failureThreshold: 3
+  successThreshold: 2  # Require 2 successful checks before marking ready
+  failureThreshold: 2  # Quick removal from load balancer
 
 # Monitoring
 metrics:

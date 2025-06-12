@@ -1,0 +1,253 @@
+# Production values for Heimdall DNS Server
+# Optimized for zero-downtime deployments with MetalLB
+
+# High availability configuration
+replicaCount: 3
+
+# Image configuration
+image:
+  repository: roeej/heimdall
+  pullPolicy: IfNotPresent
+  tag: ""  # Uses Chart.AppVersion if empty
+
+# Deployment strategy for zero downtime
+deploymentStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1        # Only one extra pod during updates
+    maxUnavailable: 0  # Never remove pods until new ones are ready
+
+# Pod lifecycle settings
+terminationGracePeriodSeconds: 60
+minReadySeconds: 10  # Wait before considering pod available
+
+# DNS Server Configuration
+config:
+  # Upstream DNS servers
+  upstreamServers:
+    - "1.1.1.1:53"
+    - "8.8.8.8:53"
+    - "8.8.4.4:53"
+    - "9.9.9.9:53"  # Quad9 for redundancy
+  
+  # Performance tuning for production
+  workerThreads: 4
+  blockingThreads: 1024
+  maxConcurrentQueries: 10000
+  upstreamTimeout: 2
+  maxRetries: 2
+  enableParallelQueries: true
+  
+  # Cache configuration
+  cache:
+    enabled: true
+    maxSize: 50000  # Larger cache for production
+    defaultTTL: 300
+    saveInterval: 60  # More frequent saves
+    filePath: "/cache/heimdall_cache.rkyv"
+  
+  # Rate limiting for production
+  rateLimiting:
+    enabled: true
+    queriesPerSecondPerIP: 1000
+    globalQueriesPerSecond: 50000
+
+# Service configuration optimized for MetalLB
+service:
+  type: LoadBalancer
+  
+  # Session affinity to prevent query disruptions
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800  # 3 hours
+  
+  # External traffic policy for better performance
+  externalTrafficPolicy: Local
+  
+  # Health check configuration
+  publishNotReadyAddresses: false  # Critical: only route to ready pods
+  
+  # Optional: Set specific LoadBalancer IP
+  # loadBalancerIP: "10.0.0.53"
+  
+  # MetalLB annotations
+  annotations:
+    # metallb.universe.tf/address-pool: production-dns
+    # metallb.universe.tf/allow-shared-ip: "dns-vip"
+    # metallb.universe.tf/loadBalancerIPs: "10.0.0.53"
+
+# Production-grade probes
+startupProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 2
+  timeoutSeconds: 5
+  failureThreshold: 30  # 60 seconds to start
+
+readinessProbe:
+  exec:
+    command:
+    - /bin/sh
+    - -c
+    - |
+      # Test actual DNS resolution
+      nslookup -timeout=2 google.com 127.0.0.1:1053 && \
+      nslookup -timeout=2 -vc google.com 127.0.0.1:1053
+  initialDelaySeconds: 5
+  periodSeconds: 2
+  timeoutSeconds: 3
+  successThreshold: 2  # Require 2 successful checks
+  failureThreshold: 2  # Fail fast
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 5  # More tolerant
+
+# Resource allocation for production
+resources:
+  limits:
+    cpu: 2000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+# Autoscaling configuration
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2  # Always keep 2 pods available
+  # maxUnavailable: 1  # Alternative setting
+
+# Pod Anti-Affinity for spreading across nodes
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+    - labelSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: In
+          values:
+          - heimdall
+        - key: app.kubernetes.io/instance
+          operator: In
+          values:
+          - heimdall
+      topologyKey: kubernetes.io/hostname
+
+# Priority for DNS service
+priorityClassName: system-cluster-critical
+
+# Persistence for cache
+persistence:
+  enabled: true
+  storageClass: "fast-ssd"  # Use your fast storage class
+  accessMode: ReadWriteOnce
+  size: 10Gi
+  
+# Redis for distributed cache
+redis:
+  enabled: true
+  replicas: 3
+  persistence:
+    enabled: true
+    size: 5Gi
+  auth:
+    enabled: true
+    password: ""  # Will be auto-generated
+
+# Monitoring
+metrics:
+  enabled: true
+  
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+    scrapeTimeout: 10s
+    
+  prometheusRule:
+    enabled: true
+    rules:
+    - alert: HeimdallHighErrorRate
+      expr: rate(dns_server_responses_total{response="error"}[5m]) > 0.05
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High DNS error rate detected"
+        description: "DNS error rate is above 5% for 5 minutes"
+    
+    - alert: HeimdallPodNotReady
+      expr: kube_pod_status_ready{pod=~"heimdall-.*"} == 0
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Heimdall pod not ready"
+        description: "Pod {{ $labels.pod }} has been unready for 2 minutes"
+
+# Security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10053
+  runAsGroup: 10053
+  fsGroup: 10053
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 10053
+  capabilities:
+    drop:
+    - ALL
+    add:
+    - NET_BIND_SERVICE  # For binding to port 53
+
+# Network Policy
+networkPolicy:
+  enabled: true
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from: []  # Allow from anywhere
+    ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    - port: 8080
+      protocol: TCP
+  egress:
+  - to: []  # Allow to anywhere
+    ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+  # Allow Redis communication
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - port: 6379
+      protocol: TCP
