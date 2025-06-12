@@ -8,6 +8,7 @@ use crate::dns::{
 use crate::dnssec::{DnsSecValidator, TrustAnchorStore, ValidationResult};
 use crate::error::{DnsError, Result};
 use crate::metrics::DnsMetrics;
+use crate::zone::{QueryResult, ZoneStore};
 
 /// Helper struct for SOA record fields to avoid too many function parameters
 #[derive(Debug, Clone)]
@@ -282,6 +283,8 @@ pub struct DnsResolver {
     error_counter: AtomicU64,
     /// DNSSEC validator (optional)
     dnssec_validator: Option<Arc<DnsSecValidator>>,
+    /// Zone store for authoritative DNS serving
+    zone_store: Option<Arc<ZoneStore>>,
 }
 
 impl DnsResolver {
@@ -348,6 +351,26 @@ impl DnsResolver {
             None
         };
 
+        // Initialize zone store if authoritative serving is enabled
+        let zone_store = if config.authoritative_enabled {
+            info!("Authoritative DNS serving enabled");
+            let store = Arc::new(ZoneStore::new());
+
+            // Load configured zone files
+            for zone_file in &config.zone_files {
+                match store.load_zone_file(zone_file) {
+                    Ok(origin) => info!("Loaded zone {} from {}", origin, zone_file),
+                    Err(e) => error!("Failed to load zone file {}: {}", zone_file, e),
+                }
+            }
+
+            info!("Loaded {} zones", store.zone_count());
+            Some(store)
+        } else {
+            info!("Authoritative DNS serving disabled");
+            None
+        };
+
         Ok(Self {
             config,
             client_socket,
@@ -359,6 +382,7 @@ impl DnsResolver {
             query_counter: AtomicU64::new(0),
             error_counter: AtomicU64::new(0),
             dnssec_validator,
+            zone_store,
         })
     }
 
@@ -366,7 +390,73 @@ impl DnsResolver {
     pub async fn resolve(&self, query: DNSPacket, original_id: u16) -> Result<DNSPacket> {
         // Increment query counter
         self.query_counter.fetch_add(1, Ordering::Relaxed);
-        // Check cache first if enabled and we have questions
+
+        // Check for authoritative answer first if enabled
+        if let Some(zone_store) = &self.zone_store {
+            if !query.questions.is_empty() {
+                let question = &query.questions[0];
+                let qname = question.labels.join(".");
+
+                match zone_store.query(&qname, question.qtype) {
+                    QueryResult::Success { records, .. } => {
+                        debug!(
+                            "Authoritative answer for {}: {} records",
+                            qname,
+                            records.len()
+                        );
+                        return self.build_authoritative_response(
+                            query,
+                            original_id,
+                            records,
+                            ResponseCode::NoError,
+                            true,
+                        );
+                    }
+                    QueryResult::NoData { soa, .. } => {
+                        debug!("Authoritative NODATA for {}", qname);
+                        let soa_records = soa.map(|s| vec![s]).unwrap_or_default();
+                        return self.build_authoritative_response(
+                            query,
+                            original_id,
+                            soa_records,
+                            ResponseCode::NoError,
+                            true,
+                        );
+                    }
+                    QueryResult::NXDomain { soa, .. } => {
+                        debug!("Authoritative NXDOMAIN for {}", qname);
+                        let soa_records = soa.map(|s| vec![s]).unwrap_or_default();
+                        return self.build_authoritative_response(
+                            query,
+                            original_id,
+                            soa_records,
+                            ResponseCode::NameError,
+                            true,
+                        );
+                    }
+                    QueryResult::Delegation { ns_records, .. } => {
+                        debug!("Delegation for {}: {} NS records", qname, ns_records.len());
+                        return self.build_authoritative_response(
+                            query,
+                            original_id,
+                            ns_records,
+                            ResponseCode::NoError,
+                            false,
+                        );
+                    }
+                    QueryResult::NotAuthoritative => {
+                        // Fall through to recursive resolution
+                        debug!("Not authoritative for {}", qname);
+                    }
+                    QueryResult::Error(e) => {
+                        warn!("Zone query error for {}: {}", qname, e);
+                        // Fall through to recursive resolution
+                    }
+                }
+            }
+        }
+
+        // Check cache if enabled and we have questions
         if let Some(cache) = &self.cache {
             if !query.questions.is_empty() {
                 let cache_key = CacheKey::from_question(&query.questions[0]);
@@ -1731,5 +1821,61 @@ impl DnsResolver {
     /// Get total number of errors
     pub fn total_errors(&self) -> u64 {
         self.error_counter.load(Ordering::Relaxed)
+    }
+
+    /// Build an authoritative DNS response
+    fn build_authoritative_response(
+        &self,
+        query: DNSPacket,
+        original_id: u16,
+        records: Vec<DNSResource>,
+        rcode: ResponseCode,
+        authoritative: bool,
+    ) -> Result<DNSPacket> {
+        let mut response = DNSPacket {
+            header: query.header.clone(),
+            questions: query.questions.clone(),
+            answers: vec![],
+            authorities: vec![],
+            resources: vec![],
+            edns: query.edns.clone(),
+        };
+
+        // Set response header flags
+        response.header.id = original_id;
+        response.header.qr = true; // This is a response
+        response.header.aa = authoritative; // Authoritative answer
+        response.header.tc = false; // Not truncated
+        response.header.rd = query.header.rd; // Copy recursion desired
+        response.header.ra = false; // Recursion not available for authoritative answers
+        response.header.rcode = rcode as u8;
+
+        // Place records in appropriate section based on type and response code
+        match rcode {
+            ResponseCode::NoError => {
+                if authoritative {
+                    // Authoritative answer - records go in answer section
+                    response.answers = records;
+                } else {
+                    // Delegation - NS records go in authority section
+                    response.authorities = records;
+                }
+            }
+            ResponseCode::NameError => {
+                // NXDOMAIN - SOA record goes in authority section
+                response.authorities = records;
+            }
+            _ => {
+                // Other response codes - records in authority section
+                response.authorities = records;
+            }
+        }
+
+        // Update counts
+        response.header.ancount = response.answers.len() as u16;
+        response.header.nscount = response.authorities.len() as u16;
+        response.header.arcount = response.resources.len() as u16;
+
+        Ok(response)
     }
 }
