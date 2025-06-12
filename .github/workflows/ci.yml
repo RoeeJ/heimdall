@@ -323,6 +323,9 @@ jobs:
         # Create non-root user
         RUN useradd -m -u 65532 -s /bin/bash heimdall
         
+        # Create blocklist directory with correct permissions
+        RUN mkdir -p /heimdall/blocklists && chown -R 65532:65532 /heimdall
+        
         # Copy the pre-built binary from CI build context
         COPY --chown=65532:65532 target/release/heimdall /usr/local/bin/heimdall
         
@@ -343,6 +346,9 @@ jobs:
         ENV HEIMDALL_ENABLE_CACHING=true
         ENV HEIMDALL_MAX_CACHE_SIZE=10000
         ENV HEIMDALL_DEFAULT_TTL=300
+        
+        # Set working directory so blocklists are created in the right place
+        WORKDIR /heimdall
         
         # Run as non-root user
         USER 65532:65532

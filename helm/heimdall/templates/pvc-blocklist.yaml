@@ -1,0 +1,21 @@
+{{- if and .Values.blocklistPersistence.enabled (not .Values.blocklistPersistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "heimdall.fullname" . }}-blocklist
+  labels:
+    {{- include "heimdall.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.blocklistPersistence.accessMode }}
+  {{- if .Values.blocklistPersistence.storageClass }}
+  {{- if (eq "-" .Values.blocklistPersistence.storageClass) }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: {{ .Values.blocklistPersistence.storageClass }}
+  {{- end }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.blocklistPersistence.size }}
+{{- end }}

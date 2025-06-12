@@ -145,6 +145,10 @@ spec:
             - name: cache
               mountPath: /cache
             {{- end }}
+            {{- if .Values.blocklistPersistence.enabled }}
+            - name: blocklist
+              mountPath: /heimdall/blocklists
+            {{- end }}
             - name: tmp
               mountPath: /tmp
             {{- with .Values.volumeMounts }}
@@ -155,6 +159,15 @@ spec:
         - name: cache
           persistentVolumeClaim:
             claimName: {{ include "heimdall.fullname" . }}-cache
+        {{- end }}
+        {{- if .Values.blocklistPersistence.enabled }}
+        - name: blocklist
+          persistentVolumeClaim:
+            {{- if .Values.blocklistPersistence.existingClaim }}
+            claimName: {{ .Values.blocklistPersistence.existingClaim }}
+            {{- else }}
+            claimName: {{ include "heimdall.fullname" . }}-blocklist
+            {{- end }}
         {{- end }}
         - name: tmp
           emptyDir: {}
