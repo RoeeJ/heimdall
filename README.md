@@ -24,6 +24,7 @@ A high-performance, production-ready DNS server written in Rust with advanced ca
 - **Health Monitoring**: Automatic failover with exponential backoff
 - **Attack Detection**: Protection against common DNS attacks
 - **Graceful Shutdown**: Coordinated shutdown of all components
+- **DNS Blocking**: Block unwanted domains with support for multiple blocklist formats
 
 ### Operations & Monitoring
 - **Prometheus Metrics**: Comprehensive metrics export
@@ -62,7 +63,7 @@ dig google.com @127.0.0.1 -p 1053
 ### Kubernetes with Helm
 
 ```bash
-# Install with Helm
+# Install with Helm (includes zero-downtime configuration by default)
 helm install heimdall ./helm/heimdall
 
 # Install with Redis enabled (default)
@@ -74,6 +75,19 @@ kubectl get svc heimdall
 # Test the DNS server
 dig google.com @<EXTERNAL-IP>
 ```
+
+#### Zero-Downtime Deployments
+
+The Helm chart now includes production-ready defaults for zero-downtime deployments:
+
+- **High Availability**: 3 replicas with pod anti-affinity
+- **Smart Health Checks**: Readiness probes test actual DNS functionality (UDP & TCP)
+- **Rolling Updates**: Never removes pods until replacements are ready
+- **Session Affinity**: DNS queries stick to the same pod
+- **Traffic Management**: Only routes to fully ready pods
+- **Graceful Shutdown**: 60-second termination period
+
+These settings ensure LoadBalancers (including MetalLB) only route traffic to healthy pods during deployments.
 
 ## Configuration
 
@@ -90,6 +104,9 @@ dig google.com @<EXTERNAL-IP>
 | `HEIMDALL_ENABLE_RATE_LIMITING` | Enable rate limiting | `false` |
 | `HEIMDALL_REDIS_URL` | Redis connection URL | Auto-detected |
 | `HEIMDALL_WORKER_THREADS` | Tokio worker threads | `0` (auto) |
+| `HEIMDALL_BLOCKING_ENABLED` | Enable DNS blocking | `true` |
+| `HEIMDALL_BLOCKING_MODE` | Blocking mode (nxdomain/zero_ip/refused) | `zero_ip` |
+| `HEIMDALL_BLOCKLISTS` | Blocklist files (path:format:name) | Default blocklists |
 
 ### Configuration File
 
@@ -225,6 +242,47 @@ cargo clippy -- -D warnings
 cargo audit
 ```
 
+## DNS Blocking
+
+Heimdall includes powerful DNS blocking capabilities to filter unwanted domains at the network level.
+
+### Quick Start
+
+```bash
+# Blocking is enabled by default with zero_ip mode
+# To disable blocking:
+HEIMDALL_BLOCKING_ENABLED=false cargo run
+
+# To use a different blocking mode:
+HEIMDALL_BLOCKING_MODE=nxdomain cargo run
+```
+
+### Default Blocklists
+
+Heimdall comes with these blocklists enabled by default:
+- **StevenBlack's Hosts**: Unified hosts file blocking ads, malware, and trackers
+- **URLhaus Malware Domains**: Active malware domain blocking
+
+These are automatically downloaded on first startup if auto-update is enabled (default).
+
+### Blocking Modes
+
+- **NXDOMAIN**: Return non-existent domain response
+- **Zero IP**: Return 0.0.0.0 (A) or :: (AAAA)
+- **Custom IP**: Return specified IP address
+- **REFUSED**: Return DNS REFUSED response
+
+### Supported Blocklist Formats
+
+- Hosts files (0.0.0.0 ads.example.com)
+- Domain lists (one per line)
+- AdBlock Plus format
+- Pi-hole format
+- dnsmasq configuration
+- Unbound local-zone format
+
+See [DNS_BLOCKING.md](docs/DNS_BLOCKING.md) for detailed configuration.
+
 ## Architecture
 
 ```
@@ -235,6 +293,9 @@ cargo audit
 ┌────────▼────────┐
 │    Heimdall     │
 │  ┌───────────┐  │
+│  │ Blocking  │  │ ← Check blocklists
+│  └─────┬─────┘  │
+│  ┌─────▼─────┐  │
 │  │   Cache   │  │ ← L1: Local Memory
 │  │  Manager  │  │ ← L2: Redis (optional)
 │  └─────┬─────┘  │
@@ -261,6 +322,8 @@ Access metrics at `http://<server>:8080/metrics`:
 - `heimdall_cache_hits_total` - Cache hit count
 - `heimdall_cache_size` - Current cache size
 - `heimdall_upstream_response_time_seconds` - Upstream query latency
+- `heimdall_blocked_queries_total` - Total blocked DNS queries
+- `heimdall_blocked_domains_total` - Number of domains in blocklists
 
 ### Health Checks
 

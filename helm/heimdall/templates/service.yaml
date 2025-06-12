@@ -13,6 +13,19 @@ spec:
   {{- if .Values.service.loadBalancerIP }}
   loadBalancerIP: {{ .Values.service.loadBalancerIP }}
   {{- end }}
+  {{- if .Values.service.sessionAffinity }}
+  sessionAffinity: {{ .Values.service.sessionAffinity }}
+  {{- end }}
+  {{- if .Values.service.sessionAffinityConfig }}
+  sessionAffinityConfig:
+    {{- toYaml .Values.service.sessionAffinityConfig | nindent 4 }}
+  {{- end }}
+  {{- if .Values.service.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ .Values.service.externalTrafficPolicy }}
+  {{- end }}
+  {{- if hasKey .Values.service "publishNotReadyAddresses" }}
+  publishNotReadyAddresses: {{ .Values.service.publishNotReadyAddresses }}
+  {{- end }}
   ports:
     - port: {{ .Values.service.dnsPort }}
       targetPort: dns-udp

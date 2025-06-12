@@ -14,6 +14,13 @@ spec:
   {{- end }}
   # Limit the number of old ReplicaSets to keep
   revisionHistoryLimit: {{ .Values.revisionHistoryLimit | default 3 }}
+  {{- if .Values.deploymentStrategy }}
+  strategy:
+    {{- toYaml .Values.deploymentStrategy | nindent 4 }}
+  {{- end }}
+  {{- if .Values.minReadySeconds }}
+  minReadySeconds: {{ .Values.minReadySeconds }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "heimdall.selectorLabels" . | nindent 6 }}
@@ -32,6 +39,9 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "heimdall.serviceAccountName" . }}
+      {{- if .Values.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -50,6 +60,10 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
+          {{- if .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml .Values.startupProbe | nindent 12 }}
+          {{- end }}
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
