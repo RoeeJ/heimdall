@@ -7,6 +7,7 @@ use crate::dns::{
 };
 use crate::error::{DnsError, Result};
 use crate::metrics::DnsMetrics;
+use crate::dnssec::{DnsSecValidator, TrustAnchorStore, ValidationResult};
 
 /// Helper struct for SOA record fields to avoid too many function parameters
 #[derive(Debug, Clone)]
@@ -279,6 +280,8 @@ pub struct DnsResolver {
     query_counter: AtomicU64,
     /// Error counter
     error_counter: AtomicU64,
+    /// DNSSEC validator (optional)
+    dnssec_validator: Option<Arc<DnsSecValidator>>,
 }
 
 impl DnsResolver {
@@ -335,6 +338,16 @@ impl DnsResolver {
             server_health.insert(server_addr, ServerHealth::new());
         }
 
+        // Initialize DNSSEC validator if enabled
+        let dnssec_validator = if config.dnssec_enabled {
+            info!("DNSSEC validation enabled");
+            let trust_anchors = Arc::new(TrustAnchorStore::new());
+            Some(Arc::new(DnsSecValidator::new(trust_anchors)))
+        } else {
+            info!("DNSSEC validation disabled");
+            None
+        };
+
         Ok(Self {
             config,
             client_socket,
@@ -345,6 +358,7 @@ impl DnsResolver {
             metrics,
             query_counter: AtomicU64::new(0),
             error_counter: AtomicU64::new(0),
+            dnssec_validator,
         })
     }
 
@@ -938,6 +952,39 @@ impl DnsResolver {
                     if retry > 0 {
                         debug!("Query succeeded on retry {}", retry);
                     }
+                    
+                    // Perform DNSSEC validation if enabled
+                    if let Some(dnssec_validator) = &self.dnssec_validator {
+                        if !query.questions.is_empty() {
+                            let qname = query.questions[0].labels.join(".");
+                            let qtype = query.questions[0].qtype;
+                            
+                            let validation_result = dnssec_validator
+                                .validate_with_denial(&response, &qname, qtype)
+                                .await;
+                                
+                            match validation_result {
+                                ValidationResult::Secure => {
+                                    debug!("DNSSEC validation successful for {}", qname);
+                                }
+                                ValidationResult::Insecure => {
+                                    debug!("Response is not DNSSEC signed for {}", qname);
+                                }
+                                ValidationResult::Bogus(reason) => {
+                                    warn!("DNSSEC validation failed for {}: {}", qname, reason);
+                                    if self.config.dnssec_strict {
+                                        // In strict mode, treat bogus responses as failures
+                                        return Err(DnsError::Parse(format!("DNSSEC validation failed: {}", reason)));
+                                    }
+                                    // In non-strict mode, still return the response but log the warning
+                                }
+                                ValidationResult::Indeterminate => {
+                                    debug!("DNSSEC validation indeterminate for {}", qname);
+                                }
+                            }
+                        }
+                    }
+                    
                     return Ok(response);
                 }
                 Err(e) => {

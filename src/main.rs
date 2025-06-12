@@ -9,6 +9,7 @@ pub mod cluster_registry;
 pub mod config;
 pub mod config_reload;
 pub mod dns;
+pub mod dnssec;
 pub mod error;
 pub mod graceful_shutdown;
 pub mod http_server;

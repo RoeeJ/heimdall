@@ -845,6 +845,7 @@ dependencies = [
  "prometheus",
  "redis",
  "reqwest",
+ "ring",
  "rkyv",
  "serde",
  "serde_json",
