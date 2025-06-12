@@ -211,7 +211,7 @@ readinessProbe:
       # Test TCP DNS resolution  
       dig @127.0.0.1 -p 1053 +tcp +short +timeout=2 google.com A >/dev/null 2>&1 || exit 1
       # Check HTTP health endpoint
-      wget -q -O - --timeout=1 http://127.0.0.1:8080/health | grep -q "ok" || exit 1
+      wget -q -O - --timeout=1 http://127.0.0.1:8080/health | grep -q "healthy" || exit 1
   initialDelaySeconds: 5
   periodSeconds: 2  # Quick detection
   timeoutSeconds: 3
