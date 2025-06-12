@@ -46,6 +46,11 @@ pub struct DnsMetrics {
     // Server runtime metrics
     worker_threads: IntGauge,
     max_concurrent_queries: IntGauge,
+
+    // Blocking metrics
+    pub blocked_queries: IntCounter,
+    blocked_domains_total: IntGauge,
+    allowlist_size: IntGauge,
 }
 
 impl DnsMetrics {
@@ -223,6 +228,22 @@ impl DnsMetrics {
             "Maximum number of concurrent queries allowed"
         ))?;
 
+        // Blocking metrics
+        let blocked_queries = IntCounter::with_opts(opts!(
+            "heimdall_blocked_queries_total",
+            "Total number of DNS queries blocked"
+        ))?;
+
+        let blocked_domains_total = IntGauge::with_opts(opts!(
+            "heimdall_blocked_domains_total",
+            "Total number of domains in blocklists"
+        ))?;
+
+        let allowlist_size = IntGauge::with_opts(opts!(
+            "heimdall_allowlist_size",
+            "Number of domains in allowlist"
+        ))?;
+
         // Register all metrics
         registry.register(Box::new(cache_hits.clone()))?;
         registry.register(Box::new(cache_misses.clone()))?;
@@ -249,6 +270,9 @@ impl DnsMetrics {
         registry.register(Box::new(connection_pool_size.clone()))?;
         registry.register(Box::new(worker_threads.clone()))?;
         registry.register(Box::new(max_concurrent_queries.clone()))?;
+        registry.register(Box::new(blocked_queries.clone()))?;
+        registry.register(Box::new(blocked_domains_total.clone()))?;
+        registry.register(Box::new(allowlist_size.clone()))?;
 
         Ok(Self {
             registry,
@@ -277,6 +301,9 @@ impl DnsMetrics {
             connection_pool_size,
             worker_threads,
             max_concurrent_queries,
+            blocked_queries,
+            blocked_domains_total,
+            allowlist_size,
         })
     }
 
@@ -442,6 +469,12 @@ impl DnsMetrics {
     /// Set current concurrent queries count
     pub fn set_concurrent_queries(&self, count: i64) {
         self.concurrent_queries.set(count);
+    }
+
+    /// Update blocking metrics
+    pub fn update_blocking_stats(&self, blocked_domains: usize, allowlist_size: usize) {
+        self.blocked_domains_total.set(blocked_domains as i64);
+        self.allowlist_size.set(allowlist_size as i64);
     }
 
     /// Export metrics in Prometheus format

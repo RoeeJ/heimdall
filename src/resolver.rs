@@ -1,3 +1,5 @@
+use crate::blocking::updater::{BlocklistUpdater, default_blocklist_sources};
+use crate::blocking::{BlockingMode, BlocklistFormat, DnsBlocker};
 use crate::cache::{CacheKey, DnsCache};
 use crate::config::DnsConfig;
 use crate::dns::{
@@ -285,6 +287,8 @@ pub struct DnsResolver {
     dnssec_validator: Option<Arc<DnsSecValidator>>,
     /// Zone store for authoritative DNS serving
     zone_store: Option<Arc<ZoneStore>>,
+    /// DNS blocker (optional)
+    pub blocker: Option<Arc<DnsBlocker>>,
 }
 
 impl DnsResolver {
@@ -371,6 +375,143 @@ impl DnsResolver {
             None
         };
 
+        // Initialize DNS blocker if enabled
+        let blocker = if config.blocking_enabled {
+            info!("DNS blocking enabled");
+            let blocking_mode = match config.blocking_mode.as_str() {
+                "nxdomain" => BlockingMode::NxDomain,
+                "zero_ip" => BlockingMode::ZeroIp,
+                "custom_ip" => {
+                    if let Some(ref ip_str) = config.blocking_custom_ip {
+                        if let Ok(ip) = ip_str.parse() {
+                            BlockingMode::CustomIp(ip)
+                        } else {
+                            warn!(
+                                "Invalid custom blocking IP: {}, falling back to NxDomain",
+                                ip_str
+                            );
+                            BlockingMode::NxDomain
+                        }
+                    } else {
+                        warn!(
+                            "Custom IP mode selected but no IP provided, falling back to NxDomain"
+                        );
+                        BlockingMode::NxDomain
+                    }
+                }
+                "refused" => BlockingMode::Refused,
+                _ => {
+                    warn!(
+                        "Unknown blocking mode: {}, using NxDomain",
+                        config.blocking_mode
+                    );
+                    BlockingMode::NxDomain
+                }
+            };
+
+            let blocker = Arc::new(DnsBlocker::new(
+                blocking_mode,
+                config.blocking_enable_wildcards,
+            ));
+
+            // Load allowlist
+            for domain in &config.allowlist {
+                blocker.add_to_allowlist(domain);
+            }
+            info!("Loaded {} allowlist entries", config.allowlist.len());
+
+            // Load blocklists
+            let mut _total_blocked = 0;
+            let mut missing_blocklists = Vec::new();
+
+            for blocklist_spec in &config.blocklists {
+                let parts: Vec<&str> = blocklist_spec.split(':').collect();
+                if parts.len() == 3 {
+                    let path = parts[0];
+                    let format = match parts[1] {
+                        "domain_list" => BlocklistFormat::DomainList,
+                        "hosts" => BlocklistFormat::Hosts,
+                        "adblock" => BlocklistFormat::AdBlockPlus,
+                        "pihole" => BlocklistFormat::PiHole,
+                        "dnsmasq" => BlocklistFormat::Dnsmasq,
+                        "unbound" => BlocklistFormat::Unbound,
+                        _ => {
+                            warn!("Unknown blocklist format: {}", parts[1]);
+                            continue;
+                        }
+                    };
+                    let name = parts[2];
+
+                    // Check if file exists
+                    let path_buf = std::path::PathBuf::from(path);
+                    if !path_buf.exists() {
+                        warn!(
+                            "Blocklist file not found: {} (will download if auto-update enabled)",
+                            path
+                        );
+                        missing_blocklists.push((path_buf, format, name.to_string()));
+                        continue;
+                    }
+
+                    match blocker.load_blocklist(&path_buf, format, name) {
+                        Ok(count) => {
+                            info!("Loaded {} domains from blocklist: {}", count, name);
+                            _total_blocked += count;
+                        }
+                        Err(e) => {
+                            error!("Failed to load blocklist {}: {}", name, e);
+                        }
+                    }
+                }
+            }
+
+            // If auto-update is enabled and we have missing blocklists, try to download them
+            if config.blocklist_auto_update && !missing_blocklists.is_empty() {
+                info!("Auto-update enabled, downloading missing blocklists...");
+
+                // Use default blocklist sources
+                let mut sources = default_blocklist_sources();
+
+                // Update the update interval from config
+                for source in &mut sources {
+                    source.update_interval = Some(std::time::Duration::from_secs(
+                        config.blocklist_update_interval,
+                    ));
+                }
+
+                let updater = BlocklistUpdater::new(sources, Arc::clone(&blocker));
+
+                // Try to download missing blocklists
+                for (path, _format, name) in missing_blocklists {
+                    // Find matching source
+                    if let Some(source) = updater.sources.iter().find(|s| s.path == path) {
+                        match updater.update_blocklist(source).await {
+                            Ok(_) => {
+                                info!("Successfully downloaded blocklist: {}", name);
+                                // The updater already loads the blocklist into the blocker
+                            }
+                            Err(e) => {
+                                warn!("Failed to download blocklist {}: {}", name, e);
+                            }
+                        }
+                    }
+                }
+
+                // Start background auto-updater task if needed
+                let updater = Arc::new(updater);
+                tokio::spawn(async move {
+                    updater.start_auto_update().await;
+                });
+            }
+
+            info!("Total blocked domains: {}", blocker.blocked_domain_count());
+
+            Some(blocker)
+        } else {
+            info!("DNS blocking disabled");
+            None
+        };
+
         Ok(Self {
             config,
             client_socket,
@@ -383,6 +524,7 @@ impl DnsResolver {
             error_counter: AtomicU64::new(0),
             dnssec_validator,
             zone_store,
+            blocker,
         })
     }
 
@@ -390,6 +532,35 @@ impl DnsResolver {
     pub async fn resolve(&self, query: DNSPacket, original_id: u16) -> Result<DNSPacket> {
         // Increment query counter
         self.query_counter.fetch_add(1, Ordering::Relaxed);
+
+        // Check for blocked domains if blocking is enabled
+        if let Some(blocker) = &self.blocker {
+            if !query.questions.is_empty() {
+                let question = &query.questions[0];
+                let domain = question.labels.join(".");
+
+                if blocker.is_blocked(&domain) {
+                    debug!("Domain {} is blocked", domain);
+
+                    // Update blocking metrics if available
+                    if let Some(metrics) = &self.metrics {
+                        metrics.blocked_queries.inc();
+                    }
+
+                    // Return appropriate response based on blocking mode
+                    return match blocker.blocking_mode() {
+                        BlockingMode::NxDomain => Ok(self.create_nxdomain_response(&query)),
+                        BlockingMode::ZeroIp => {
+                            Ok(self.create_zero_ip_response(&query, original_id))
+                        }
+                        BlockingMode::CustomIp(ip) => {
+                            Ok(self.create_custom_ip_response(&query, original_id, ip))
+                        }
+                        BlockingMode::Refused => Ok(self.create_refused_response(&query)),
+                    };
+                }
+            }
+        }
 
         // Check for authoritative answer first if enabled
         if let Some(zone_store) = &self.zone_store {
@@ -1901,5 +2072,124 @@ impl DnsResolver {
     /// Check if DNSSEC validation is enabled
     pub fn is_dnssec_enabled(&self) -> bool {
         self.dnssec_validator.is_some()
+    }
+
+    /// Create a response with zero IP (0.0.0.0 or ::) for blocked domains
+    fn create_zero_ip_response(&self, query: &DNSPacket, original_id: u16) -> DNSPacket {
+        let mut response = query.clone();
+        response.header.qr = true; // This is a response
+        response.header.ra = true; // Recursion available
+        response.header.rcode = ResponseCode::NoError.to_u8();
+        response.header.id = original_id;
+
+        // Clear existing sections
+        response.answers.clear();
+        response.authorities.clear();
+        response.resources.clear();
+
+        // Add appropriate zero IP response based on query type
+        if !query.questions.is_empty() {
+            let question = &query.questions[0];
+            match question.qtype {
+                DNSResourceType::A => {
+                    // Return 0.0.0.0 for A records
+                    let answer = DNSResource {
+                        labels: question.labels.clone(),
+                        rtype: DNSResourceType::A,
+                        rclass: DNSResourceClass::IN,
+                        ttl: 300, // 5 minutes
+                        rdlength: 4,
+                        rdata: vec![0, 0, 0, 0],
+                        parsed_rdata: Some("0.0.0.0".to_string()),
+                        raw_class: None,
+                    };
+                    response.answers.push(answer);
+                    response.header.ancount = 1;
+                }
+                DNSResourceType::AAAA => {
+                    // Return :: for AAAA records
+                    let answer = DNSResource {
+                        labels: question.labels.clone(),
+                        rtype: DNSResourceType::AAAA,
+                        rclass: DNSResourceClass::IN,
+                        ttl: 300, // 5 minutes
+                        rdlength: 16,
+                        rdata: vec![0; 16],
+                        parsed_rdata: Some("::".to_string()),
+                        raw_class: None,
+                    };
+                    response.answers.push(answer);
+                    response.header.ancount = 1;
+                }
+                _ => {
+                    // For other types, return NODATA (no answers)
+                    response.header.ancount = 0;
+                }
+            }
+        }
+
+        response
+    }
+
+    /// Create a response with custom IP for blocked domains
+    fn create_custom_ip_response(
+        &self,
+        query: &DNSPacket,
+        original_id: u16,
+        custom_ip: std::net::IpAddr,
+    ) -> DNSPacket {
+        let mut response = query.clone();
+        response.header.qr = true; // This is a response
+        response.header.ra = true; // Recursion available
+        response.header.rcode = ResponseCode::NoError.to_u8();
+        response.header.id = original_id;
+
+        // Clear existing sections
+        response.answers.clear();
+        response.authorities.clear();
+        response.resources.clear();
+
+        // Add appropriate custom IP response based on query type and IP version
+        if !query.questions.is_empty() {
+            let question = &query.questions[0];
+            match (question.qtype, &custom_ip) {
+                (DNSResourceType::A, std::net::IpAddr::V4(ipv4)) => {
+                    // Return custom IPv4 for A records
+                    let answer = DNSResource {
+                        labels: question.labels.clone(),
+                        rtype: DNSResourceType::A,
+                        rclass: DNSResourceClass::IN,
+                        ttl: 300, // 5 minutes
+                        rdlength: 4,
+                        rdata: ipv4.octets().to_vec(),
+                        parsed_rdata: Some(ipv4.to_string()),
+                        raw_class: None,
+                    };
+                    response.answers.push(answer);
+                    response.header.ancount = 1;
+                }
+                (DNSResourceType::AAAA, std::net::IpAddr::V6(ipv6)) => {
+                    // Return custom IPv6 for AAAA records
+                    let answer = DNSResource {
+                        labels: question.labels.clone(),
+                        rtype: DNSResourceType::AAAA,
+                        rclass: DNSResourceClass::IN,
+                        ttl: 300, // 5 minutes
+                        rdlength: 16,
+                        rdata: ipv6.octets().to_vec(),
+                        parsed_rdata: Some(ipv6.to_string()),
+                        raw_class: None,
+                    };
+                    response.answers.push(answer);
+                    response.header.ancount = 1;
+                }
+                _ => {
+                    // Type mismatch or other types, return NODATA
+                    response.header.ancount = 0;
+                }
+            }
+        }
+
+        response
     }
 }
