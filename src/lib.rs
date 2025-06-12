@@ -12,5 +12,6 @@ pub mod rate_limiter;
 pub mod resolver;
 pub mod server;
 pub mod validation;
+pub mod zone;
 
 pub use dns::DNSPacket;

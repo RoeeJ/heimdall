@@ -18,6 +18,7 @@ pub mod rate_limiter;
 pub mod resolver;
 pub mod server;
 pub mod validation;
+pub mod zone;
 
 use config::DnsConfig;
 use config_reload::{ConfigReloader, handle_config_changes};

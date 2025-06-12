@@ -68,6 +68,12 @@ pub struct DnsConfig {
 
     /// Whether to enforce strict DNSSEC validation (reject bogus responses)
     pub dnssec_strict: bool,
+
+    /// Zone files to load for authoritative serving
+    pub zone_files: Vec<String>,
+
+    /// Whether to enable authoritative DNS serving
+    pub authoritative_enabled: bool,
 }
 
 impl Default for DnsConfig {
@@ -117,6 +123,8 @@ impl Default for DnsConfig {
             redis_config: RedisConfig::default(),
             dnssec_enabled: false, // Disabled by default for backward compatibility
             dnssec_strict: false,  // Non-strict by default
+            zone_files: vec![],    // No zones by default
+            authoritative_enabled: false, // Disabled by default
         }
     }
 }
@@ -310,6 +318,19 @@ impl DnsConfig {
 
         if let Ok(dnssec_strict) = std::env::var("HEIMDALL_DNSSEC_STRICT") {
             config.dnssec_strict = parse_bool(&dnssec_strict, false);
+        }
+
+        // Zone file configuration
+        if let Ok(zone_files) = std::env::var("HEIMDALL_ZONE_FILES") {
+            config.zone_files = zone_files
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+        }
+
+        if let Ok(authoritative_enabled) = std::env::var("HEIMDALL_AUTHORITATIVE_ENABLED") {
+            config.authoritative_enabled = parse_bool(&authoritative_enabled, false);
         }
 
         // Redis configuration (auto-detected)
