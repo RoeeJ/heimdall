@@ -1021,8 +1021,21 @@ impl DnsResolver {
         query: &DNSPacket,
         upstream_addr: SocketAddr,
     ) -> Result<DNSPacket> {
+        // Clone query to modify for DNSSEC if needed
+        let mut query_to_send = query.clone();
+        
+        // Set DNSSEC DO flag if validation is enabled
+        if self.dnssec_validator.is_some() {
+            // Ensure EDNS is present
+            if query_to_send.edns.is_none() {
+                query_to_send.add_edns(4096, true); // 4KB buffer, DO flag set
+            } else if let Some(edns) = &mut query_to_send.edns {
+                edns.set_do_flag(true);
+            }
+        }
+        
         // Serialize the query
-        let query_bytes = query
+        let query_bytes = query_to_send
             .serialize()
             .map_err(|e| DnsError::Parse(format!("Failed to serialize query: {:?}", e)))?;
 
@@ -1877,5 +1890,10 @@ impl DnsResolver {
         response.header.arcount = response.resources.len() as u16;
 
         Ok(response)
+    }
+
+    /// Check if DNSSEC validation is enabled
+    pub fn is_dnssec_enabled(&self) -> bool {
+        self.dnssec_validator.is_some()
     }
 }

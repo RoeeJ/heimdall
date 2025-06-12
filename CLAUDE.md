@@ -118,6 +118,8 @@ The codebase implements a production-ready DNS server with both UDP and TCP supp
 - **RFC 2308 Compliance**: Complete negative caching with SOA-based TTL handling
 - **Modern Record Types**: Full parsing support for HTTPS/SVCB, LOC, NAPTR, DNAME, and SPF records
 - **Distributed Systems**: Redis L2 cache, cluster coordination, aggregated metrics
+- **DNSSEC Validation**: Complete signature validation with chain of trust verification
+- **Authoritative DNS**: Zone file parsing, SOA management, and authoritative responses
 
 ### Packet Flow
 1. **Receive**: UDP/TCP socket receives DNS query
@@ -189,14 +191,17 @@ The codebase implements a production-ready DNS server with both UDP and TCP supp
   - [x] Extended RCODE support (all RFC-defined codes)
   - [x] UDP truncation support with TC flag (RFC 1035)
 
-### 🚀 Phase 5: Advanced DNS Features (NEXT FOCUS)
-- [ ] **Phase 5.1**: DNSSEC Validation
-  - [ ] Signature validation implementation
-  - [ ] Chain of trust verification
-  - [ ] Trust anchor management
-- [ ] **Phase 5.2**: Authoritative DNS Support
-  - [ ] Zone file parsing and serving
-  - [ ] SOA record management
+### ✅ Phase 5: Advanced DNS Features (COMPLETED)
+- [x] **Phase 5.1**: DNSSEC Validation ✅ COMPLETED
+  - [x] Signature validation implementation (RSA, ECDSA, Ed25519)
+  - [x] Chain of trust verification with DS record validation
+  - [x] Trust anchor management with root KSKs (2017 & 2024)
+  - [x] Denial of existence validation (NSEC/NSEC3)
+  - [x] Automatic DO flag setting for DNSSEC queries
+  - [x] Configurable validation modes (permissive/strict)
+- [x] **Phase 5.2**: Authoritative DNS Support ✅ COMPLETED
+  - [x] Zone file parsing and serving
+  - [x] SOA record management
   - [ ] Dynamic zone updates
 - [ ] **Phase 5.3**: Modern Transport
   - [ ] DNS-over-TLS (DoT)
