@@ -42,9 +42,7 @@ impl ZoneStore {
         info!("Removing zone: {}", origin);
 
         let mut zones = self.zones.write();
-        zones
-            .remove(&origin)
-            .ok_or(ZoneError::ZoneNotFound(origin))
+        zones.remove(&origin).ok_or(ZoneError::ZoneNotFound(origin))
     }
 
     /// Get a zone by origin

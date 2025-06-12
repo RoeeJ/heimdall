@@ -6,8 +6,6 @@ metadata:
   name: {{ include "heimdall.fullname" . }}
   {{- if .Values.metrics.podMonitor.namespace }}
   namespace: {{ .Values.metrics.podMonitor.namespace }}
-  {{- else }}
-  namespace: {{ .Release.Namespace }}
   {{- end }}
   labels:
     {{- include "heimdall.labels" . | nindent 4 }}
@@ -18,8 +16,8 @@ spec:
   podMetricsEndpoints:
     - port: http
       path: /metrics
-      interval: {{ .Values.metrics.podMonitor.interval | default "30s" }}
-      scrapeTimeout: {{ .Values.metrics.podMonitor.scrapeTimeout | default "10s" }}
+      interval: {{ .Values.metrics.podMonitor.interval }}
+      scrapeTimeout: {{ .Values.metrics.podMonitor.scrapeTimeout }}
       {{- with .Values.metrics.podMonitor.relabelings }}
       relabelings:
         {{- toYaml . | nindent 8 }}

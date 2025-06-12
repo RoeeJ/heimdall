@@ -32,6 +32,8 @@ async fn test_create_truncated_response() {
         redis_config: Default::default(),
         dnssec_enabled: false,
         dnssec_strict: false,
+        zone_files: vec![],
+        authoritative_enabled: false,
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -100,6 +102,8 @@ async fn test_udp_size_limits_basic() {
         redis_config: Default::default(),
         dnssec_enabled: false,
         dnssec_strict: false,
+        zone_files: vec![],
+        authoritative_enabled: false,
     };
 
     let _resolver = DnsResolver::new(config, None)
@@ -157,6 +161,8 @@ async fn test_truncated_response_serialization() {
         redis_config: Default::default(),
         dnssec_enabled: false,
         dnssec_strict: false,
+        zone_files: vec![],
+        authoritative_enabled: false,
     };
 
     let resolver = DnsResolver::new(config, None)

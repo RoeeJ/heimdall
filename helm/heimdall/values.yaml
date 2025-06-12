@@ -168,7 +168,7 @@ metrics:
   
   # ServiceMonitor for Prometheus Operator
   serviceMonitor:
-    enabled: true
+    enabled: false
     # Namespace where the ServiceMonitor will be created (defaults to release namespace)
     namespace: ""
     # Scrape interval
@@ -184,7 +184,7 @@ metrics:
   
   # PodMonitor as alternative to ServiceMonitor
   podMonitor:
-    enabled: false  # Disabled by default since ServiceMonitor is enabled
+    enabled: true  # Enabled to avoid picking up both regular and headless services
     # Namespace where the PodMonitor will be created (defaults to release namespace)
     namespace: ""
     # Scrape interval
