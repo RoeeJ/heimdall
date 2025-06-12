@@ -290,6 +290,13 @@ impl From<u16> for DNSResourceType {
     }
 }
 
+impl DNSResourceType {
+    /// Convert u16 to DNSResourceType
+    pub fn from_u16(value: u16) -> Option<Self> {
+        Some(DNSResourceType::from(value))
+    }
+}
+
 impl From<DNSResourceType> for u16 {
     fn from(value: DNSResourceType) -> Self {
         match value {

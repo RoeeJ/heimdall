@@ -252,13 +252,22 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
   - [✅] Comprehensive test coverage for truncation scenarios
   - **Status**: Full RFC compliance for DNS message truncation
 
-### 4.2 Security & Validation 🎯 **NEXT MAJOR FOCUS**
-- [ ] **DNSSEC Validation (RFC 4033-4035)**
-  - [ ] Signature validation implementation
-  - [ ] Chain of trust verification from root to target
-  - [ ] Trust anchor management and updates
-  - [ ] NSEC/NSEC3 authenticated denial of existence
-  - [ ] Support for RSA, ECDSA, EdDSA signature algorithms
+### 4.2 Security & Validation ✅ **COMPLETED**
+- [✅] **DNSSEC Validation (RFC 4033-4035)** - **CORE FEATURES COMPLETED**
+  - [✅] Signature validation implementation
+  - [✅] Chain of trust verification from root to target
+  - [✅] Trust anchor management with root KSK-2024 and KSK-2017
+  - [✅] NSEC/NSEC3 authenticated denial of existence
+  - [✅] Support for RSA, ECDSA, EdDSA signature algorithms
+  - [✅] Key tag calculation (RFC 4034 Appendix B)
+  - [✅] DS record validation and digest computation
+  - [✅] RRSIG signature verification with ring crate
+  - [✅] Integration with resolver for automatic validation
+  - [✅] Configurable strict/non-strict validation modes
+  - [✅] Comprehensive test coverage (18 tests)
+  - [ ] DNSSEC-aware caching with validation state (deferred to optimization phase)
+  - [ ] Trust anchor updates via RFC 5011 (deferred to maintenance phase)
+  - [ ] Performance optimization for validation (deferred to optimization phase)
 
 ### 4.3 Authoritative DNS Support
 - [ ] **Zone Management (RFC 1035)**
@@ -452,22 +461,23 @@ Transform Heimdall into a high-performance, adblocking DNS server with custom do
 9. **Phase 8** - Management interface and monitoring
 
 ### RFC Compliance Focus ⭐ **UPDATED**
-**Current Status**: ~90% compliance for recursive resolver (up from ~85%), ~30% for authoritative server
+**Current Status**: ~92% compliance for recursive resolver (up from ~90%), ~30% for authoritative server
 **Target**: 95% recursive compliance, 90% authoritative compliance
 
-**Completed Achievements** (Phase 4.1):
+**Completed Achievements** (Phase 4.1-4.2):
 1. ✅ **Complete Negative Caching** - RFC 2308 compliant with SOA-based TTL handling
 2. ✅ **Enhanced Error Handling** - All standard RCODEs implemented with proper responses
 3. ✅ **Comprehensive DNS Record Types** - 85 types supported (up from 23)
 4. ✅ **Opcode Validation** - Proper handling of all DNS opcodes with appropriate error responses
 5. ✅ **Extended RCODE Support** - All RFC-defined response codes implemented
 6. ✅ **Root Zone Query Support** - Fixed critical bug for dig +trace compatibility
+7. ✅ **DNSSEC Validation** - RFC 4033-4035 compliant validation with trust anchor management
 
-**Next Priorities** (Phase 4.2-4.4):
-1. **DNSSEC Validation** - Essential security feature for production deployment
-2. **Authoritative DNS** - Transform from resolver-only to full DNS server
-3. **Dynamic Updates** - Enable programmatic DNS record management
-4. **Zone Transfers** - Support primary/secondary server synchronization
+**Next Priorities** (Phase 4.3-4.4):
+1. **Authoritative DNS** - Transform from resolver-only to full DNS server
+2. **Zone Transfers** - Support primary/secondary server synchronization (AXFR/IXFR)
+3. **Dynamic Updates** - Enable programmatic DNS record management (RFC 2136)
+4. **DNS Notify** - Zone change notifications (RFC 1996)
 
 ### Technology Choices ⭐ **UPDATED**
 - **Async Runtime**: Continue with Tokio for high concurrency

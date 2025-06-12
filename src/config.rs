@@ -62,6 +62,12 @@ pub struct DnsConfig {
 
     /// Redis configuration for distributed caching
     pub redis_config: RedisConfig,
+    
+    /// Whether to enable DNSSEC validation
+    pub dnssec_enabled: bool,
+    
+    /// Whether to enforce strict DNSSEC validation (reject bogus responses)
+    pub dnssec_strict: bool,
 }
 
 impl Default for DnsConfig {
@@ -109,6 +115,8 @@ impl Default for DnsConfig {
                     .expect("Default HTTP bind address is valid"),
             ),
             redis_config: RedisConfig::default(),
+            dnssec_enabled: false, // Disabled by default for backward compatibility
+            dnssec_strict: false,  // Non-strict by default
         }
     }
 }
@@ -293,6 +301,15 @@ impl DnsConfig {
                         .map_err(|_| ConfigError::InvalidHttpBindAddress(http_bind_addr))?,
                 );
             }
+        }
+
+        // DNSSEC configuration
+        if let Ok(dnssec_enabled) = std::env::var("HEIMDALL_DNSSEC_ENABLED") {
+            config.dnssec_enabled = parse_bool(&dnssec_enabled, false);
+        }
+        
+        if let Ok(dnssec_strict) = std::env::var("HEIMDALL_DNSSEC_STRICT") {
+            config.dnssec_strict = parse_bool(&dnssec_strict, false);
         }
 
         // Redis configuration (auto-detected)

@@ -37,7 +37,8 @@ async fn test_automatic_failover() {
         rate_limit_config: RateLimitConfig::default(),
         http_bind_addr: None,
         redis_config: Default::default(),
-    };
+        dnssec_enabled: false,
+        dnssec_strict: false,    };
 
     let resolver = DnsResolver::new(config, None)
         .await
@@ -154,7 +155,8 @@ async fn test_health_based_server_ordering() {
         rate_limit_config: RateLimitConfig::default(),
         http_bind_addr: None,
         redis_config: Default::default(),
-    };
+        dnssec_enabled: false,
+        dnssec_strict: false,    };
 
     let resolver = DnsResolver::new(config, None)
         .await
@@ -236,7 +238,8 @@ async fn test_server_health_recovery() {
         rate_limit_config: RateLimitConfig::default(),
         http_bind_addr: None,
         redis_config: Default::default(),
-    };
+        dnssec_enabled: false,
+        dnssec_strict: false,    };
 
     let resolver = DnsResolver::new(config, None)
         .await
