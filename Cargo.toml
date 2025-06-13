@@ -37,6 +37,8 @@ redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 bincode = "1.3"
 async-trait = "0.1"
 uuid = { version = "1.11", features = ["v4", "serde"] }
+smallvec = "1.13"
+rustc-hash = "2.1"
 ring = "0.17"
 
 [dev-dependencies]

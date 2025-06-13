@@ -11,8 +11,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
+pub mod arena;
+pub mod blocker_v2;
+pub mod builder;
+pub mod lookup;
 pub mod parser;
 pub mod psl;
+pub mod trie;
 pub mod updater;
 
 pub use parser::{BlocklistFormat, BlocklistParser};
