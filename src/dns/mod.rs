@@ -228,6 +228,56 @@ impl<'a> DNSPacketRef<'a> {
             .any(|window| window == domain_bytes)
     }
 
+    /// Get the first question domain without allocating (returns byte offsets)
+    pub fn get_first_question_domain_offsets(&self) -> Option<Vec<(usize, usize)>> {
+        if self.header.qdcount == 0 {
+            return None;
+        }
+
+        let mut offset = self.sections.questions_start;
+        let mut labels = Vec::new();
+
+        loop {
+            if offset >= self.sections.answers_start {
+                break;
+            }
+
+            let label_len = self.buffer[offset] as usize;
+            if label_len == 0 {
+                break;
+            }
+
+            if label_len & 0xC0 == 0xC0 {
+                // Compression pointer - not supported in zero-copy yet
+                break;
+            }
+
+            labels.push((offset + 1, offset + 1 + label_len));
+            offset += 1 + label_len;
+        }
+
+        if labels.is_empty() {
+            None
+        } else {
+            Some(labels)
+        }
+    }
+
+    /// Check if this is a query (QR=0)
+    pub fn is_query(&self) -> bool {
+        !self.header.qr
+    }
+
+    /// Check if recursion is desired (RD=1)
+    pub fn recursion_desired(&self) -> bool {
+        self.header.rd
+    }
+
+    /// Get response code
+    pub fn rcode(&self) -> u8 {
+        self.header.rcode
+    }
+
     /// Convert to owned DNSPacket when needed (fallback for full functionality)
     pub fn to_owned(&self) -> Result<DNSPacket, ParseError> {
         DNSPacket::parse(self.buffer)
@@ -458,7 +508,14 @@ impl DNSPacket {
 
     pub fn serialize(&self) -> Result<Vec<u8>, ParseError> {
         let mut buf = Vec::new();
-        let mut writer: BitWriter<&mut Vec<u8>, BigEndian> = BitWriter::new(&mut buf);
+        self.serialize_into(&mut buf)?;
+        Ok(buf)
+    }
+
+    /// Serialize into a pre-allocated buffer to avoid allocations
+    pub fn serialize_into(&self, buf: &mut Vec<u8>) -> Result<(), ParseError> {
+        buf.clear(); // Clear existing content but keep capacity
+        let mut writer: BitWriter<&mut Vec<u8>, BigEndian> = BitWriter::new(buf);
 
         // Calculate actual header counts including EDNS
         let mut header = self.header.clone();
@@ -513,7 +570,8 @@ impl DNSPacket {
             writer.write_bytes(&rdata)?;
         }
 
-        Ok(buf)
+        writer.flush()?;
+        Ok(())
     }
 
     pub fn generate_response(&self) -> Self {

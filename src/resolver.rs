@@ -3,7 +3,7 @@ use crate::blocking::{BlockingMode, BlocklistFormat, DnsBlocker};
 use crate::cache::{CacheKey, DnsCache};
 use crate::config::DnsConfig;
 use crate::dns::{
-    DNSPacket,
+    DNSPacket, DNSPacketRef,
     enums::{DNSResourceClass, DNSResourceType, ResponseCode},
     resource::DNSResource,
 };
@@ -537,6 +537,21 @@ impl DnsResolver {
         })
     }
 
+    /// Fast path for cache lookups using zero-copy parsing
+    pub async fn resolve_fast_path(&self, query_buf: &[u8]) -> Option<Vec<u8>> {
+        // Try zero-copy parsing
+        let packet_ref = DNSPacketRef::parse_metadata(query_buf).ok()?;
+
+        // Must be a query with at least one question
+        if !packet_ref.is_query() || packet_ref.header.qdcount == 0 {
+            return None;
+        }
+
+        // For now, fall back to full parsing for cache lookup
+        // This could be optimized further with zero-copy cache keys
+        None
+    }
+
     /// Resolve a DNS query with automatic mode detection
     pub async fn resolve(&self, query: DNSPacket, original_id: u16) -> Result<DNSPacket> {
         // Increment query counter
@@ -639,7 +654,8 @@ impl DnsResolver {
         // Check cache if enabled and we have questions
         if let Some(cache) = &self.cache {
             if !query.questions.is_empty() {
-                let cache_key = CacheKey::from_question(&query.questions[0]);
+                let cache_key =
+                    CacheKey::from_question_interned(&query.questions[0], cache.string_interner());
                 if let Some(mut cached_response) = cache.get(&cache_key) {
                     // Restore original query ID
                     cached_response.header.id = original_id;
@@ -698,7 +714,11 @@ impl DnsResolver {
 
         // If we reach here, it's not a cache hit and not in-flight, so we need to resolve
         if !query.questions.is_empty() {
-            let cache_key = CacheKey::from_question(&query.questions[0]);
+            let cache_key = if let Some(cache) = &self.cache {
+                CacheKey::from_question_interned(&query.questions[0], cache.string_interner())
+            } else {
+                CacheKey::from_question(&query.questions[0])
+            };
             self.resolve_with_deduplication(query, original_id, cache_key)
                 .await
         } else {
@@ -846,7 +866,8 @@ impl DnsResolver {
         // Cache the result if successful and caching is enabled
         if let (Ok(response), Some(cache)) = (result, &self.cache) {
             if !query.questions.is_empty() {
-                let cache_key = CacheKey::from_question(&query.questions[0]);
+                let cache_key =
+                    CacheKey::from_question_interned(&query.questions[0], cache.string_interner());
                 cache.put(cache_key, response.clone());
 
                 // Log cache statistics periodically

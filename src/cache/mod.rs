@@ -1,4 +1,6 @@
 pub mod local_backend;
+pub mod lockfree_lru;
+pub mod optimized;
 pub mod redis_backend;
 pub mod redis_helper;
 
@@ -8,8 +10,9 @@ use crate::dns::{
     DNSPacket,
     enums::{DNSResourceClass, DNSResourceType},
 };
+use crate::pool::StringInterner;
 use dashmap::DashMap;
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, hash_map::DefaultHasher};
@@ -77,6 +80,44 @@ impl CacheKey {
         }
 
         Self::new(domain, question.qtype, question.qclass)
+    }
+
+    /// Create a cache key with an interned domain string
+    pub fn from_question_interned(
+        question: &crate::dns::question::DNSQuestion,
+        interner: &StringInterner,
+    ) -> Self {
+        // Build domain string
+        let mut domain = String::with_capacity(256);
+        let mut first = true;
+
+        for label in question.labels.iter() {
+            if !label.is_empty() {
+                if !first {
+                    domain.push('.');
+                }
+                domain.push_str(label);
+                first = false;
+            }
+        }
+
+        // Normalize and intern the domain
+        let normalized_domain = domain.to_lowercase();
+        let interned = interner.intern(&normalized_domain);
+
+        // Pre-compute hash for faster lookups
+        let mut hasher = DefaultHasher::new();
+        interned.hash(&mut hasher);
+        question.qtype.hash(&mut hasher);
+        question.qclass.hash(&mut hasher);
+        let hash = hasher.finish();
+
+        Self {
+            domain: interned.to_string(), // We still need String for serialization
+            record_type: question.qtype,
+            record_class: question.qclass,
+            hash,
+        }
     }
 
     /// Fast domain comparison for prefix matching
@@ -393,9 +434,10 @@ pub struct DnsCache {
     max_size: usize,
     negative_ttl: u32,
     stats: CacheStats,
-    insertion_order: Mutex<Vec<CacheKey>>, // For LRU eviction
-    domain_trie: Mutex<DomainTrie>,        // For efficient domain lookups
-    cache_file_path: Option<String>,       // Optional cache persistence file
+    insertion_order: RwLock<Vec<CacheKey>>, // For LRU eviction
+    domain_trie: RwLock<DomainTrie>,        // For efficient domain lookups
+    cache_file_path: Option<String>,        // Optional cache persistence file
+    string_interner: StringInterner,        // For string deduplication
 }
 
 impl DnsCache {
@@ -405,9 +447,10 @@ impl DnsCache {
             max_size,
             negative_ttl,
             stats: CacheStats::new(),
-            insertion_order: Mutex::new(Vec::new()),
-            domain_trie: Mutex::new(DomainTrie::new()),
+            insertion_order: RwLock::new(Vec::new()),
+            domain_trie: RwLock::new(DomainTrie::new()),
             cache_file_path: None,
+            string_interner: StringInterner::new(10000), // Intern up to 10k common domains
         }
     }
 
@@ -417,9 +460,10 @@ impl DnsCache {
             max_size,
             negative_ttl,
             stats: CacheStats::new(),
-            insertion_order: Mutex::new(Vec::new()),
-            domain_trie: Mutex::new(DomainTrie::new()),
+            insertion_order: RwLock::new(Vec::new()),
+            domain_trie: RwLock::new(DomainTrie::new()),
             cache_file_path: Some(cache_file_path),
+            string_interner: StringInterner::new(10000),
         }
     }
 
@@ -510,14 +554,14 @@ impl DnsCache {
 
         // Update insertion order for LRU
         {
-            let mut order = self.insertion_order.lock();
+            let mut order = self.insertion_order.write();
             order.retain(|k| k != &key); // Remove if already present
             order.push(key.clone());
         }
 
         // Update domain trie for efficient lookups
         {
-            let mut trie = self.domain_trie.lock();
+            let mut trie = self.domain_trie.write();
             trie.insert(&key.domain, key.clone());
         }
 
@@ -697,7 +741,7 @@ impl DnsCache {
     /// Evict the least recently used entry
     fn evict_lru(&self) {
         let key_to_evict = {
-            let mut order = self.insertion_order.lock();
+            let mut order = self.insertion_order.write();
             if let Some(key) = order.first().cloned() {
                 order.retain(|k| k != &key);
                 Some(key)
@@ -732,7 +776,7 @@ impl DnsCache {
             self.stats.record_expired_eviction();
 
             // Remove from insertion order
-            let mut order = self.insertion_order.lock();
+            let mut order = self.insertion_order.write();
             order.retain(|k| k != key);
         }
 
@@ -745,14 +789,19 @@ impl DnsCache {
     pub fn clear(&self) {
         let count = self.cache.len();
         self.cache.clear();
-        self.insertion_order.lock().clear();
-        self.domain_trie.lock().cleanup_expired();
+        self.insertion_order.write().clear();
+        self.domain_trie.write().cleanup_expired();
         debug!("Cleared {} cache entries", count);
+    }
+
+    /// Get a reference to the string interner
+    pub fn string_interner(&self) -> &StringInterner {
+        &self.string_interner
     }
 
     /// Find related cache entries by domain suffix (for wildcard matching)
     pub fn find_related_entries(&self, domain: &str) -> Vec<CacheKey> {
-        let trie = self.domain_trie.lock();
+        let trie = self.domain_trie.read();
         let matching_keys = trie.find_matching_keys(domain);
 
         // Filter out expired entries
@@ -918,13 +967,13 @@ impl DnsCache {
 
                 // Update insertion order for LRU
                 {
-                    let mut order = self.insertion_order.lock();
+                    let mut order = self.insertion_order.write();
                     order.push(key.clone());
                 }
 
                 // Update domain trie
                 {
-                    let mut trie = self.domain_trie.lock();
+                    let mut trie = self.domain_trie.write();
                     trie.insert(&key.domain, key.clone());
                 }
 

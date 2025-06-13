@@ -2,6 +2,7 @@ use crate::blocking::psl::PublicSuffixList;
 /// DNS blocking functionality for Heimdall
 /// Supports multiple blocklist formats and efficient domain blocking
 use crate::error::{DnsError, Result};
+use crate::pool::StringInterner;
 use dashmap::DashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -120,6 +121,10 @@ pub struct DnsBlocker {
     enable_wildcards: bool,
     /// Public Suffix List for domain deduplication
     psl: Arc<PublicSuffixList>,
+    /// Cache for normalized domains to avoid repeated allocations
+    normalized_cache: Arc<DashMap<String, Arc<str>>>,
+    /// String interner for domain strings
+    string_interner: Arc<StringInterner>,
 }
 
 /// Source of a blocklist entry
@@ -149,6 +154,8 @@ impl DnsBlocker {
             stats: Arc::new(BlockingStats::new()),
             enable_wildcards,
             psl,
+            normalized_cache: Arc::new(DashMap::with_capacity(10000)),
+            string_interner: Arc::new(StringInterner::new(50000)), // Intern up to 50k domains
         }
     }
 
@@ -180,51 +187,87 @@ impl DnsBlocker {
         self.psl.get_registrable_domain(domain)
     }
 
+    /// Get normalized (lowercase) domain from cache or create and cache it
+    fn get_normalized_domain(&self, domain: &str) -> Arc<str> {
+        // Fast path: check if already cached
+        if let Some(normalized) = self.normalized_cache.get(domain) {
+            return Arc::clone(&normalized);
+        }
+
+        // Slow path: normalize and cache
+        let normalized = self.string_interner.intern(&domain.to_lowercase());
+        self.normalized_cache
+            .insert(domain.to_string(), Arc::clone(&normalized));
+        normalized
+    }
+
     /// Check if a domain should be blocked
     pub fn is_blocked(&self, domain: &str) -> bool {
-        // Normalize domain to lowercase
-        let domain_lower = domain.to_lowercase();
+        // Get normalized domain from cache
+        let domain_normalized = self.get_normalized_domain(domain);
 
         // Check allowlist first
-        if self.allowlist.contains_key(&domain_lower) {
+        if self.allowlist.contains_key(domain_normalized.as_ref()) {
             self.stats.record_allowed();
             return false;
         }
 
         // Check exact domain match
-        if self.blocked_domains.contains_key(&domain_lower) {
+        if self
+            .blocked_domains
+            .contains_key(domain_normalized.as_ref())
+        {
             debug!("Domain {} blocked (exact match)", domain);
             self.stats.record_blocked();
             return true;
         }
 
         // Check if this domain is a subdomain of any blocked domain
-        // For example, if "doubleclick.net" is blocked, then "ads.doubleclick.net" should also be blocked
-        let parts: Vec<&str> = domain_lower.split('.').collect();
-        for i in 0..parts.len() {
-            let suffix = parts[i..].join(".");
+        // Optimize by caching the suffix checks
+        let result = self.check_domain_suffixes(&domain_normalized);
+
+        if result {
+            self.stats.record_blocked();
+        } else {
+            self.stats.record_allowed();
+        }
+
+        result
+    }
+
+    /// Check domain suffixes efficiently
+    fn check_domain_suffixes(&self, domain: &str) -> bool {
+        let dot_positions: Vec<usize> = domain
+            .char_indices()
+            .filter_map(|(i, c)| if c == '.' { Some(i) } else { None })
+            .collect();
+
+        // Check the domain itself first
+        if self.blocked_domains.contains_key(domain) {
+            debug!("Domain {} blocked (exact match)", domain);
+            return true;
+        }
+
+        // Check suffixes starting from each dot position
+        for &pos in &dot_positions {
+            let suffix = &domain[pos + 1..];
 
             // Check if this suffix is in the exact blocked domains
-            if self.blocked_domains.contains_key(&suffix) {
+            if self.blocked_domains.contains_key(suffix) {
                 debug!(
                     "Domain {} blocked (subdomain of blocked domain: {})",
                     domain, suffix
                 );
-                self.stats.record_blocked();
                 return true;
             }
 
             // Check wildcard patterns if enabled
-            // Skip i=0 for wildcard patterns to maintain the behavior that
-            // "*.example.com" doesn't match "example.com" itself
-            if self.enable_wildcards && i > 0 && self.blocked_patterns.contains_key(&suffix) {
+            if self.enable_wildcards && self.blocked_patterns.contains_key(suffix) {
                 debug!("Domain {} blocked (wildcard match: *.{})", domain, suffix);
-                self.stats.record_blocked();
                 return true;
             }
         }
 
-        self.stats.record_allowed();
         false
     }
 
@@ -293,7 +336,8 @@ impl DnsBlocker {
 
     /// Add domain to allowlist
     pub fn add_to_allowlist(&self, domain: &str) {
-        self.allowlist.insert(domain.to_lowercase(), ());
+        let normalized = self.get_normalized_domain(domain);
+        self.allowlist.insert(normalized.to_string(), ());
         debug!("Added {} to allowlist", domain);
     }
 
@@ -314,7 +358,7 @@ impl DnsBlocker {
                 debug!("Added wildcard pattern *.{} to blocklist", pattern);
             }
         } else {
-            let domain_lower = domain.to_lowercase();
+            let domain_lower = self.get_normalized_domain(domain).to_string();
 
             // Get the registrable domain using PSL
             let registrable = self.get_registrable_domain(&domain_lower);
