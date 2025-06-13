@@ -144,6 +144,9 @@ pub async fn run_tcp_server(
     let listener = TcpListener::bind(config.bind_addr).await?;
     info!("TCP DNS server listening on {}", config.bind_addr);
 
+    // Create buffer pool for TCP packets (max DNS message size is 64KB)
+    let buffer_pool = Arc::new(BufferPool::new(65536, 32)); // 64KB buffers, max 32 in pool
+
     loop {
         tokio::select! {
             // Handle shutdown signal
@@ -160,11 +163,12 @@ pub async fn run_tcp_server(
                 let query_semaphore = query_semaphore.clone();
                 let rate_limiter = rate_limiter.clone();
                 let metrics = metrics.clone();
+                let buffer_pool = buffer_pool.clone();
 
                 // Handle each TCP connection in a separate task
                 tokio::spawn(async move {
                     if let Err(e) =
-                        handle_tcp_connection(stream, src_addr, resolver, query_semaphore, rate_limiter, metrics)
+                        handle_tcp_connection(stream, src_addr, resolver, query_semaphore, rate_limiter, metrics, buffer_pool)
                             .await
                     {
                         warn!("TCP connection error from {}: {:?}", src_addr, e);
@@ -360,6 +364,7 @@ async fn handle_tcp_connection(
     query_semaphore: Arc<Semaphore>,
     rate_limiter: Arc<DnsRateLimiter>,
     metrics: Arc<DnsMetrics>,
+    buffer_pool: Arc<BufferPool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -379,9 +384,12 @@ async fn handle_tcp_connection(
 
         let message_length = u16::from_be_bytes(length_buf) as usize;
 
-        // Read the DNS message
-        let mut message_buf = vec![0; message_length];
-        stream.read_exact(&mut message_buf).await?;
+        // Get a buffer from the pool and resize to exact message length
+        let mut message_buf = buffer_pool.get();
+        message_buf.resize(message_length, 0);
+        stream
+            .read_exact(&mut message_buf[..message_length])
+            .await?;
 
         // Check rate limiting
         if !rate_limiter.check_query_allowed(src_addr.ip()) {
@@ -405,7 +413,15 @@ async fn handle_tcp_connection(
         };
 
         // Parse and handle the DNS query
-        match handle_dns_query(&message_buf, &resolver, &metrics, "tcp").await {
+        match handle_dns_query_with_pool(
+            &message_buf[..message_length],
+            &resolver,
+            &metrics,
+            "tcp",
+            &buffer_pool,
+        )
+        .await
+        {
             Ok(response_data) => {
                 // Write length prefix followed by response
                 let response_length = response_data.len() as u16;

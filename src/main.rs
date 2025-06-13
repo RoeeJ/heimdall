@@ -4,32 +4,16 @@ use tokio::sync::Semaphore;
 use tracing::{debug, error, info, trace, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-pub mod blocking;
-pub mod cache;
-pub mod cluster_registry;
-pub mod config;
-pub mod config_reload;
-pub mod dns;
-pub mod dnssec;
-pub mod error;
-pub mod graceful_shutdown;
-pub mod http_server;
-pub mod metrics;
-pub mod pool;
-pub mod rate_limiter;
-pub mod resolver;
-pub mod server;
-pub mod validation;
-pub mod zone;
-
-use config::DnsConfig;
-use config_reload::{ConfigReloader, handle_config_changes};
-use graceful_shutdown::GracefulShutdown;
-use http_server::HttpServer;
-use metrics::DnsMetrics;
-use rate_limiter::DnsRateLimiter;
-use resolver::DnsResolver;
-use server::{run_tcp_server, run_udp_server};
+use heimdall::{
+    config::DnsConfig,
+    config_reload::{ConfigReloader, handle_config_changes},
+    graceful_shutdown::GracefulShutdown,
+    http_server::HttpServer,
+    metrics::DnsMetrics,
+    rate_limiter::DnsRateLimiter,
+    resolver::DnsResolver,
+    server::{run_tcp_server, run_udp_server},
+};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration first to get runtime settings

@@ -1,5 +1,5 @@
 // Server integration tests
-// 
+//
 // These tests start actual DNS servers and may make network calls.
 // They are marked with #[ignore] to prevent them from running in CI
 // or when running the standard test suite.
