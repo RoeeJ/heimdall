@@ -7,7 +7,14 @@ use tokio::time::timeout;
 
 // Helper to create test components
 async fn create_test_components() -> (Arc<DnsResolver>, Arc<DnsMetrics>, Arc<DnsRateLimiter>) {
-    let config = DnsConfig::default();
+    // Disable blocking features for tests to avoid network operations during initialization
+    let config = DnsConfig {
+        blocking_enabled: false,
+        blocklist_auto_update: false,
+        blocking_download_psl: false,
+        ..Default::default()
+    };
+
     let metrics = Arc::new(DnsMetrics::new().unwrap());
     let resolver = Arc::new(
         DnsResolver::new(config.clone(), Some(metrics.clone()))
@@ -159,7 +166,14 @@ async fn test_detailed_health_endpoint() {
 
 #[tokio::test]
 async fn test_config_reload_endpoint() {
-    let config = DnsConfig::default();
+    // Disable blocking features for tests to avoid network operations during initialization
+    let config = DnsConfig {
+        blocking_enabled: false,
+        blocklist_auto_update: false,
+        blocking_download_psl: false,
+        ..Default::default()
+    };
+
     let metrics = Arc::new(DnsMetrics::new().unwrap());
     let resolver = Arc::new(
         DnsResolver::new(config.clone(), Some(metrics.clone()))

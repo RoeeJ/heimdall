@@ -88,7 +88,10 @@ impl OptimizedDnsCache {
         // RFC 2308 compliant TTL handling
         let final_ttl = if is_negative {
             ttl.min(self.negative_ttl)
-        } else if response.header.ancount == 0 && response.header.nscount == 0 && !response.header.qr {
+        } else if response.header.ancount == 0
+            && response.header.nscount == 0
+            && !response.header.qr
+        {
             self.negative_ttl.min(ttl)
         } else {
             ttl
