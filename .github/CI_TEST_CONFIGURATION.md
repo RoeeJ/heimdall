@@ -23,10 +23,11 @@ env:
 ### 2. Integration Tests (Conditionally Run)
 - Marked with `#[ignore]` if they require network access
 - Can be run manually with `cargo test -- --ignored`
-- Examples:
-  - `test_dns_server_responds_to_query` - requires running server
-  - `test_consecutive_failures_mark_unhealthy` - requires network for DNS queries
-  - `test_connection_pooling_stats` - requires upstream DNS servers
+- Examples from server_integration_tests.rs:
+  - `test_rate_limiting` - starts server and tests rate limiting
+  - `test_tcp_connection_handling` - requires TCP server
+  - `test_any_query_refused` - tests DNS protocol responses
+  - All tests in server_integration_tests.rs are marked with #[ignore]
 
 ### 3. Performance Tests (Optional)
 - Run in separate CI job that can fail without blocking
@@ -37,25 +38,22 @@ env:
 
 ### For Test Authors
 
-1. **Always use test_config() helper**:
+1. **Use DnsConfig::default() - it now respects environment variables**:
+```rust
+#[tokio::test]
+async fn test_something() {
+    let config = DnsConfig::default(); // Automatically uses CI settings
+    let resolver = DnsResolver::new(config, None).await.unwrap();
+}
+```
+
+2. **Or use test_config() helper for additional test-specific settings**:
 ```rust
 use common::test_config;
 
 #[tokio::test]
 async fn test_something() {
-    let config = test_config();
-    let resolver = DnsResolver::new(config, None).await.unwrap();
-}
-```
-
-2. **Or explicitly disable blocking**:
-```rust
-#[tokio::test]
-async fn test_something() {
-    let mut config = DnsConfig::default();
-    config.blocking_enabled = false;
-    config.blocklist_auto_update = false;
-    config.blocking_download_psl = false;
+    let config = test_config(); // Disables caching, sets shorter timeouts
     let resolver = DnsResolver::new(config, None).await.unwrap();
 }
 ```
