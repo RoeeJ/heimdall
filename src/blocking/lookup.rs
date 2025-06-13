@@ -115,26 +115,38 @@ pub fn extract_registrable_part(domain: &[u8], suffix_labels: usize) -> Option<&
         return Some(domain);
     }
 
-    let mut dots_seen = 0;
-    let mut pos = domain.len();
+    let total_labels = count_labels(domain);
 
-    // Scan from the end
-    while pos > 0 {
-        pos -= 1;
-        if domain[pos] == b'.' {
-            dots_seen += 1;
-            if dots_seen == suffix_labels {
-                return Some(&domain[pos + 1..]);
+    // Need at least suffix_labels + 1 for a registrable domain
+    if total_labels <= suffix_labels {
+        return None;
+    }
+
+    // If we have exactly suffix_labels + 1, the whole domain is registrable
+    if total_labels == suffix_labels + 1 {
+        return Some(domain);
+    }
+
+    let mut dots_to_skip = total_labels - suffix_labels - 1;
+    let mut _pos = 0;
+
+    // Skip dots from the beginning
+    if dots_to_skip == 0 {
+        return Some(domain);
+    }
+
+    for (i, &byte) in domain.iter().enumerate() {
+        if byte == b'.' {
+            dots_to_skip -= 1;
+            if dots_to_skip == 0 {
+                return Some(&domain[i + 1..]);
             }
         }
+        _pos = i;
     }
 
-    // Not enough labels
-    if dots_seen < suffix_labels {
-        None
-    } else {
-        Some(domain)
-    }
+    // If we get here, return the whole domain
+    Some(domain)
 }
 
 /// Count the number of labels in a domain
