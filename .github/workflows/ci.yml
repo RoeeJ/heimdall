@@ -20,6 +20,10 @@ env:
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
   RUST_BACKTRACE: 1
+  # Disable blocking features in tests to prevent network operations
+  HEIMDALL_BLOCKING_ENABLED: false
+  HEIMDALL_BLOCKING_DOWNLOAD_PSL: false
+  HEIMDALL_BLOCKLIST_AUTO_UPDATE: false
 
 jobs:
   # Job 1: Code Quality and Basic Tests
@@ -54,7 +58,13 @@ jobs:
     - name: Run unit tests
       env:
         SKIP_INTEGRATION_TESTS: "1"
-      run: cargo test --workspace --all-features --verbose
+      run: |
+        # Run tests excluding those marked as ignored (which require network access)
+        cargo test --workspace --all-features --verbose
+        
+        # List ignored tests for visibility
+        echo "Tests requiring network access (skipped):"
+        cargo test --workspace -- --ignored --list | grep -E "test::" || echo "No ignored tests found"
 
     - name: Test documentation
       run: cargo test --doc --all-features
@@ -395,7 +405,9 @@ jobs:
     - name: Generate code coverage
       env:
         SKIP_INTEGRATION_TESTS: "1"
-      run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+      run: |
+        # Generate coverage excluding ignored tests
+        cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info -- --skip ignored
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v5

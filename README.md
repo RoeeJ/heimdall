@@ -228,6 +228,12 @@ cargo build --release
 # Run tests
 cargo test
 
+# Run tests in CI mode (no network)
+./scripts/test-ci-mode.sh
+
+# Run network-dependent tests
+./scripts/test-network-mode.sh
+
 # Run with verbose logging
 RUST_LOG=heimdall=debug cargo run
 ```
