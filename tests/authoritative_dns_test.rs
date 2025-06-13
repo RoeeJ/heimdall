@@ -12,10 +12,10 @@ fn test_config() -> DnsConfig {
     DnsConfig {
         blocking_download_psl: false, // Disable PSL download
         blocklist_auto_update: false, // Disable blocklist auto-update
-        blocklists: vec![], // No blocklists to avoid file I/O
-        enable_caching: false, // Disable caching for predictable tests
+        blocklists: vec![],           // No blocklists to avoid file I/O
+        enable_caching: false,        // Disable caching for predictable tests
         upstream_timeout: std::time::Duration::from_secs(2), // Shorter timeout
-        max_retries: 0, // Don't retry
+        max_retries: 0,               // Don't retry
         ..Default::default()
     }
 }

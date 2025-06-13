@@ -7,6 +7,9 @@ use heimdall::dns::{
 };
 use heimdall::resolver::DnsResolver;
 
+mod common;
+use common::test_config;
+
 fn create_test_query() -> DNSPacket {
     DNSPacket {
         header: DNSHeader {
@@ -66,14 +69,14 @@ fn test_config_from_env() {
 
 #[tokio::test]
 async fn test_resolver_creation() {
-    let config = DnsConfig::default();
+    let config = test_config();
     let resolver = DnsResolver::new(config, None).await;
     assert!(resolver.is_ok());
 }
 
 #[test]
 fn test_servfail_response() {
-    let config = DnsConfig::default();
+    let config = test_config();
     let query = create_test_query();
 
     // We can't easily test the resolver without network access,
@@ -89,7 +92,7 @@ fn test_servfail_response() {
 
 #[test]
 fn test_nxdomain_response() {
-    let config = DnsConfig::default();
+    let config = test_config();
     let query = create_test_query();
 
     let rt = tokio::runtime::Runtime::new().unwrap();
