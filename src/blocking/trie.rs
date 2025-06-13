@@ -166,8 +166,7 @@ impl CompressedTrie {
 
         // Process remaining labels
         let labels_len = labels.len();
-        for i in 1..labels_len {
-            let label = labels[i];
+        for (i, &label) in labels.iter().enumerate().skip(1) {
             let is_last = i == labels_len - 1;
 
             // Special handling for wildcards
@@ -336,8 +335,8 @@ impl CompressedTrie {
             // Find the byte position where registrable domain starts
             let mut pos = 0;
             let mut label_count = 0;
-            for i in 0..domain.len() {
-                if domain[i] == b'.' {
+            for (i, &byte) in domain.iter().enumerate() {
+                if byte == b'.' {
                     label_count += 1;
                     if label_count == labels.len() - psl_depth - 1 {
                         pos = i + 1;
