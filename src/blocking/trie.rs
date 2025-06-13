@@ -15,7 +15,6 @@ impl NodeFlags {
     const PSL_BOUNDARY: u8 = 0b00000100;
     const EXCEPTION: u8 = 0b00001000;
 
-
     #[inline]
     fn is_blocked(self) -> bool {
         self.0 & Self::BLOCKED != 0
@@ -32,7 +31,7 @@ impl NodeFlags {
     }
 
     #[inline]
-    fn set_wildcard(&mut self) {
+    pub fn set_wildcard(&mut self) {
         self.0 |= Self::WILDCARD;
     }
 
@@ -145,33 +144,32 @@ impl CompressedTrie {
         let tld_hash = self.hash_label(tld);
 
         // Get or create root node for this TLD
-        let mut current_idx = match self.roots.get(&tld_hash).copied() {
-            Some(idx) => {
-                // Check if this is the exact TLD
-                let node = &self.nodes[idx as usize];
-                if self.labels_match(node.label, tld) {
-                    idx
-                } else {
-                    // Hash collision, need to create a new root
-                    let tld_offset = self.find_or_add_to_arena(tld);
-                    let new_idx = self.add_node(tld_offset);
-                    self.roots.insert(self.hash_label_with_salt(tld, 1), new_idx);
-                    new_idx
-                }
-            }
-            None => {
-                // Create new root node
+        let mut current_idx = if let Some(&idx) = self.roots.get(&tld_hash) {
+            // Check if this is the exact TLD
+            if self.labels_match(self.nodes[idx as usize].label, tld) {
+                idx
+            } else {
+                // Hash collision, need to create a new root
                 let tld_offset = self.find_or_add_to_arena(tld);
                 let new_idx = self.add_node(tld_offset);
-                self.roots.insert(tld_hash, new_idx);
+                self.roots
+                    .insert(self.hash_label_with_salt(tld, 1), new_idx);
                 new_idx
             }
+        } else {
+            // Create new root node
+            let tld_offset = self.find_or_add_to_arena(tld);
+            let new_idx = self.add_node(tld_offset);
+            self.roots.insert(tld_hash, new_idx);
+            new_idx
         };
 
         // Process remaining labels
-        for (i, &label) in labels.iter().enumerate().skip(1) {
-            let is_last = i == labels.len() - 1;
-            
+        let labels_len = labels.len();
+        for i in 1..labels_len {
+            let label = labels[i];
+            let is_last = i == labels_len - 1;
+
             // Special handling for wildcards
             if label == b"*" {
                 self.nodes[current_idx as usize].flags.set_wildcard();
@@ -183,11 +181,10 @@ impl CompressedTrie {
 
             // Find or create child node
             let first_byte = label[0];
-            let child_idx = match self.nodes[current_idx as usize].find_child(first_byte) {
-                Some(idx) => {
+            let child_idx =
+                if let Some(idx) = self.nodes[current_idx as usize].find_child(first_byte) {
                     // Check if labels match
-                    let node = &self.nodes[idx as usize];
-                    if self.labels_match(node.label, label) {
+                    if self.labels_match(self.nodes[idx as usize].label, label) {
                         idx
                     } else {
                         // Different label with same first byte, create new node
@@ -196,15 +193,13 @@ impl CompressedTrie {
                         self.nodes[current_idx as usize].add_child(first_byte, new_idx);
                         new_idx
                     }
-                }
-                None => {
+                } else {
                     // Create new child
                     let label_offset = self.find_or_add_to_arena(label);
                     let new_idx = self.add_node(label_offset);
                     self.nodes[current_idx as usize].add_child(first_byte, new_idx);
                     new_idx
-                }
-            };
+                };
 
             current_idx = child_idx;
 
@@ -224,7 +219,7 @@ impl CompressedTrie {
 
         // Start from TLD
         let tld_hash = self.hash_label(labels[0]);
-        let mut current_idx = match self.roots.get(&tld_hash) {
+        let current_idx = match self.roots.get(&tld_hash) {
             Some(&idx) => {
                 // Verify it's the correct TLD
                 let node = &self.nodes[idx as usize];
@@ -265,13 +260,12 @@ impl CompressedTrie {
             match current_node.find_child(first_byte) {
                 Some(child_idx) => {
                     let child_node = &self.nodes[child_idx as usize];
-                    
+
                     // Verify label matches
                     if !self.labels_match(child_node.label, label) {
                         return false;
                     }
 
-                    current_idx = child_idx;
                     current_node = child_node;
 
                     // Check if this node is blocked
@@ -295,7 +289,7 @@ impl CompressedTrie {
 
         // Find the PSL boundary
         let tld_hash = self.hash_label(labels[0]);
-        let mut current_idx = self.roots.get(&tld_hash).copied()?;
+        let current_idx = self.roots.get(&tld_hash).copied()?;
         let mut psl_depth = 0;
 
         // Check TLD node
@@ -323,7 +317,6 @@ impl CompressedTrie {
                         break;
                     }
 
-                    current_idx = child_idx;
                     current_node = child_node;
 
                     if current_node.flags.is_exception() {
@@ -364,7 +357,7 @@ impl CompressedTrie {
     }
 
     /// Split domain into labels in reverse order
-    fn split_labels(&self, domain: &[u8]) -> Vec<&[u8]> {
+    fn split_labels<'a>(&self, domain: &'a [u8]) -> Vec<&'a [u8]> {
         if domain.is_empty() {
             return Vec::new();
         }
@@ -453,10 +446,10 @@ mod tests {
     fn test_node_flags() {
         let mut flags = NodeFlags::default();
         assert!(!flags.is_blocked());
-        
+
         flags.set_blocked();
         assert!(flags.is_blocked());
-        
+
         flags.set_wildcard();
         assert!(flags.is_wildcard());
         assert!(flags.is_blocked()); // Should still be blocked
@@ -465,11 +458,11 @@ mod tests {
     #[test]
     fn test_trie_node() {
         let mut node = TrieNode::new((0, 3));
-        
+
         node.add_child(b'a', 1);
         node.add_child(b'c', 3);
         node.add_child(b'b', 2);
-        
+
         // Should be sorted
         assert_eq!(node.find_child(b'a'), Some(1));
         assert_eq!(node.find_child(b'b'), Some(2));
@@ -479,20 +472,20 @@ mod tests {
 
     #[test]
     fn test_split_labels() {
-        let mut arena = StringArena::with_capacity(1024);
+        let arena = StringArena::with_capacity(1024);
         let shared = arena.into_shared();
         let trie = CompressedTrie::new(shared);
-        
+
         let labels = trie.split_labels(b"www.example.com");
-        assert_eq!(labels, vec![b"com", b"example", b"www"]);
-        
+        assert_eq!(labels, vec![&b"com"[..], &b"example"[..], &b"www"[..]]);
+
         let labels = trie.split_labels(b"example.co.uk");
-        assert_eq!(labels, vec![b"uk", b"co", b"example"]);
-        
+        assert_eq!(labels, vec![&b"uk"[..], &b"co"[..], &b"example"[..]]);
+
         let labels = trie.split_labels(b"com");
         assert_eq!(labels, vec![b"com"]);
-        
+
         let labels = trie.split_labels(b"example.com.");
-        assert_eq!(labels, vec![b"com", b"example"]);
+        assert_eq!(labels, vec![&b"com"[..], &b"example"[..]]);
     }
 }

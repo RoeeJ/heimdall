@@ -48,7 +48,7 @@ impl StringArena {
     pub fn get(&self, offset: u32, len: u16) -> Option<&[u8]> {
         let start = offset as usize;
         let end = start + len as usize;
-        
+
         if end <= self.buffer.len() {
             Some(&self.buffer[start..end])
         } else {
@@ -83,7 +83,7 @@ impl SharedArena {
     pub fn get(&self, offset: u32, len: u16) -> Option<&[u8]> {
         let start = offset as usize;
         let end = start + len as usize;
-        
+
         if end <= self.buffer.len() {
             Some(&self.buffer[start..end])
         } else {
@@ -115,11 +115,11 @@ mod tests {
         // Add some strings
         let (offset1, len1) = arena.add(b"example.com").unwrap();
         let (offset2, len2) = arena.add(b"test.example.com").unwrap();
-        
+
         // Verify we can retrieve them
         assert_eq!(arena.get(offset1, len1).unwrap(), b"example.com");
         assert_eq!(arena.get(offset2, len2).unwrap(), b"test.example.com");
-        
+
         // Verify offsets are sequential
         assert_eq!(offset1, 0);
         assert_eq!(offset2, 11); // "example.com".len()
@@ -129,10 +129,10 @@ mod tests {
     fn test_shared_arena() {
         let mut arena = StringArena::with_capacity(1024);
         let (offset, len) = arena.add(b"example.com").unwrap();
-        
+
         let shared = arena.into_shared();
         assert_eq!(shared.get(offset, len).unwrap(), b"example.com");
-        
+
         // Test cloning
         let shared2 = shared.clone();
         assert_eq!(shared2.get(offset, len).unwrap(), b"example.com");

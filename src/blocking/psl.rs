@@ -7,13 +7,25 @@ use tracing::{debug, info};
 
 /// Helper function to check if a byte slice contains a subsequence
 fn contains_seq(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack.windows(needle.len()).any(|window| window == needle)
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return false;
+    }
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
 }
 
 /// Helper function to trim whitespace from byte slice
 fn trim_bytes(bytes: &[u8]) -> &[u8] {
-    let start = bytes.iter().position(|&b| !b.is_ascii_whitespace()).unwrap_or(bytes.len());
-    let end = bytes.iter().rposition(|&b| !b.is_ascii_whitespace()).map(|i| i + 1).unwrap_or(0);
+    let start = bytes
+        .iter()
+        .position(|&b| !b.is_ascii_whitespace())
+        .unwrap_or(bytes.len());
+    let end = bytes
+        .iter()
+        .rposition(|&b| !b.is_ascii_whitespace())
+        .map(|i| i + 1)
+        .unwrap_or(0);
     &bytes[start..end]
 }
 
@@ -34,15 +46,15 @@ impl TrieBuilder {
     }
 
     fn build(self, arena: SharedArena) -> CompressedTrie {
-        let mut trie = CompressedTrie::new(arena);
-        
+        let mut trie = CompressedTrie::new(arena.clone());
+
         // Insert all entries into the trie
         for (offset, flags) in self.entries {
-            if let Some(domain) = trie.arena().get(offset.0, offset.1) {
+            if let Some(domain) = arena.get(offset.0, offset.1) {
                 trie.insert(domain, flags);
             }
         }
-        
+
         trie
     }
 }
@@ -73,7 +85,7 @@ impl PublicSuffixList {
         let mut arena = StringArena::with_capacity(200_000);
         let mut trie_builder = TrieBuilder::new();
 
-        let mut in_private_section = false;
+        let mut _in_private_section = false;
         let mut count = 0;
 
         // Process line by line
@@ -88,8 +100,8 @@ impl PublicSuffixList {
 
                 // Skip empty lines and comments
                 if line.is_empty() || line.starts_with(b"//") {
-                    if line.contains_seq(b"===BEGIN PRIVATE DOMAINS===") {
-                        in_private_section = true;
+                    if contains_seq(line, b"===BEGIN PRIVATE DOMAINS===") {
+                        _in_private_section = true;
                     }
                     continue;
                 }
@@ -169,6 +181,7 @@ impl PublicSuffixList {
     }
 
     /// Find the public suffix length for a domain
+    #[allow(dead_code)]
     fn find_public_suffix_len(&self, domain: &[u8]) -> usize {
         let trie_guard = self.trie.read();
         if let Some(trie) = trie_guard.as_ref() {
@@ -196,7 +209,7 @@ impl PublicSuffixList {
 
         let domain_bytes = domain.as_bytes();
         let trie_guard = self.trie.read();
-        
+
         if let Some(trie) = trie_guard.as_ref() {
             if let Some(registrable_bytes) = trie.get_registrable_domain(domain_bytes) {
                 // Convert back to string

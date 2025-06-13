@@ -39,7 +39,7 @@ impl<'a> Iterator for DomainLabels<'a> {
         }
 
         let label = &self.domain[start..self.pos];
-        
+
         // Skip the dot
         if self.pos < self.domain.len() {
             self.pos += 1;
@@ -56,23 +56,23 @@ impl DomainNormalizer {
     /// Check if a domain needs normalization
     #[inline]
     pub fn needs_normalization(domain: &[u8]) -> bool {
-        domain.iter().any(|&b| b.is_ascii_uppercase()) || 
-        domain.is_empty() ||
-        (domain.len() > 1 && domain[domain.len() - 1] == b'.')
+        domain.iter().any(|&b| b.is_ascii_uppercase())
+            || domain.is_empty()
+            || (domain.len() > 1 && domain[domain.len() - 1] == b'.')
     }
 
     /// Normalize a domain in-place (lowercase)
     /// Returns true if the domain was modified
     pub fn normalize_in_place(domain: &mut [u8]) -> bool {
         let mut modified = false;
-        
+
         for byte in domain.iter_mut() {
             if byte.is_ascii_uppercase() {
                 *byte = byte.to_ascii_lowercase();
                 modified = true;
             }
         }
-        
+
         modified
     }
 
@@ -166,16 +166,16 @@ mod tests {
     #[test]
     fn test_domain_labels() {
         let labels: Vec<_> = DomainLabels::new(b"www.example.com").collect();
-        assert_eq!(labels, vec![b"www", b"example", b"com"]);
+        assert_eq!(labels, vec![&b"www"[..], &b"example"[..], &b"com"[..]]);
 
         let labels: Vec<_> = DomainLabels::new(b"example.com.").collect();
-        assert_eq!(labels, vec![b"example", b"com"]);
+        assert_eq!(labels, vec![&b"example"[..], &b"com"[..]]);
 
         let labels: Vec<_> = DomainLabels::new(b"com").collect();
         assert_eq!(labels, vec![b"com"]);
 
         let reversed = DomainLabels::new(b"www.example.com").reversed();
-        assert_eq!(reversed, vec![b"com", b"example", b"www"]);
+        assert_eq!(reversed, vec![&b"com"[..], &b"example"[..], &b"www"[..]]);
     }
 
     #[test]

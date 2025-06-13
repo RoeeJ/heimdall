@@ -1,6 +1,6 @@
 /// High-performance DNS blocker using zero-copy compressed trie
 use crate::blocking::arena::SharedArena;
-use crate::blocking::builder::{BlocklistBuilder, BlocklistStats};
+use crate::blocking::builder::BlocklistBuilder;
 use crate::blocking::lookup::DomainNormalizer;
 use crate::blocking::parser::BlocklistFormat;
 use crate::blocking::psl::PublicSuffixList;
@@ -8,8 +8,8 @@ use crate::blocking::trie::CompressedTrie;
 use crate::blocking::{BlockingMode, BlockingStats};
 use crate::error::Result;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
@@ -20,6 +20,7 @@ pub struct DnsBlockerV2 {
     /// The compressed trie for allowlist lookups
     allowlist_trie: Arc<CompressedTrie>,
     /// Shared arena for domain storage
+    #[allow(dead_code)]
     arena: Arc<SharedArena>,
     /// Blocking mode
     mode: BlockingMode,
@@ -36,15 +37,16 @@ impl DnsBlockerV2 {
     pub async fn new(mode: BlockingMode, enable_wildcards: bool) -> Result<Self> {
         // Initialize PSL
         let psl = Arc::new(PublicSuffixList::new());
-        
+
         // Try to load the full PSL
         info!("Initializing Public Suffix List...");
         match psl.load_from_url().await {
             Ok(count) => info!("Loaded {} PSL rules", count),
             Err(e) => {
                 warn!("Failed to download PSL: {}, using fallback", e);
-                psl.load_common_suffixes()
-                    .map_err(|e| crate::error::DnsError::Io(format!("Failed to load PSL: {}", e)))?;
+                psl.load_common_suffixes().map_err(|e| {
+                    crate::error::DnsError::Io(format!("Failed to load PSL: {}", e))
+                })?;
             }
         }
 
@@ -68,7 +70,7 @@ impl DnsBlockerV2 {
     #[inline]
     pub fn is_blocked(&self, domain: &str) -> bool {
         let domain_bytes = domain.as_bytes();
-        
+
         // Normalize if needed (only allocates if uppercase found)
         let normalized = if DomainNormalizer::needs_normalization(domain_bytes) {
             let mut normalized = domain_bytes.to_vec();
@@ -110,7 +112,7 @@ impl DnsBlockerV2 {
 
         // Build the compressed trie
         let (trie, arena, node_count) = builder.build()?;
-        
+
         // Update the blocker with the new trie
         self.update_blocklist(trie, arena);
 
@@ -126,21 +128,20 @@ impl DnsBlockerV2 {
     }
 
     /// Update the blocklist trie atomically
-    fn update_blocklist(&self, new_trie: CompressedTrie, new_arena: SharedArena) {
+    fn update_blocklist(&self, new_trie: CompressedTrie, _new_arena: SharedArena) {
         // This would typically use Arc::swap or similar for lock-free updates
         // For now, we'll use a simple Arc replacement
         // In production, consider using ArcSwap or crossbeam-epoch
-        
+
         // Update stats
-        self.stats.total_blocked_domains.store(
-            new_trie.node_count() as u64,
-            Ordering::Relaxed,
-        );
-        
+        self.stats
+            .total_blocked_domains
+            .store(new_trie.node_count() as u64, Ordering::Relaxed);
+
         if let Ok(mut last_update) = self.stats.last_update.lock() {
             *last_update = Some(Instant::now());
         }
-        
+
         warn!("Blocklist update not fully implemented - would update trie here");
     }
 
