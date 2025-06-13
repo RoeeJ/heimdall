@@ -1,3 +1,17 @@
+// Server integration tests
+// 
+// These tests start actual DNS servers and may make network calls.
+// They are marked with #[ignore] to prevent them from running in CI
+// or when running the standard test suite.
+//
+// To run these tests locally:
+//   cargo test --test server_integration_tests -- --ignored
+//
+// Note: These tests may fail if:
+// - Port binding fails (another process using the port)
+// - Network access is restricted
+// - DNS servers (8.8.8.8) are unreachable
+
 use heimdall::{
     config::DnsConfig,
     dns::DNSPacket,
@@ -251,6 +265,7 @@ async fn test_concurrent_queries() {
 }
 
 #[tokio::test]
+#[ignore] // Requires server startup and may make network calls
 async fn test_rate_limiting() {
     let mut config = DnsConfig::default();
     config.rate_limit_config.enable_rate_limiting = true;
@@ -337,6 +352,7 @@ async fn test_rate_limiting() {
 }
 
 #[tokio::test]
+#[ignore] // Requires server startup and may make network calls
 async fn test_invalid_opcode_response() {
     let (addr, shutdown_tx, _handle) = start_test_server(false).await;
 
@@ -376,6 +392,7 @@ async fn test_invalid_opcode_response() {
 }
 
 #[tokio::test]
+#[ignore] // Requires server startup and may make network calls
 async fn test_zone_transfer_refused() {
     let (addr, shutdown_tx, _handle) = start_test_server(false).await;
 
@@ -399,6 +416,7 @@ async fn test_zone_transfer_refused() {
 }
 
 #[tokio::test]
+#[ignore] // Requires server startup and may make network calls
 async fn test_any_query_refused() {
     let (addr, shutdown_tx, _handle) = start_test_server(false).await;
 
@@ -422,6 +440,7 @@ async fn test_any_query_refused() {
 }
 
 #[tokio::test]
+#[ignore] // Requires server startup and may make network calls
 async fn test_tcp_connection_handling() {
     let (addr, shutdown_tx, _handle) = start_test_server(true).await;
 
@@ -453,6 +472,7 @@ async fn test_tcp_connection_handling() {
 }
 
 #[tokio::test]
+#[ignore] // Requires server startup and may make network calls
 async fn test_max_concurrent_queries_limit() {
     let mut config = DnsConfig::default();
 

@@ -105,6 +105,19 @@ pub struct DnsConfig {
 
 impl Default for DnsConfig {
     fn default() -> Self {
+        // Check environment variables for blocking settings (useful for CI/testing)
+        let blocking_enabled = std::env::var("HEIMDALL_BLOCKING_ENABLED")
+            .map(|v| parse_bool(&v, true))
+            .unwrap_or(true); // Default to true if not set
+
+        let blocking_download_psl = std::env::var("HEIMDALL_BLOCKING_DOWNLOAD_PSL")
+            .map(|v| parse_bool(&v, true))
+            .unwrap_or(true); // Default to true if not set
+
+        let blocklist_auto_update = std::env::var("HEIMDALL_BLOCKLIST_AUTO_UPDATE")
+            .map(|v| parse_bool(&v, true))
+            .unwrap_or(true); // Default to true if not set
+
         Self {
             bind_addr: "127.0.0.1:1053"
                 .parse()
@@ -152,7 +165,7 @@ impl Default for DnsConfig {
             dnssec_strict: false,  // Non-strict by default
             zone_files: vec![],    // No zones by default
             authoritative_enabled: false, // Disabled by default
-            blocking_enabled: true, // Enabled by default
+            blocking_enabled,
             blocking_mode: "zero_ip".to_string(), // Use zero_ip as default (common choice)
             blocking_custom_ip: None,
             blocking_enable_wildcards: true,
@@ -162,9 +175,9 @@ impl Default for DnsConfig {
                 "blocklists/malware-domains.txt:hosts:MalwareDomains".to_string(),
             ],
             allowlist: vec![],
-            blocklist_auto_update: true, // Enable auto-updates by default
+            blocklist_auto_update,
             blocklist_update_interval: 86400, // 24 hours
-            blocking_download_psl: true, // Enable PSL download by default
+            blocking_download_psl,
         }
     }
 }

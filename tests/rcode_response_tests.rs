@@ -37,11 +37,7 @@ fn create_test_query(id: u16, opcode: u8, domain: &str, qtype: DNSResourceType) 
 
 /// Create a test resolver instance
 async fn create_test_resolver() -> DnsResolver {
-    let mut config = DnsConfig::default();
-    // Disable blocking features to avoid network operations during tests
-    config.blocking_enabled = false;
-    config.blocklist_auto_update = false;
-    config.blocking_download_psl = false;
+    let config = DnsConfig::default();
     DnsResolver::new(config, None).await.unwrap()
 }
 
