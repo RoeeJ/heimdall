@@ -1,5 +1,5 @@
 use crate::blocking::arena::{SharedArena, StringArena};
-use crate::blocking::lookup::{count_labels, DomainLabels, DomainNormalizer};
+use crate::blocking::lookup::DomainNormalizer;
 use crate::blocking::parser::{BlocklistFormat, BlocklistParser};
 use crate::blocking::psl::PublicSuffixList;
 use crate::blocking::trie::{CompressedTrie, NodeFlags};
@@ -73,9 +73,13 @@ impl BlocklistBuilder {
                     if existing.len() > registrable_bytes.len() {
                         // Check if it's a subdomain
                         let suffix_start = existing.len() - registrable_bytes.len();
-                        if existing[suffix_start..] == registrable_bytes &&
-                           existing[suffix_start - 1] == b'.' {
-                            debug!("Removing redundant subdomain: {:?}", String::from_utf8_lossy(existing));
+                        if existing[suffix_start..] == registrable_bytes
+                            && existing[suffix_start - 1] == b'.'
+                        {
+                            debug!(
+                                "Removing redundant subdomain: {:?}",
+                                String::from_utf8_lossy(existing)
+                            );
                             false
                         } else {
                             true
@@ -87,9 +91,11 @@ impl BlocklistBuilder {
             } else {
                 // We're adding a subdomain - check if parent is already blocked
                 if self.domains.contains_key(&registrable_bytes) {
-                    debug!("Skipping subdomain {:?}, parent {:?} already blocked", 
-                           String::from_utf8_lossy(&domain_bytes),
-                           String::from_utf8_lossy(&registrable_bytes));
+                    debug!(
+                        "Skipping subdomain {:?}, parent {:?} already blocked",
+                        String::from_utf8_lossy(&domain_bytes),
+                        String::from_utf8_lossy(&registrable_bytes)
+                    );
                     return;
                 }
             }
@@ -100,7 +106,7 @@ impl BlocklistBuilder {
             list_name: source.to_string(),
             is_wildcard,
         };
-        
+
         if self.domains.insert(domain_bytes.clone(), source).is_none() {
             debug!("Added domain: {:?}", String::from_utf8_lossy(&domain_bytes));
         }
@@ -113,7 +119,10 @@ impl BlocklistBuilder {
         format: BlocklistFormat,
         list_name: &str,
     ) -> Result<usize> {
-        info!("Loading blocklist {} from {:?} (format: {:?})", list_name, path, format);
+        info!(
+            "Loading blocklist {} from {:?} (format: {:?})",
+            list_name, path, format
+        );
 
         let file = File::open(path)
             .map_err(|e| DnsError::Io(format!("Failed to open blocklist file: {}", e)))?;
@@ -131,16 +140,23 @@ impl BlocklistBuilder {
         }
 
         let added = self.domains.len() - initial_count;
-        info!("Loaded {} unique domains from {} (processed: {})", 
-              added, list_name, self.total_processed - initial_count);
+        info!(
+            "Loaded {} unique domains from {} (processed: {})",
+            added,
+            list_name,
+            self.total_processed - initial_count
+        );
 
         Ok(added)
     }
 
     /// Build the final compressed trie
     pub fn build(self) -> Result<(CompressedTrie, SharedArena, usize)> {
-        info!("Building compressed trie from {} unique domains (total processed: {})",
-              self.domains.len(), self.total_processed);
+        info!(
+            "Building compressed trie from {} unique domains (total processed: {})",
+            self.domains.len(),
+            self.total_processed
+        );
 
         // Estimate arena capacity
         let avg_domain_len = 20;
@@ -154,14 +170,17 @@ impl BlocklistBuilder {
             if let Some(offset) = arena.add(&domain) {
                 let mut flags = NodeFlags::default();
                 flags.set_blocked();
-                
+
                 if source.is_wildcard {
                     flags.set_wildcard();
                 }
 
                 entries.push((offset, flags));
             } else {
-                warn!("Failed to add domain to arena: {:?}", String::from_utf8_lossy(&domain));
+                warn!(
+                    "Failed to add domain to arena: {:?}",
+                    String::from_utf8_lossy(&domain)
+                );
             }
         }
 
@@ -177,11 +196,15 @@ impl BlocklistBuilder {
         }
 
         let deduplication_savings = self.total_processed - trie.node_count();
-        info!("Built trie with {} nodes (deduplicated {} domains, {:.1}% reduction)",
-              trie.node_count(), deduplication_savings,
-              (deduplication_savings as f64 / self.total_processed as f64) * 100.0);
+        info!(
+            "Built trie with {} nodes (deduplicated {} domains, {:.1}% reduction)",
+            trie.node_count(),
+            deduplication_savings,
+            (deduplication_savings as f64 / self.total_processed as f64) * 100.0
+        );
 
-        Ok((trie, shared_arena, trie.node_count()))
+        let node_count = trie.node_count();
+        Ok((trie, shared_arena, node_count))
     }
 }
 
@@ -214,7 +237,7 @@ mod tests {
 
         // Only example.com should remain
         assert_eq!(builder.domains.len(), 1);
-        assert!(builder.domains.contains_key(b"example.com"));
+        assert!(builder.domains.contains_key(&b"example.com".to_vec()));
     }
 
     #[test]
@@ -223,7 +246,7 @@ mod tests {
         let mut builder = BlocklistBuilder::new(psl, true);
 
         builder.add_domain("*.doubleclick.net", "test");
-        
+
         assert_eq!(builder.domains.len(), 1);
         let (_, source) = builder.domains.iter().next().unwrap();
         assert!(source.is_wildcard);
