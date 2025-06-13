@@ -1,7 +1,8 @@
 use crate::{
     config::DnsConfig,
-    dns::{DNSPacket, enums::DnsOpcode},
+    dns::{DNSPacket, DNSPacketRef, enums::DnsOpcode},
     metrics::DnsMetrics,
+    pool::BufferPool,
     rate_limiter::DnsRateLimiter,
     resolver::DnsResolver,
 };
@@ -23,10 +24,14 @@ pub async fn run_udp_server(
     let sock: Arc<UdpSocket> = Arc::new(UdpSocket::bind(config.bind_addr).await?);
     info!("UDP DNS server listening on {}", config.bind_addr);
 
-    // Pre-allocate buffer outside loop for efficiency
-    let mut buf = vec![0; 4096];
+    // Create buffer pool for UDP packets
+    let buffer_pool = Arc::new(BufferPool::new(4096, 128)); // 4KB buffers, max 128 in pool
 
     loop {
+        // Get a buffer from the pool
+        let mut buf = buffer_pool.get();
+        buf.resize(4096, 0);
+
         tokio::select! {
             // Handle shutdown signal
             _ = shutdown_rx.recv() => {
@@ -61,12 +66,13 @@ pub async fn run_udp_server(
                 let metrics_clone = metrics.clone();
                 let query_data = buf[..read_bytes].to_vec();
                 let sock_clone = sock.clone();
+                let buffer_pool_clone = buffer_pool.clone();
 
                 // Handle query in a separate task
                 tokio::spawn(async move {
                     let _permit = permit; // Keep permit alive for the duration of the query
 
-                    match handle_dns_query(&query_data, &resolver_clone, &metrics_clone, "udp").await {
+                    match handle_dns_query_with_pool(&query_data, &resolver_clone, &metrics_clone, "udp", &buffer_pool_clone).await {
                         Ok(response_data) => {
                             let final_response = if let Ok(query_packet) = DNSPacket::parse(&query_data) {
                                 let max_udp_size = query_packet.max_udp_payload_size();
@@ -171,14 +177,59 @@ pub async fn run_tcp_server(
     Ok(())
 }
 
+async fn handle_dns_query_with_pool(
+    buf: &[u8],
+    resolver: &DnsResolver,
+    metrics: &DnsMetrics,
+    protocol: &str,
+    buffer_pool: &BufferPool,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    // Get a buffer from the pool for serialization
+    let mut response_buf = buffer_pool.get();
+
+    // Call the regular handler to get the response packet
+    let response = handle_dns_query(buf, resolver, metrics, protocol).await?;
+
+    // Deserialize response to get packet (for now, until we refactor to return DNSPacket)
+    let packet = DNSPacket::parse(&response)?;
+
+    // Serialize into the pooled buffer
+    packet.serialize_into(&mut response_buf)?;
+
+    // Return the buffer content as a Vec
+    Ok(response_buf.to_vec())
+}
+
 async fn handle_dns_query(
     buf: &[u8],
     resolver: &DnsResolver,
     metrics: &DnsMetrics,
     protocol: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    // Parse the DNS packet
-    let packet = match DNSPacket::parse(buf) {
+    // First try zero-copy parsing for fast rejection of malformed packets
+    let packet_ref = match DNSPacketRef::parse_metadata(buf) {
+        Ok(pref) => pref,
+        Err(e) => {
+            debug!(
+                "Failed to parse DNS packet metadata: {:?} (packet length: {} bytes)",
+                e,
+                buf.len()
+            );
+            metrics.record_malformed_packet(protocol, "parse_error");
+            return Err(format!("Invalid DNS packet: {}", e).into());
+        }
+    };
+
+    // Quick validation checks using zero-copy
+    if !packet_ref.is_query() {
+        // This is already a response, reject it
+        debug!("Received DNS response instead of query");
+        metrics.record_malformed_packet(protocol, "not_query");
+        return Err("Expected DNS query, got response".into());
+    }
+
+    // Now parse the full packet only if initial checks pass
+    let packet = match packet_ref.to_owned() {
         Ok(packet) => packet,
         Err(e) => {
             debug!(
