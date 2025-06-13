@@ -237,7 +237,7 @@ mod tests {
 
         // Only example.com should remain
         assert_eq!(builder.domains.len(), 1);
-        assert!(builder.domains.contains_key(&b"example.com".to_vec()));
+        assert!(builder.domains.contains_key(b"example.com".as_slice()));
     }
 
     #[test]

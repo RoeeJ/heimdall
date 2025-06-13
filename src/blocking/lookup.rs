@@ -1,4 +1,4 @@
-/// Zero-copy domain parsing and lookup utilities
+//! Zero-copy domain parsing and lookup utilities
 
 /// Iterator over domain labels in forward order (TLD last)
 pub struct DomainLabels<'a> {
