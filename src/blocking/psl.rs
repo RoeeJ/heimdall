@@ -1,26 +1,58 @@
+use crate::blocking::arena::{SharedArena, StringArena};
+use crate::blocking::lookup::count_labels;
+use crate::blocking::trie::{CompressedTrie, NodeFlags};
 use parking_lot::RwLock;
-/// Public Suffix List implementation for domain deduplication
-use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, info};
 
-/// Trie node for efficient PSL lookups
-#[derive(Debug, Default)]
-struct TrieNode {
-    /// Child nodes indexed by domain label
-    children: HashMap<String, TrieNode>,
-    /// Whether this node represents a public suffix
-    is_suffix: bool,
-    /// Whether this node is a wildcard (matches any label)
-    is_wildcard: bool,
-    /// Whether this node is an exception (overrides wildcard)
-    is_exception: bool,
+/// Helper function to check if a byte slice contains a subsequence
+fn contains_seq(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.windows(needle.len()).any(|window| window == needle)
 }
 
-/// Public Suffix List for domain validation
+/// Helper function to trim whitespace from byte slice
+fn trim_bytes(bytes: &[u8]) -> &[u8] {
+    let start = bytes.iter().position(|&b| !b.is_ascii_whitespace()).unwrap_or(bytes.len());
+    let end = bytes.iter().rposition(|&b| !b.is_ascii_whitespace()).map(|i| i + 1).unwrap_or(0);
+    &bytes[start..end]
+}
+
+/// Temporary builder for collecting PSL entries before building the trie
+struct TrieBuilder {
+    entries: Vec<((u32, u16), NodeFlags)>,
+}
+
+impl TrieBuilder {
+    fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+
+    fn add_entry(&mut self, offset: (u32, u16), flags: NodeFlags) {
+        self.entries.push((offset, flags));
+    }
+
+    fn build(self, arena: SharedArena) -> CompressedTrie {
+        let mut trie = CompressedTrie::new(arena);
+        
+        // Insert all entries into the trie
+        for (offset, flags) in self.entries {
+            if let Some(domain) = trie.arena().get(offset.0, offset.1) {
+                trie.insert(domain, flags);
+            }
+        }
+        
+        trie
+    }
+}
+
+/// Public Suffix List for domain validation using zero-copy compressed trie
 pub struct PublicSuffixList {
-    /// Trie structure for efficient lookups
-    trie: Arc<RwLock<TrieNode>>,
+    /// The compressed trie for PSL lookups
+    trie: Arc<RwLock<Option<CompressedTrie>>>,
+    /// Raw PSL data (kept for zero-copy operation)
+    raw_data: Arc<RwLock<Option<Vec<u8>>>>,
     /// Whether the PSL has been loaded
     loaded: Arc<RwLock<bool>>,
 }
@@ -29,78 +61,87 @@ impl PublicSuffixList {
     /// Create a new PSL instance
     pub fn new() -> Self {
         Self {
-            trie: Arc::new(RwLock::new(TrieNode::default())),
+            trie: Arc::new(RwLock::new(None)),
+            raw_data: Arc::new(RwLock::new(None)),
             loaded: Arc::new(RwLock::new(false)),
         }
     }
 
-    /// Insert a rule into the trie
-    fn insert_rule(trie: &mut TrieNode, labels: Vec<&str>, is_exception: bool) {
-        let mut current = trie;
+    /// Build the compressed trie from PSL data
+    fn build_trie_from_data(data: &[u8]) -> Result<CompressedTrie, String> {
+        // Estimate capacity: average domain ~20 bytes, assume 10k rules
+        let mut arena = StringArena::with_capacity(200_000);
+        let mut trie_builder = TrieBuilder::new();
 
-        // Insert labels in reverse order (TLD first)
-        for (i, label) in labels.iter().rev().enumerate() {
-            let is_last = i == labels.len() - 1;
+        let mut in_private_section = false;
+        let mut count = 0;
 
-            if *label == "*" {
-                current.is_wildcard = true;
-                if is_last {
-                    current.is_suffix = true;
+        // Process line by line
+        let mut line_start = 0;
+        for i in 0..=data.len() {
+            if i == data.len() || data[i] == b'\n' {
+                let line = &data[line_start..i];
+                line_start = i + 1;
+
+                // Trim whitespace
+                let line = trim_bytes(line);
+
+                // Skip empty lines and comments
+                if line.is_empty() || line.starts_with(b"//") {
+                    if line.contains_seq(b"===BEGIN PRIVATE DOMAINS===") {
+                        in_private_section = true;
+                    }
+                    continue;
                 }
-                return;
-            }
 
-            let label_key = label.to_lowercase();
-            current = current.children.entry(label_key).or_default();
-
-            if is_last {
-                if is_exception {
-                    current.is_exception = true;
+                // Parse the rule
+                let (domain, is_exception) = if line[0] == b'!' {
+                    (&line[1..], true)
                 } else {
-                    current.is_suffix = true;
+                    (line, false)
+                };
+
+                // Add to arena and trie
+                if let Some(offset) = arena.add(domain) {
+                    let mut flags = NodeFlags::default();
+                    flags.set_psl_boundary();
+                    if is_exception {
+                        flags.set_exception();
+                    }
+                    trie_builder.add_entry(offset, flags);
+                    count += 1;
                 }
             }
         }
+
+        info!("Built PSL trie with {} rules", count);
+
+        // Convert to shared arena and build final trie
+        let shared_arena = arena.into_shared();
+        let trie = trie_builder.build(shared_arena);
+
+        Ok(trie)
     }
 
-    /// Load PSL from a string
+    /// Load PSL from a string (converts to bytes for zero-copy processing)
     pub fn load_from_string(&self, content: &str) -> Result<usize, String> {
-        let mut trie = self.trie.write();
-        *trie = TrieNode::default(); // Clear existing data
+        // Convert to bytes for zero-copy processing
+        let data = content.as_bytes().to_vec();
+        self.load_from_bytes(data)
+    }
 
-        let mut count = 0;
-        let mut _in_private_section = false;
+    /// Load PSL from bytes (zero-copy)
+    pub fn load_from_bytes(&self, data: Vec<u8>) -> Result<usize, String> {
+        // Build the trie
+        let trie = Self::build_trie_from_data(&data)?;
+        let rule_count = trie.node_count();
 
-        for line in content.lines() {
-            let line = line.trim();
-
-            // Skip empty lines and comments
-            if line.is_empty() || line.starts_with("//") {
-                // Check for section markers
-                if line.contains("===BEGIN PRIVATE DOMAINS===") {
-                    _in_private_section = true;
-                }
-                continue;
-            }
-
-            // Parse the rule
-            if let Some(rule) = line.strip_prefix('!') {
-                // Exception rule
-                let labels: Vec<&str> = rule.split('.').collect();
-                Self::insert_rule(&mut trie, labels, true);
-                count += 1;
-            } else {
-                // Regular or wildcard rule
-                let labels: Vec<&str> = line.split('.').collect();
-                Self::insert_rule(&mut trie, labels, false);
-                count += 1;
-            }
-        }
-
+        // Store the trie and raw data
+        *self.trie.write() = Some(trie);
+        *self.raw_data.write() = Some(data);
         *self.loaded.write() = true;
-        info!("Loaded {} PSL rules into trie", count);
 
-        Ok(count)
+        Ok(rule_count)
     }
 
     /// Load PSL from the official URL
@@ -113,12 +154,12 @@ impl PublicSuffixList {
             .await
             .map_err(|e| format!("Failed to download PSL: {}", e))?;
 
-        let content = response
-            .text()
+        let bytes = response
+            .bytes()
             .await
             .map_err(|e| format!("Failed to read PSL content: {}", e))?;
 
-        self.load_from_string(&content)
+        self.load_from_bytes(bytes.to_vec())
     }
 
     /// Load common suffixes as a fallback when the full PSL is not available
@@ -128,40 +169,21 @@ impl PublicSuffixList {
     }
 
     /// Find the public suffix length for a domain
-    fn find_public_suffix_len(&self, labels: &[&str]) -> usize {
-        let trie = self.trie.read();
-        let mut current = &*trie;
-        let mut suffix_len = 0;
-
-        // Traverse from TLD to subdomain (reverse order)
-        for (i, label) in labels.iter().rev().enumerate() {
-            let label_lower = label.to_lowercase();
-
-            // Check for exact match
-            if let Some(node) = current.children.get(&label_lower) {
-                current = node;
-
-                // If this is an exception, the public suffix ends here
-                if node.is_exception {
-                    return i;
-                }
-
-                // If this is a suffix, update our length
-                if node.is_suffix {
-                    suffix_len = i + 1;
-                }
-            } else if current.is_wildcard {
-                // Wildcard matches any label
-                suffix_len = i + 1;
-                // Can't traverse further with wildcard
-                break;
+    fn find_public_suffix_len(&self, domain: &[u8]) -> usize {
+        let trie_guard = self.trie.read();
+        if let Some(trie) = trie_guard.as_ref() {
+            // The trie handles PSL lookup internally
+            if let Some(registrable) = trie.get_registrable_domain(domain) {
+                // Calculate suffix length from registrable domain
+                let reg_labels = count_labels(registrable);
+                let total_labels = count_labels(domain);
+                total_labels - reg_labels
             } else {
-                // No match found
-                break;
+                0
             }
+        } else {
+            0
         }
-
-        suffix_len
     }
 
     /// Get the registrable domain (eTLD+1) for a given domain
@@ -172,30 +194,18 @@ impl PublicSuffixList {
             return self.simple_registrable_domain(domain);
         }
 
-        let domain_lower = domain.to_lowercase();
-        let labels: Vec<&str> = domain_lower.split('.').collect();
-
-        if labels.is_empty() {
-            return None;
-        }
-
-        let suffix_len = self.find_public_suffix_len(&labels);
-
-        // The registrable domain is one label longer than the public suffix
-        if suffix_len > 0 && suffix_len < labels.len() {
-            let registrable_start = labels.len() - suffix_len - 1;
-            let registrable_labels = &labels[registrable_start..];
-            Some(registrable_labels.join("."))
-        } else if suffix_len == 0 && labels.len() >= 2 {
-            // No public suffix found, assume simple TLD
-            let registrable_labels = &labels[labels.len() - 2..];
-            Some(registrable_labels.join("."))
-        } else if suffix_len == 0 && labels.len() == 1 {
-            // Single label domain with no PSL info - return it as-is
-            Some(domain.to_string())
+        let domain_bytes = domain.as_bytes();
+        let trie_guard = self.trie.read();
+        
+        if let Some(trie) = trie_guard.as_ref() {
+            if let Some(registrable_bytes) = trie.get_registrable_domain(domain_bytes) {
+                // Convert back to string
+                String::from_utf8(registrable_bytes.to_vec()).ok()
+            } else {
+                None
+            }
         } else {
-            // Domain is a public suffix itself
-            None
+            self.simple_registrable_domain(domain)
         }
     }
 
