@@ -197,6 +197,7 @@ fn test_zero_copy_serialization() {
 }
 
 #[tokio::test]
+#[ignore] // This test requires network access
 async fn test_query_deduplication() {
     let config = DnsConfig {
         enable_caching: true,
@@ -258,6 +259,7 @@ async fn test_query_deduplication() {
 }
 
 #[tokio::test]
+#[ignore] // This test requires network access
 async fn test_parallel_vs_sequential_queries() {
     // Test with multiple upstream servers
     let servers = vec![
@@ -312,6 +314,7 @@ async fn test_parallel_vs_sequential_queries() {
 }
 
 #[tokio::test]
+#[ignore] // This test requires network access
 async fn test_connection_pooling_stats() {
     let config = DnsConfig::default();
     let resolver = DnsResolver::new(config, None).await.unwrap();

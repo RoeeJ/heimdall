@@ -10,6 +10,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 #[tokio::test]
+#[ignore] // This test requires network access
 async fn test_consecutive_failures_mark_unhealthy() {
     // Create a test configuration with unreachable servers and one working server
     let config = DnsConfig {
@@ -143,6 +144,7 @@ async fn test_consecutive_failures_mark_unhealthy() {
 }
 
 #[tokio::test]
+#[ignore] // This test requires network access
 async fn test_health_based_priority_ordering() {
     // Test that healthy servers are prioritized over unhealthy ones
     let config = DnsConfig {
@@ -259,6 +261,7 @@ async fn test_health_based_priority_ordering() {
 }
 
 #[tokio::test]
+#[ignore] // This test requires network access
 async fn test_server_health_reset() {
     // Test the manual health reset functionality
     let config = DnsConfig {
