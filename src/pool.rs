@@ -98,7 +98,7 @@ pub struct BufferPool {
 impl BufferPool {
     pub fn new(buffer_size: usize, max_buffers: usize) -> Self {
         let pool = Pool::new(
-            move || vec![0u8; buffer_size],
+            move || Vec::with_capacity(buffer_size),
             |buf| buf.clear(),
             max_buffers,
         );
@@ -154,8 +154,13 @@ mod tests {
 
         // Get a buffer
         let mut buf1 = pool.get();
+        assert_eq!(buf1.len(), 0);
+        assert_eq!(buf1.capacity(), 1024);
+
+        // Use the buffer
         buf1.extend_from_slice(b"test");
         assert_eq!(&buf1[..4], b"test");
+        assert_eq!(buf1.len(), 4);
 
         // Drop the buffer (returns to pool)
         drop(buf1);

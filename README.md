@@ -245,6 +245,22 @@ cargo clippy -- -D warnings
 cargo audit
 ```
 
+### Git Hooks
+
+We provide pre-commit hooks to ensure code quality:
+
+```bash
+# Set up git hooks (interactive)
+./scripts/setup-git-hooks.sh
+
+# Options available:
+# 1. Full hook - runs fmt, clippy, build, and all tests
+# 2. Fast hook - runs fmt, clippy, and compilation check only
+# 3. Disable hooks
+```
+
+See [docs/git-hooks.md](docs/git-hooks.md) for detailed information about the available hooks.
+
 ## DNS Blocking
 
 Heimdall includes powerful DNS blocking capabilities to filter unwanted domains at the network level.
