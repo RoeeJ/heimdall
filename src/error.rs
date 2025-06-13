@@ -40,7 +40,8 @@ impl StdError for ConfigError {}
 
 #[derive(Debug, Clone)]
 pub enum DnsError {
-    Io(String), // Changed from std::io::Error to String for Clone compatibility
+    Io(String),                              // Generic IO error message
+    IoError(std::sync::Arc<std::io::Error>), // Preserved IO error for better context
     Parse(String),
     Timeout,
     Config(ConfigError),
@@ -52,7 +53,8 @@ pub enum DnsError {
 impl fmt::Display for DnsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DnsError::Io(err) => write!(f, "IO error: {}", err),
+            DnsError::Io(msg) => write!(f, "IO error: {}", msg),
+            DnsError::IoError(err) => write!(f, "IO error: {}", err),
             DnsError::Parse(msg) => write!(f, "Parse error: {}", msg),
             DnsError::Timeout => write!(f, "Operation timed out"),
             DnsError::Config(err) => write!(f, "Configuration error: {}", err),
@@ -74,7 +76,7 @@ impl StdError for DnsError {
 
 impl From<std::io::Error> for DnsError {
     fn from(err: std::io::Error) -> Self {
-        DnsError::Io(err.to_string())
+        DnsError::IoError(std::sync::Arc::new(err))
     }
 }
 
