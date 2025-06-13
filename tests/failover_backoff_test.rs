@@ -46,6 +46,7 @@ async fn test_exponential_backoff_for_failed_servers() {
         allowlist: vec![],
         blocklist_auto_update: false,
         blocklist_update_interval: 86400,
+        blocking_download_psl: false,
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -158,6 +159,7 @@ async fn test_successful_failover_to_backup_servers() {
         allowlist: vec![],
         blocklist_auto_update: false,
         blocklist_update_interval: 86400,
+        blocking_download_psl: false,
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -295,6 +297,7 @@ async fn test_health_recovery_after_reset() {
         allowlist: vec![],
         blocklist_auto_update: false,
         blocklist_update_interval: 86400,
+        blocking_download_psl: false,
     };
 
     let resolver = DnsResolver::new(config, None)

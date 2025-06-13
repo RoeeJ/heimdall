@@ -151,7 +151,7 @@ impl BlocklistBuilder {
     }
 
     /// Build the final compressed trie
-    pub fn build(self) -> Result<(CompressedTrie, SharedArena, usize)> {
+    pub fn build(mut self) -> Result<(CompressedTrie, SharedArena, usize)> {
         info!(
             "Building compressed trie from {} unique domains (total processed: {})",
             self.domains.len(),
@@ -159,14 +159,15 @@ impl BlocklistBuilder {
         );
 
         // Estimate arena capacity
+        let unique_domains = self.domains.len();
         let avg_domain_len = 20;
-        let capacity = self.domains.len() * avg_domain_len;
+        let capacity = unique_domains * avg_domain_len;
         let mut arena = StringArena::with_capacity(capacity);
 
         // Build a mapping of domain offsets to flags
-        let mut entries = Vec::with_capacity(self.domains.len());
+        let mut entries = Vec::with_capacity(unique_domains);
 
-        for (domain, source) in self.domains {
+        for (domain, source) in self.domains.drain() {
             if let Some(offset) = arena.add(&domain) {
                 let mut flags = NodeFlags::default();
                 flags.set_blocked();
@@ -195,16 +196,22 @@ impl BlocklistBuilder {
             }
         }
 
-        let deduplication_savings = self.total_processed - trie.node_count();
-        info!(
-            "Built trie with {} nodes (deduplicated {} domains, {:.1}% reduction)",
-            trie.node_count(),
-            deduplication_savings,
+        let deduplication_savings = self.total_processed.saturating_sub(unique_domains);
+        let reduction_percentage = if self.total_processed > 0 {
             (deduplication_savings as f64 / self.total_processed as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        info!(
+            "Built trie with {} nodes from {} unique domains (deduplicated {} domains, {:.1}% reduction)",
+            trie.node_count(),
+            unique_domains,
+            deduplication_savings,
+            reduction_percentage
         );
 
-        let node_count = trie.node_count();
-        Ok((trie, shared_arena, node_count))
+        Ok((trie, shared_arena, unique_domains))
     }
 }
 
