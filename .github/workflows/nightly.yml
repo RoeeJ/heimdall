@@ -12,6 +12,10 @@ env:
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
   RUST_BACKTRACE: 1
+  # Disable blocking features in tests to prevent network operations
+  HEIMDALL_BLOCKING_ENABLED: false
+  HEIMDALL_BLOCKING_DOWNLOAD_PSL: false
+  HEIMDALL_BLOCKLIST_AUTO_UPDATE: false
 
 jobs:
   nightly-rust:
