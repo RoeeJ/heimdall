@@ -325,7 +325,8 @@ impl DnsBlocker {
                 domain_lower, registrable
             );
 
-            if let Some(reg_domain) = registrable {
+            // Determine what domain to add based on PSL
+            let domain_to_add = if let Some(reg_domain) = registrable {
                 // If we're trying to add a subdomain, check if the parent is already blocked
                 if domain_lower != reg_domain && self.blocked_domains.contains_key(&reg_domain) {
                     debug!(
@@ -335,14 +336,14 @@ impl DnsBlocker {
                     return;
                 }
 
-                // If we're adding a registrable domain, remove any redundant subdomains
+                // If we're adding the registrable domain itself, remove any redundant subdomains
                 if domain_lower == reg_domain {
                     let mut to_remove = Vec::new();
                     for entry in self.blocked_domains.iter() {
                         let existing = entry.key();
-                        // Check if existing domain is a subdomain of the new domain
-                        if existing != &domain_lower
-                            && existing.ends_with(&format!(".{}", domain_lower))
+                        // Check if existing domain is a subdomain of the registrable domain
+                        if existing != &reg_domain
+                            && existing.ends_with(&format!(".{}", reg_domain))
                         {
                             // Verify it's actually a subdomain using PSL
                             if let Some(existing_registrable) =
@@ -360,14 +361,20 @@ impl DnsBlocker {
                         self.blocked_domains.remove(&redundant);
                         debug!(
                             "Removed redundant domain {} (covered by {})",
-                            redundant, domain
+                            redundant, reg_domain
                         );
                     }
                 }
-            }
+
+                // Use the original domain that was requested to be blocked
+                domain_lower.clone()
+            } else {
+                // No registrable domain found, use the original
+                domain_lower.clone()
+            };
 
             // Add the domain
-            self.blocked_domains.insert(domain_lower.clone(), source);
+            self.blocked_domains.insert(domain_to_add.clone(), source);
             self.stats
                 .total_blocked_domains
                 .fetch_add(1, Ordering::Relaxed);

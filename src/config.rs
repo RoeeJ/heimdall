@@ -98,6 +98,9 @@ pub struct DnsConfig {
 
     /// Blocklist update interval in seconds
     pub blocklist_update_interval: u64,
+
+    /// Whether to download PSL on startup (disable for tests)
+    pub blocking_download_psl: bool,
 }
 
 impl Default for DnsConfig {
@@ -161,6 +164,7 @@ impl Default for DnsConfig {
             allowlist: vec![],
             blocklist_auto_update: true, // Enable auto-updates by default
             blocklist_update_interval: 86400, // 24 hours
+            blocking_download_psl: true, // Enable PSL download by default
         }
     }
 }
@@ -384,6 +388,10 @@ impl DnsConfig {
 
         if let Ok(enable_wildcards) = std::env::var("HEIMDALL_BLOCKING_ENABLE_WILDCARDS") {
             config.blocking_enable_wildcards = parse_bool(&enable_wildcards, true);
+        }
+
+        if let Ok(download_psl) = std::env::var("HEIMDALL_BLOCKING_DOWNLOAD_PSL") {
+            config.blocking_download_psl = parse_bool(&download_psl, true);
         }
 
         if let Ok(blocklists) = std::env::var("HEIMDALL_BLOCKLISTS") {

@@ -415,8 +415,12 @@ impl DnsResolver {
             ));
 
             // Initialize the Public Suffix List for domain deduplication
-            if let Err(e) = blocker.initialize_psl().await {
-                warn!("Failed to initialize PSL: {}", e);
+            if config.blocking_download_psl {
+                if let Err(e) = blocker.initialize_psl().await {
+                    warn!("Failed to initialize PSL: {}", e);
+                }
+            } else {
+                debug!("PSL download disabled, using fallback list");
             }
 
             // Load allowlist
