@@ -7,6 +7,19 @@ use heimdall::dns::{
 use heimdall::resolver::DnsResolver;
 use std::fs;
 
+/// Create a test config that disables network operations
+fn test_config() -> DnsConfig {
+    DnsConfig {
+        blocking_download_psl: false, // Disable PSL download
+        blocklist_auto_update: false, // Disable blocklist auto-update
+        blocklists: vec![], // No blocklists to avoid file I/O
+        enable_caching: false, // Disable caching for predictable tests
+        upstream_timeout: std::time::Duration::from_secs(2), // Shorter timeout
+        max_retries: 0, // Don't retry
+        ..Default::default()
+    }
+}
+
 #[tokio::test]
 async fn test_authoritative_response() {
     // Create a temporary zone file
@@ -26,11 +39,9 @@ www IN  A   192.0.2.2
     fs::write(&zone_file_path, zone_content).unwrap();
 
     // Create config with authoritative enabled and zone file
-    let config = DnsConfig {
-        authoritative_enabled: true,
-        zone_files: vec![zone_file_path.to_string_lossy().to_string()],
-        ..Default::default()
-    };
+    let mut config = test_config();
+    config.authoritative_enabled = true;
+    config.zone_files = vec![zone_file_path.to_string_lossy().to_string()];
 
     // Create resolver
     let resolver = DnsResolver::new(config, None).await.unwrap();
@@ -78,11 +89,9 @@ $TTL 3600
 
     fs::write(&zone_file_path, zone_content).unwrap();
 
-    let config = DnsConfig {
-        authoritative_enabled: true,
-        zone_files: vec![zone_file_path.to_string_lossy().to_string()],
-        ..Default::default()
-    };
+    let mut config = test_config();
+    config.authoritative_enabled = true;
+    config.zone_files = vec![zone_file_path.to_string_lossy().to_string()];
 
     let resolver = DnsResolver::new(config, None).await.unwrap();
 
@@ -128,11 +137,9 @@ www IN  A   192.0.2.1
 
     fs::write(&zone_file_path, zone_content).unwrap();
 
-    let config = DnsConfig {
-        authoritative_enabled: true,
-        zone_files: vec![zone_file_path.to_string_lossy().to_string()],
-        ..Default::default()
-    };
+    let mut config = test_config();
+    config.authoritative_enabled = true;
+    config.zone_files = vec![zone_file_path.to_string_lossy().to_string()];
 
     let resolver = DnsResolver::new(config, None).await.unwrap();
 
@@ -175,11 +182,9 @@ sub IN  NS  ns2.sub.example.com.
 
     fs::write(&zone_file_path, zone_content).unwrap();
 
-    let config = DnsConfig {
-        authoritative_enabled: true,
-        zone_files: vec![zone_file_path.to_string_lossy().to_string()],
-        ..Default::default()
-    };
+    let mut config = test_config();
+    config.authoritative_enabled = true;
+    config.zone_files = vec![zone_file_path.to_string_lossy().to_string()];
 
     let resolver = DnsResolver::new(config, None).await.unwrap();
 
