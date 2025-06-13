@@ -3,9 +3,12 @@ use heimdall::dns::enums::{DNSResourceClass, DNSResourceType};
 use heimdall::dns::{DNSPacket, question::DNSQuestion};
 use heimdall::resolver::DnsResolver;
 
+mod common;
+use common::test_config;
+
 #[tokio::test]
 async fn test_dnssec_disabled_by_default() {
-    let config = DnsConfig::default();
+    let config = test_config();
     assert!(!config.dnssec_enabled);
     assert!(!config.dnssec_strict);
 
@@ -31,11 +34,9 @@ async fn test_dnssec_disabled_by_default() {
 
 #[tokio::test]
 async fn test_dnssec_enabled_configuration() {
-    let config = DnsConfig {
-        dnssec_enabled: true,
-        dnssec_strict: false,
-        ..Default::default()
-    };
+    let mut config = test_config();
+    config.dnssec_enabled = true;
+    config.dnssec_strict = false;
 
     let _resolver = DnsResolver::new(config, None).await.unwrap();
 

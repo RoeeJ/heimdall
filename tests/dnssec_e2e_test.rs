@@ -6,6 +6,9 @@ use heimdall::resolver::DnsResolver;
 use std::time::Duration;
 use tokio::time::timeout;
 
+mod common;
+use common::test_config;
+
 #[tokio::test]
 #[ignore] // This test requires network access
 async fn test_dnssec_validation_cloudflare() {
@@ -131,11 +134,9 @@ async fn test_dnssec_validation_failure() {
 
 #[tokio::test]
 async fn test_dnssec_do_flag_propagation() {
-    let config = DnsConfig {
-        dnssec_enabled: true,
-        dnssec_strict: false,
-        ..Default::default()
-    };
+    let mut config = test_config();
+    config.dnssec_enabled = true;
+    config.dnssec_strict = false;
 
     let resolver = DnsResolver::new(config, None).await.unwrap();
 

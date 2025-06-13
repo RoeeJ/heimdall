@@ -10,6 +10,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 #[tokio::test]
+#[ignore] // This test requires network access
 async fn test_exponential_backoff_for_failed_servers() {
     // Test that failed servers get exponential backoff and eventually recover
     let config = DnsConfig {
@@ -120,6 +121,7 @@ async fn test_exponential_backoff_for_failed_servers() {
 }
 
 #[tokio::test]
+#[ignore] // This test requires network access
 async fn test_successful_failover_to_backup_servers() {
     // Test multiple backup servers and proper failover ordering
     let config = DnsConfig {
@@ -261,6 +263,7 @@ async fn test_successful_failover_to_backup_servers() {
 }
 
 #[tokio::test]
+#[ignore] // This test requires network access
 async fn test_health_recovery_after_reset() {
     // Test that servers can recover from unhealthy state
     let config = DnsConfig {

@@ -1,6 +1,5 @@
 #![allow(clippy::field_reassign_with_default)]
 
-use heimdall::config::DnsConfig;
 use heimdall::dns::{
     DNSPacket,
     enums::{DNSResourceClass, DNSResourceType, DnsOpcode, ResponseCode},
@@ -11,18 +10,18 @@ use heimdall::resolver::DnsResolver;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
+mod common;
+use common::test_config;
+
 /// Test REFUSED response for zone transfer queries
 #[tokio::test]
 async fn test_refused_response_for_zone_transfers() {
-    let config = DnsConfig {
-        bind_addr: SocketAddr::from_str("127.0.0.1:5353").unwrap(),
-        upstream_servers: vec![
-            SocketAddr::from_str("8.8.8.8:53").unwrap(),
-            SocketAddr::from_str("8.8.4.4:53").unwrap(),
-        ],
-        enable_caching: false,
-        ..Default::default()
-    };
+    let mut config = test_config();
+    config.bind_addr = SocketAddr::from_str("127.0.0.1:5353").unwrap();
+    config.upstream_servers = vec![
+        SocketAddr::from_str("8.8.8.8:53").unwrap(),
+        SocketAddr::from_str("8.8.4.4:53").unwrap(),
+    ];
 
     let _resolver = DnsResolver::new(config, None).await.unwrap();
 
@@ -55,12 +54,9 @@ async fn test_refused_response_for_zone_transfers() {
 /// Test REFUSED response for ANY queries (amplification attack prevention)
 #[tokio::test]
 async fn test_refused_response_for_any_queries() {
-    let config = DnsConfig {
-        bind_addr: SocketAddr::from_str("127.0.0.1:5354").unwrap(),
-        upstream_servers: vec![SocketAddr::from_str("1.1.1.1:53").unwrap()],
-        enable_caching: false,
-        ..Default::default()
-    };
+    let mut config = test_config();
+    config.bind_addr = SocketAddr::from_str("127.0.0.1:5354").unwrap();
+    config.upstream_servers = vec![SocketAddr::from_str("1.1.1.1:53").unwrap()];
 
     let _resolver = DnsResolver::new(config, None).await.unwrap();
 
@@ -88,12 +84,9 @@ async fn test_refused_response_for_any_queries() {
 /// Test NOTIMPL response for unsupported opcodes
 #[tokio::test]
 async fn test_notimpl_response_for_unsupported_opcodes() {
-    let config = DnsConfig {
-        bind_addr: SocketAddr::from_str("127.0.0.1:5355").unwrap(),
-        upstream_servers: vec![SocketAddr::from_str("8.8.8.8:53").unwrap()],
-        enable_caching: false,
-        ..Default::default()
-    };
+    let mut config = test_config();
+    config.bind_addr = SocketAddr::from_str("127.0.0.1:5355").unwrap();
+    config.upstream_servers = vec![SocketAddr::from_str("8.8.8.8:53").unwrap()];
 
     let _resolver = DnsResolver::new(config, None).await.unwrap();
 
@@ -124,12 +117,9 @@ async fn test_notimpl_response_for_unsupported_opcodes() {
 /// Test FORMERR response for malformed queries
 #[tokio::test]
 async fn test_formerr_response_for_malformed_queries() {
-    let config = DnsConfig {
-        bind_addr: SocketAddr::from_str("127.0.0.1:5356").unwrap(),
-        upstream_servers: vec![SocketAddr::from_str("1.1.1.1:53").unwrap()],
-        enable_caching: false,
-        ..Default::default()
-    };
+    let mut config = test_config();
+    config.bind_addr = SocketAddr::from_str("127.0.0.1:5356").unwrap();
+    config.upstream_servers = vec![SocketAddr::from_str("1.1.1.1:53").unwrap()];
 
     let _resolver = DnsResolver::new(config, None).await.unwrap();
 
@@ -152,12 +142,9 @@ async fn test_formerr_response_for_malformed_queries() {
 /// Test SERVFAIL response for resolution failures
 #[tokio::test]
 async fn test_servfail_response() {
-    let config = DnsConfig {
-        bind_addr: SocketAddr::from_str("127.0.0.1:5357").unwrap(),
-        upstream_servers: vec![SocketAddr::from_str("8.8.8.8:53").unwrap()],
-        enable_caching: false,
-        ..Default::default()
-    };
+    let mut config = test_config();
+    config.bind_addr = SocketAddr::from_str("127.0.0.1:5357").unwrap();
+    config.upstream_servers = vec![SocketAddr::from_str("8.8.8.8:53").unwrap()];
 
     let _resolver = DnsResolver::new(config, None).await.unwrap();
 
@@ -245,12 +232,9 @@ fn test_extended_response_codes() {
 /// Test that IXFR queries are also refused
 #[tokio::test]
 async fn test_refused_response_for_ixfr() {
-    let config = DnsConfig {
-        bind_addr: SocketAddr::from_str("127.0.0.1:5358").unwrap(),
-        upstream_servers: vec![SocketAddr::from_str("8.8.8.8:53").unwrap()],
-        enable_caching: false,
-        ..Default::default()
-    };
+    let mut config = test_config();
+    config.bind_addr = SocketAddr::from_str("127.0.0.1:5358").unwrap();
+    config.upstream_servers = vec![SocketAddr::from_str("8.8.8.8:53").unwrap()];
 
     let _resolver = DnsResolver::new(config, None).await.unwrap();
 
@@ -293,12 +277,9 @@ fn test_invalid_opcode_handling() {
 /// Test that normal queries still work properly
 #[tokio::test]
 async fn test_normal_query_not_refused() {
-    let config = DnsConfig {
-        bind_addr: SocketAddr::from_str("127.0.0.1:5359").unwrap(),
-        upstream_servers: vec![SocketAddr::from_str("8.8.8.8:53").unwrap()],
-        enable_caching: false,
-        ..Default::default()
-    };
+    let mut config = test_config();
+    config.bind_addr = SocketAddr::from_str("127.0.0.1:5359").unwrap();
+    config.upstream_servers = vec![SocketAddr::from_str("8.8.8.8:53").unwrap()];
 
     let _resolver = DnsResolver::new(config, None).await.unwrap();
 
