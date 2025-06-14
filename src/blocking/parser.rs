@@ -176,22 +176,37 @@ impl BlocklistParser {
             return false;
         }
 
-        // For bulk loading, do minimal validation
-        // Just ensure it has valid characters and at least one dot
-        let mut has_dot = false;
-        for ch in domain.chars() {
-            if ch == '.' {
-                has_dot = true;
-            } else if ch == '*' {
-                // Allow wildcards
-                continue;
-            } else if !ch.is_alphanumeric() && ch != '-' && ch != '_' {
+        // Split into labels for validation
+        let parts: Vec<&str> = domain.split('.').collect();
+        if parts.is_empty() {
+            return false;
+        }
+
+        // Validate each label
+        for part in parts {
+            if part.is_empty() || part.len() > 63 {
                 return false;
+            }
+
+            // Allow wildcards
+            if part == "*" {
+                continue;
+            }
+
+            // Can't start or end with hyphen
+            if part.starts_with('-') || part.ends_with('-') {
+                return false;
+            }
+
+            // Check valid characters
+            for ch in part.chars() {
+                if !ch.is_alphanumeric() && ch != '-' && ch != '_' {
+                    return false;
+                }
             }
         }
 
-        // Must have at least one dot for a valid domain (except for TLDs)
-        has_dot || domain.chars().all(|c| c.is_alphabetic())
+        true
     }
 }
 
