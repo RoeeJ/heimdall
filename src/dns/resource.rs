@@ -624,36 +624,25 @@ impl DNSResource {
                 }
             }
             DNSResourceType::NS | DNSResourceType::CNAME | DNSResourceType::PTR => {
-                // These contain just a domain name
-                if self.rdata.len() >= 2 && self.rdata[0] & 0xC0 == 0xC0 {
-                    // This looks like a compression pointer
-                    let pointer_val = ((self.rdata[0] as u16 & 0x3F) << 8) | (self.rdata[1] as u16);
+                // These contain just a domain name, potentially with compression pointers
+                // Use the proper label parsing that handles compression
+                let mut reader = BitReader::<_, bitstream_io::BigEndian>::new(&self.rdata[..]);
+                let mut temp_component = Self::default();
 
-                    if (pointer_val as usize) < packet_buf.len() {
-                        let mut reader = BitReader::<_, bitstream_io::BigEndian>::new(
-                            &packet_buf[pointer_val as usize..],
-                        );
-                        let mut temp_component = Self::default();
-
-                        match temp_component.read_labels_with_buffer(&mut reader, Some(packet_buf))
-                        {
-                            Ok(labels) => {
-                                let domain = labels
-                                    .iter()
-                                    .filter(|l| !l.is_empty())
-                                    .cloned()
-                                    .collect::<Vec<_>>()
-                                    .join(".");
-                                Some(domain)
-                            }
-                            Err(_) => Some("[parse_error]".to_string()),
-                        }
-                    } else {
-                        Some("[invalid_pointer]".to_string())
+                match temp_component.read_labels_with_buffer(&mut reader, Some(packet_buf)) {
+                    Ok(labels) => {
+                        let domain = labels
+                            .iter()
+                            .filter(|l| !l.is_empty())
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(".");
+                        Some(domain)
                     }
-                } else {
-                    // Regular domain name parsing
-                    self.parse_simple_domain(&self.rdata).ok()
+                    Err(_) => {
+                        // Fall back to simple parsing if compression parsing fails
+                        self.parse_simple_domain(&self.rdata).ok()
+                    }
                 }
             }
             DNSResourceType::TXT | DNSResourceType::SPF => {

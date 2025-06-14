@@ -6,6 +6,9 @@ pub mod question;
 pub mod resource;
 pub mod simd;
 
+#[cfg(test)]
+pub mod compression_tests;
+
 use bitstream_io::{BigEndian, BitReader, BitWrite, BitWriter};
 use common::PacketComponent;
 use edns::EdnsOpt;
