@@ -165,45 +165,33 @@ impl BlocklistParser {
         None
     }
 
-    /// Check if a domain is valid
+    /// Check if a domain is valid (optimized for bulk loading)
     fn is_valid_domain(&self, domain: &str) -> bool {
         if domain.is_empty() || domain.len() > 253 {
             return false;
         }
 
-        // Check for valid characters and structure
-        let parts: Vec<&str> = domain.split('.').collect();
-        if parts.is_empty() {
+        // Quick check for common invalid patterns
+        if domain.starts_with('.') || domain.ends_with('.') || domain.contains("..") {
             return false;
         }
 
-        for part in parts {
-            if part.is_empty() || part.len() > 63 {
-                return false;
-            }
-
-            // Allow wildcards at the start
-            if part == "*" {
+        // For bulk loading, do minimal validation
+        // Just ensure it has valid characters and at least one dot
+        let mut has_dot = false;
+        for ch in domain.chars() {
+            if ch == '.' {
+                has_dot = true;
+            } else if ch == '*' {
+                // Allow wildcards
                 continue;
-            }
-
-            // Check for valid label characters
-            for (i, ch) in part.chars().enumerate() {
-                if i == 0 || i == part.len() - 1 {
-                    // First and last char must be alphanumeric
-                    if !ch.is_alphanumeric() {
-                        return false;
-                    }
-                } else {
-                    // Middle chars can be alphanumeric or hyphen
-                    if !ch.is_alphanumeric() && ch != '-' {
-                        return false;
-                    }
-                }
+            } else if !ch.is_alphanumeric() && ch != '-' && ch != '_' {
+                return false;
             }
         }
 
-        true
+        // Must have at least one dot for a valid domain (except for TLDs)
+        has_dot || domain.chars().all(|c| c.is_alphabetic())
     }
 }
 

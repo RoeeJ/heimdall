@@ -271,6 +271,19 @@ impl DnsBlocker {
         false
     }
 
+    /// Add domain to blocklist without deduplication (for bulk loading)
+    fn add_to_blocklist_fast(&self, domain: &str, source: BlocklistSource) {
+        if let Some(stripped) = domain.strip_prefix("*.") {
+            if self.enable_wildcards {
+                let pattern = stripped.to_lowercase();
+                self.blocked_patterns.insert(pattern, source);
+            }
+        } else {
+            let domain_lower = domain.to_lowercase();
+            self.blocked_domains.insert(domain_lower, source);
+        }
+    }
+
     /// Load blocklist from file
     pub fn load_blocklist(
         &self,
@@ -289,14 +302,29 @@ impl DnsBlocker {
         let parser = BlocklistParser::new(format);
 
         let mut count = 0;
+        let mut line_count = 0;
+        let start_time = std::time::Instant::now();
 
         for line in reader.lines() {
             let line = line.map_err(|e| DnsError::Io(format!("Failed to read line: {}", e)))?;
+            line_count += 1;
+
+            // Log progress every 10000 lines
+            if line_count % 10000 == 0 {
+                debug!(
+                    "Processing blocklist {}: {} lines processed, {} domains added",
+                    list_name, line_count, count
+                );
+            }
 
             if let Some(domain) = parser.parse_line(&line) {
-                // Use the add_to_blocklist method which handles deduplication
+                // For bulk loading, skip expensive deduplication
+                let source = BlocklistSource {
+                    list_name: list_name.to_string(),
+                    added: Instant::now(),
+                };
                 let before_count = self.blocked_domains.len() + self.blocked_patterns.len();
-                self.add_to_blocklist(&domain, list_name);
+                self.add_to_blocklist_fast(&domain, source);
                 let after_count = self.blocked_domains.len() + self.blocked_patterns.len();
 
                 // Only increment count if a new entry was actually added
@@ -305,6 +333,14 @@ impl DnsBlocker {
                 }
             }
         }
+
+        let elapsed = start_time.elapsed();
+        info!(
+            "Processed {} lines in {:.2}s for blocklist {}",
+            line_count,
+            elapsed.as_secs_f32(),
+            list_name
+        );
 
         self.stats.total_blocked_domains.store(
             (self.blocked_domains.len() + self.blocked_patterns.len()) as u64,
@@ -315,7 +351,15 @@ impl DnsBlocker {
             *last_update = Some(Instant::now());
         }
 
-        info!("Loaded {} domains from blocklist {}", count, list_name);
+        // After bulk loading, optionally deduplicate
+        if count > 1000 {
+            info!(
+                "Loaded {} domains from blocklist {}. Skipping deduplication for performance.",
+                count, list_name
+            );
+        } else {
+            info!("Loaded {} domains from blocklist {}", count, list_name);
+        }
         Ok(count)
     }
 
