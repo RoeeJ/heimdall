@@ -127,8 +127,8 @@ fn test_dns_error_from_io_error() {
     let dns_error: DnsError = io_error.into();
 
     match dns_error {
-        DnsError::Io(msg) => assert!(msg.contains("connection refused")),
-        _ => panic!("Expected DnsError::Io"),
+        DnsError::IoError(err) => assert!(err.to_string().contains("connection refused")),
+        _ => panic!("Expected DnsError::IoError"),
     }
 }
 
