@@ -107,6 +107,25 @@ impl ZoneStore {
         }
     }
 
+    /// Get a mutable reference to a zone (for dynamic updates)
+    pub fn get_zone_mut(
+        &self,
+        origin: &str,
+    ) -> Option<parking_lot::MappedRwLockWriteGuard<'_, Zone>> {
+        let zones = self.zones.write();
+        let origin_lower = origin.to_lowercase();
+
+        // Check if zone exists
+        if zones.contains_key(&origin_lower) {
+            // Return a write guard that allows mutable access
+            Some(parking_lot::RwLockWriteGuard::map(zones, |zones| {
+                zones.get_mut(&origin_lower).unwrap()
+            }))
+        } else {
+            None
+        }
+    }
+
     /// Get all zone origins
     pub fn list_zones(&self) -> Vec<String> {
         let zones = self.zones.read();

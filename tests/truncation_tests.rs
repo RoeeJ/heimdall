@@ -43,6 +43,7 @@ async fn test_create_truncated_response() {
         blocklist_auto_update: false,
         blocklist_update_interval: 86400,
         blocking_download_psl: false,
+        dynamic_updates_enabled: false,
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -122,6 +123,7 @@ async fn test_udp_size_limits_basic() {
         blocklist_auto_update: false,
         blocklist_update_interval: 86400,
         blocking_download_psl: false,
+        dynamic_updates_enabled: false,
     };
 
     let _resolver = DnsResolver::new(config, None)
@@ -190,6 +192,7 @@ async fn test_truncated_response_serialization() {
         blocklist_auto_update: false,
         blocklist_update_interval: 86400,
         blocking_download_psl: false,
+        dynamic_updates_enabled: false,
     };
 
     let resolver = DnsResolver::new(config, None)

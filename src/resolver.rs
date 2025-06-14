@@ -286,9 +286,11 @@ pub struct DnsResolver {
     /// DNSSEC validator (optional)
     dnssec_validator: Option<Arc<DnsSecValidator>>,
     /// Zone store for authoritative DNS serving
-    zone_store: Option<Arc<ZoneStore>>,
+    pub zone_store: Option<Arc<ZoneStore>>,
     /// DNS blocker (optional)
     pub blocker: Option<Arc<DnsBlocker>>,
+    /// Dynamic update processor (optional)
+    pub update_processor: Option<Arc<crate::dynamic_update::DynamicUpdateProcessor>>,
 }
 
 impl DnsResolver {
@@ -521,6 +523,36 @@ impl DnsResolver {
             None
         };
 
+        // Initialize update processor if zone store is available
+        let update_processor = if let Some(ref zs) = zone_store {
+            if config.dynamic_updates_enabled {
+                info!("Dynamic DNS updates enabled");
+
+                // Create TSIG keys from config
+                let tsig_keys = Vec::new(); // TODO: Load from config
+
+                // Create update policy
+                let mut update_policy = crate::dynamic_update::UpdatePolicy::new();
+
+                // For now, require TSIG for all updates
+                update_policy
+                    .set_default_policy(crate::dynamic_update::UpdatePermission::RequireTsig);
+
+                let processor = crate::dynamic_update::DynamicUpdateProcessor::new(
+                    zs.clone(),
+                    tsig_keys,
+                    update_policy,
+                );
+
+                Some(Arc::new(processor))
+            } else {
+                info!("Dynamic DNS updates disabled");
+                None
+            }
+        } else {
+            None
+        };
+
         Ok(Self {
             config,
             client_socket,
@@ -534,6 +566,7 @@ impl DnsResolver {
             dnssec_validator,
             zone_store,
             blocker,
+            update_processor,
         })
     }
 
@@ -1603,6 +1636,44 @@ impl DnsResolver {
         response.header.qr = true; // This is a response
         response.header.ra = true; // Recursion available
         response.header.rcode = ResponseCode::FormatError.to_u8(); // FORMERR
+        response.header.ancount = 0; // No answers
+        response.header.nscount = 0; // No authority records
+        response.header.arcount = 0; // No additional records
+
+        // Clear answer sections
+        response.answers.clear();
+        response.authorities.clear();
+        response.resources.clear();
+
+        response
+    }
+
+    /// Create a NOTAUTH response for non-authoritative zones
+    pub fn create_notauth_response(&self, query: &DNSPacket) -> DNSPacket {
+        let mut response = query.clone();
+        response.header.qr = true; // This is a response
+        response.header.aa = false; // Not authoritative
+        response.header.ra = true; // Recursion available
+        response.header.rcode = ResponseCode::NotAuth.to_u8(); // NOTAUTH
+        response.header.ancount = 0; // No answers
+        response.header.nscount = 0; // No authority records
+        response.header.arcount = 0; // No additional records
+
+        // Clear answer sections
+        response.answers.clear();
+        response.authorities.clear();
+        response.resources.clear();
+
+        response
+    }
+
+    /// Create a NXRRSET response for failed prerequisites
+    pub fn create_nxrrset_response(&self, query: &DNSPacket) -> DNSPacket {
+        let mut response = query.clone();
+        response.header.qr = true; // This is a response
+        response.header.aa = true; // We are authoritative
+        response.header.ra = true; // Recursion available
+        response.header.rcode = ResponseCode::NXRRSet.to_u8(); // NXRRSET
         response.header.ancount = 0; // No answers
         response.header.nscount = 0; // No authority records
         response.header.arcount = 0; // No additional records
