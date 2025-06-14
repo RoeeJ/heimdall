@@ -11,38 +11,29 @@ pub struct OptimizedDnsCache {
     /// Lock-free LRU cache
     cache: LockFreeLruCache<CacheKey, CacheEntry>,
     /// Cache configuration
-    #[allow(dead_code)]
-    max_size: usize,
     negative_ttl: u32,
     /// Statistics
     stats: Arc<CacheStats>,
     /// String interner for domain deduplication
     string_interner: Arc<StringInterner>,
-    /// Optional persistence file path
-    #[allow(dead_code)]
-    cache_file_path: Option<String>,
 }
 
 impl OptimizedDnsCache {
     pub fn new(max_size: usize, negative_ttl: u32) -> Self {
         Self {
             cache: LockFreeLruCache::new(max_size),
-            max_size,
             negative_ttl,
             stats: Arc::new(CacheStats::new()),
             string_interner: Arc::new(StringInterner::new(10000)),
-            cache_file_path: None,
         }
     }
 
-    pub fn with_persistence(max_size: usize, negative_ttl: u32, cache_file_path: String) -> Self {
+    pub fn with_persistence(max_size: usize, negative_ttl: u32, _cache_file_path: String) -> Self {
         Self {
             cache: LockFreeLruCache::new(max_size),
-            max_size,
             negative_ttl,
             stats: Arc::new(CacheStats::new()),
             string_interner: Arc::new(StringInterner::new(10000)),
-            cache_file_path: Some(cache_file_path),
         }
     }
 

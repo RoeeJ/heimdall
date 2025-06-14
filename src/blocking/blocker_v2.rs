@@ -20,8 +20,6 @@ pub struct DnsBlockerV2 {
     /// The compressed trie for allowlist lookups
     allowlist_trie: Arc<CompressedTrie>,
     /// Shared arena for domain storage
-    #[allow(dead_code)]
-    arena: Arc<SharedArena>,
     /// Blocking mode
     mode: BlockingMode,
     /// Statistics
@@ -53,12 +51,11 @@ impl DnsBlockerV2 {
         // Create empty tries for now
         let empty_arena = SharedArena::from_buffer(Vec::new());
         let blocklist_trie = Arc::new(CompressedTrie::new(empty_arena.clone()));
-        let allowlist_trie = Arc::new(CompressedTrie::new(empty_arena.clone()));
+        let allowlist_trie = Arc::new(CompressedTrie::new(empty_arena));
 
         Ok(Self {
             blocklist_trie,
             allowlist_trie,
-            arena: Arc::new(empty_arena),
             mode,
             stats: Arc::new(BlockingStats::new()),
             psl,
@@ -111,10 +108,10 @@ impl DnsBlockerV2 {
         }
 
         // Build the compressed trie
-        let (trie, arena, node_count) = builder.build()?;
+        let (trie, _arena, node_count) = builder.build()?;
 
         // Update the blocker with the new trie
-        self.update_blocklist(trie, arena);
+        self.update_blocklist(trie);
 
         let elapsed = start.elapsed();
         info!(
@@ -128,7 +125,7 @@ impl DnsBlockerV2 {
     }
 
     /// Update the blocklist trie atomically
-    fn update_blocklist(&self, new_trie: CompressedTrie, _new_arena: SharedArena) {
+    fn update_blocklist(&self, new_trie: CompressedTrie) {
         // This would typically use Arc::swap or similar for lock-free updates
         // For now, we'll use a simple Arc replacement
         // In production, consider using ArcSwap or crossbeam-epoch

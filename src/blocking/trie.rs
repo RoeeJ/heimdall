@@ -324,15 +324,6 @@ impl CompressedTrie {
         hash
     }
 
-    /// Hash with salt for collision handling
-    #[inline]
-    #[allow(dead_code)]
-    fn hash_label_with_salt(&self, label: &[u8], salt: u32) -> u32 {
-        let mut hash = self.hash_label(label);
-        hash ^= salt;
-        hash.wrapping_mul(16777619)
-    }
-
     /// Check if arena label matches the given label
     #[inline]
     fn labels_match(&self, arena_ref: (u32, u16), label: &[u8]) -> bool {
@@ -341,28 +332,6 @@ impl CompressedTrie {
         } else {
             false
         }
-    }
-
-    /// Find label in arena
-    /// Since the arena is immutable after construction, the label must already exist
-    #[allow(dead_code)]
-    fn find_or_add_to_arena(&self, label: &[u8]) -> (u32, u16) {
-        // The label should already exist in the arena since we're inserting
-        // a full domain that was previously added to the arena
-        // We need to search for this specific label within the domain
-
-        // For now, we'll store each label separately in the nodes
-        // In a production implementation, this would be optimized
-        // to reuse existing label storage
-
-        // This is a limitation of the current design - we can't add new strings
-        // to a SharedArena. The builder should pre-process all labels.
-        // For now, we'll store a reference that the node can use
-        // to find the label within the original domain bytes.
-
-        // Return a special marker that indicates the label should be
-        // stored directly in the node (not implemented in this version)
-        (u32::MAX, label.len() as u16)
     }
 }
 
