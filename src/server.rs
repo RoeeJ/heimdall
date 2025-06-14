@@ -190,10 +190,10 @@ async fn handle_dns_query_with_pool(
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     // Get buffer from pool
     let mut pooled_buffer = buffer_pool.get();
-    
+
     // Process query and get response directly serialized into pooled buffer
     handle_dns_query_optimized(buf, resolver, metrics, protocol, &mut pooled_buffer).await?;
-    
+
     // Return the buffer content as a Vec
     Ok(pooled_buffer.to_vec())
 }
@@ -331,20 +331,9 @@ async fn handle_dns_query_optimized(
     Ok(())
 }
 
-async fn handle_dns_query(
-    buf: &[u8],
-    resolver: &DnsResolver,
-    metrics: &DnsMetrics,
-    protocol: &str,
-) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    // Create a temporary buffer for optimization
-    let mut buffer = Vec::with_capacity(4096);
-    handle_dns_query_optimized(buf, resolver, metrics, protocol, &mut buffer).await?;
-    Ok(buffer)
-}
-
 // Legacy implementation kept for reference
-async fn handle_dns_query_legacy(
+#[allow(dead_code)]
+async fn handle_dns_query(
     buf: &[u8],
     resolver: &DnsResolver,
     metrics: &DnsMetrics,
