@@ -242,6 +242,11 @@ impl Zone {
         self.records.keys().collect()
     }
 
+    /// Iterate over all records in the zone
+    pub fn records(&self) -> impl Iterator<Item = &ZoneRecord> {
+        self.records.values().flat_map(|records| records.iter())
+    }
+
     /// Update zone serial number
     pub fn update_serial(&mut self) {
         self.serial = Self::generate_serial();
