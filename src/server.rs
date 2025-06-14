@@ -227,7 +227,7 @@ async fn handle_dns_query_optimized(
     }
 
     // Try fast path for simple queries
-    let packet = match DNSPacket::create_response_fast(buf, &packet_ref) {
+    let packet = match DNSPacket::parse_query_fast(buf, &packet_ref) {
         Ok(packet) => packet,
         Err(_) => {
             // Fallback to full parsing
