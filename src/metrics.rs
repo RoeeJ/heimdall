@@ -51,6 +51,23 @@ pub struct DnsMetrics {
     pub blocked_queries: IntCounter,
     blocked_domains_total: IntGauge,
     allowlist_size: IntGauge,
+
+    // DNS-over-TLS metrics
+    pub dot_connections_total: IntCounter,
+    pub dot_active_connections: IntGauge,
+    pub dot_queries_total: IntCounter,
+    pub dot_query_duration: HistogramVec,
+    pub dot_errors_total: IntCounter,
+
+    // DNS-over-HTTPS metrics
+    pub doh_queries_total: IntCounter,
+    pub doh_json_queries_total: IntCounter,
+    pub doh_get_requests: IntCounter,
+    pub doh_post_requests: IntCounter,
+    pub doh_successful_responses: IntCounter,
+    pub doh_client_errors: IntCounter,
+    pub doh_server_errors: IntCounter,
+    pub doh_request_duration: HistogramVec,
 }
 
 impl DnsMetrics {
@@ -244,6 +261,79 @@ impl DnsMetrics {
             "Number of domains in allowlist"
         ))?;
 
+        // DNS-over-TLS metrics
+        let dot_connections_total = IntCounter::with_opts(opts!(
+            "heimdall_dot_connections_total",
+            "Total number of DNS-over-TLS connections established"
+        ))?;
+
+        let dot_active_connections = IntGauge::with_opts(opts!(
+            "heimdall_dot_active_connections",
+            "Current number of active DNS-over-TLS connections"
+        ))?;
+
+        let dot_queries_total = IntCounter::with_opts(opts!(
+            "heimdall_dot_queries_total",
+            "Total number of DNS queries processed over TLS"
+        ))?;
+
+        let dot_query_duration = HistogramVec::new(
+            histogram_opts!(
+                "heimdall_dot_query_duration_seconds",
+                "Histogram of DNS-over-TLS query processing duration in seconds"
+            ),
+            &["status"],
+        )?;
+
+        let dot_errors_total = IntCounter::with_opts(opts!(
+            "heimdall_dot_errors_total",
+            "Total number of DNS-over-TLS errors"
+        ))?;
+
+        // DNS-over-HTTPS metrics
+        let doh_queries_total = IntCounter::with_opts(opts!(
+            "heimdall_doh_queries_total",
+            "Total number of DNS queries processed over HTTPS"
+        ))?;
+
+        let doh_json_queries_total = IntCounter::with_opts(opts!(
+            "heimdall_doh_json_queries_total",
+            "Total number of JSON DNS queries processed over HTTPS"
+        ))?;
+
+        let doh_get_requests = IntCounter::with_opts(opts!(
+            "heimdall_doh_get_requests_total",
+            "Total number of HTTP GET requests to DoH endpoints"
+        ))?;
+
+        let doh_post_requests = IntCounter::with_opts(opts!(
+            "heimdall_doh_post_requests_total",
+            "Total number of HTTP POST requests to DoH endpoints"
+        ))?;
+
+        let doh_successful_responses = IntCounter::with_opts(opts!(
+            "heimdall_doh_successful_responses_total",
+            "Total number of successful DoH responses"
+        ))?;
+
+        let doh_client_errors = IntCounter::with_opts(opts!(
+            "heimdall_doh_client_errors_total",
+            "Total number of DoH client errors (4xx)"
+        ))?;
+
+        let doh_server_errors = IntCounter::with_opts(opts!(
+            "heimdall_doh_server_errors_total",
+            "Total number of DoH server errors (5xx)"
+        ))?;
+
+        let doh_request_duration = HistogramVec::new(
+            histogram_opts!(
+                "heimdall_doh_request_duration_seconds",
+                "Histogram of DNS-over-HTTPS request processing duration in seconds"
+            ),
+            &["status_code"],
+        )?;
+
         // Register all metrics
         registry.register(Box::new(cache_hits.clone()))?;
         registry.register(Box::new(cache_misses.clone()))?;
@@ -273,6 +363,19 @@ impl DnsMetrics {
         registry.register(Box::new(blocked_queries.clone()))?;
         registry.register(Box::new(blocked_domains_total.clone()))?;
         registry.register(Box::new(allowlist_size.clone()))?;
+        registry.register(Box::new(dot_connections_total.clone()))?;
+        registry.register(Box::new(dot_active_connections.clone()))?;
+        registry.register(Box::new(dot_queries_total.clone()))?;
+        registry.register(Box::new(dot_query_duration.clone()))?;
+        registry.register(Box::new(dot_errors_total.clone()))?;
+        registry.register(Box::new(doh_queries_total.clone()))?;
+        registry.register(Box::new(doh_json_queries_total.clone()))?;
+        registry.register(Box::new(doh_get_requests.clone()))?;
+        registry.register(Box::new(doh_post_requests.clone()))?;
+        registry.register(Box::new(doh_successful_responses.clone()))?;
+        registry.register(Box::new(doh_client_errors.clone()))?;
+        registry.register(Box::new(doh_server_errors.clone()))?;
+        registry.register(Box::new(doh_request_duration.clone()))?;
 
         Ok(Self {
             registry,
@@ -304,6 +407,19 @@ impl DnsMetrics {
             blocked_queries,
             blocked_domains_total,
             allowlist_size,
+            dot_connections_total,
+            dot_active_connections,
+            dot_queries_total,
+            dot_query_duration,
+            dot_errors_total,
+            doh_queries_total,
+            doh_json_queries_total,
+            doh_get_requests,
+            doh_post_requests,
+            doh_successful_responses,
+            doh_client_errors,
+            doh_server_errors,
+            doh_request_duration,
         })
     }
 

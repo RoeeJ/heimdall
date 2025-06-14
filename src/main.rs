@@ -13,6 +13,7 @@ use heimdall::{
     rate_limiter::DnsRateLimiter,
     resolver::DnsResolver,
     server::{run_tcp_server, run_udp_server},
+    transport::TransportManager,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -226,6 +227,29 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
         None
     };
 
+    // Start DNS-over-TLS server if enabled
+    let dot_task = if config.transport_config.enable_dot {
+        info!(
+            "Starting DNS-over-TLS server on {:?}",
+            config.transport_config.dot_bind_addr
+        );
+        let transport_manager = TransportManager::new(config.transport_config.clone());
+        let resolver_clone = resolver.clone();
+        let metrics_clone = metrics.clone();
+
+        Some(tokio::spawn(async move {
+            if let Err(e) = transport_manager
+                .start_servers(resolver_clone, Some(metrics_clone))
+                .await
+            {
+                error!("DoT transport manager error: {}", e);
+            }
+        }))
+    } else {
+        info!("DNS-over-TLS server disabled");
+        None
+    };
+
     // Start UDP and TCP servers with graceful shutdown support
     let udp_shutdown_rx = graceful_shutdown.subscribe();
     let tcp_shutdown_rx = graceful_shutdown.subscribe();
@@ -302,6 +326,16 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
             }
         } => {
             error!("Configuration change handler exited: {:?}", result);
+        }
+        result = async {
+            if let Some(task) = dot_task {
+                task.await
+            } else {
+                // If no DoT task, wait forever
+                std::future::pending::<Result<(), tokio::task::JoinError>>().await
+            }
+        } => {
+            error!("DNS-over-TLS server exited: {:?}", result);
         }
         _ = shutdown_signal => {
             info!("Heimdall DNS server shutting down gracefully");

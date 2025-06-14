@@ -1,6 +1,7 @@
 use crate::cache::RedisConfig;
 use crate::error::ConfigError;
 use crate::rate_limiter::RateLimitConfig;
+use crate::transport::{TlsConfig, TransportConfig};
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -104,6 +105,9 @@ pub struct DnsConfig {
 
     /// Whether to download PSL on startup (disable for tests)
     pub blocking_download_psl: bool,
+
+    /// Transport layer configuration for DNS-over-TLS and other protocols
+    pub transport_config: TransportConfig,
 }
 
 impl Default for DnsConfig {
@@ -182,6 +186,7 @@ impl Default for DnsConfig {
             blocklist_auto_update,
             blocklist_update_interval: 86400, // 24 hours
             blocking_download_psl,
+            transport_config: TransportConfig::default(),
         }
     }
 }
@@ -444,6 +449,111 @@ impl DnsConfig {
             })?;
         }
 
+        // DNS-over-TLS configuration
+        if let Ok(enable_dot) = std::env::var("HEIMDALL_ENABLE_DOT") {
+            config.transport_config.enable_dot = parse_bool(&enable_dot, false);
+        }
+
+        if let Ok(dot_bind_addr) = std::env::var("HEIMDALL_DOT_BIND_ADDR") {
+            if dot_bind_addr.to_lowercase() == "disabled" || dot_bind_addr.is_empty() {
+                config.transport_config.dot_bind_addr = None;
+            } else {
+                config.transport_config.dot_bind_addr =
+                    Some(dot_bind_addr.parse().map_err(|_| {
+                        ConfigError::ParseError(format!(
+                            "Invalid DoT bind address: {}",
+                            dot_bind_addr
+                        ))
+                    })?);
+            }
+        }
+
+        if let Ok(cert_path) = std::env::var("HEIMDALL_TLS_CERT_PATH") {
+            let key_path = std::env::var("HEIMDALL_TLS_KEY_PATH").map_err(|_| {
+                ConfigError::ParseError("TLS cert path specified but key path missing".to_string())
+            })?;
+
+            let mut tls_config = TlsConfig::new(cert_path, key_path);
+
+            if let Ok(server_name) = std::env::var("HEIMDALL_TLS_SERVER_NAME") {
+                tls_config = tls_config.with_server_name(server_name);
+            }
+
+            if let Ok(require_client_cert) = std::env::var("HEIMDALL_TLS_REQUIRE_CLIENT_CERT") {
+                if parse_bool(&require_client_cert, false) {
+                    let ca_path = std::env::var("HEIMDALL_TLS_CLIENT_CA_PATH").map_err(|_| {
+                        ConfigError::ParseError(
+                            "Client cert required but CA path missing".to_string(),
+                        )
+                    })?;
+                    tls_config = tls_config.with_client_cert_required(ca_path);
+                }
+            }
+
+            config.transport_config.tls_config = Some(tls_config);
+        }
+
+        if let Ok(max_connections) = std::env::var("HEIMDALL_DOT_MAX_CONNECTIONS") {
+            config.transport_config.max_connections =
+                max_connections.parse::<usize>().map_err(|_| {
+                    ConfigError::ParseError(format!(
+                        "Invalid DoT max connections: {}",
+                        max_connections
+                    ))
+                })?;
+        }
+
+        if let Ok(connection_timeout) = std::env::var("HEIMDALL_DOT_CONNECTION_TIMEOUT") {
+            let timeout_secs = connection_timeout.parse::<u64>().map_err(|_| {
+                ConfigError::ParseError(format!(
+                    "Invalid DoT connection timeout: {}",
+                    connection_timeout
+                ))
+            })?;
+            config.transport_config.connection_timeout = Duration::from_secs(timeout_secs);
+        }
+
+        if let Ok(keepalive_timeout) = std::env::var("HEIMDALL_DOT_KEEPALIVE_TIMEOUT") {
+            let timeout_secs = keepalive_timeout.parse::<u64>().map_err(|_| {
+                ConfigError::ParseError(format!(
+                    "Invalid DoT keepalive timeout: {}",
+                    keepalive_timeout
+                ))
+            })?;
+            config.transport_config.keepalive_timeout = Duration::from_secs(timeout_secs);
+        }
+
+        // DNS-over-HTTPS configuration
+        if let Ok(enable_doh) = std::env::var("HEIMDALL_ENABLE_DOH") {
+            config.transport_config.enable_doh = parse_bool(&enable_doh, false);
+        }
+
+        if let Ok(doh_bind_addr) = std::env::var("HEIMDALL_DOH_BIND_ADDR") {
+            if doh_bind_addr.to_lowercase() == "disabled" || doh_bind_addr.is_empty() {
+                config.transport_config.doh_bind_addr = None;
+            } else {
+                config.transport_config.doh_bind_addr =
+                    Some(doh_bind_addr.parse().map_err(|_| {
+                        ConfigError::ParseError(format!(
+                            "Invalid DoH bind address: {}",
+                            doh_bind_addr
+                        ))
+                    })?);
+            }
+        }
+
+        if let Ok(doh_path) = std::env::var("HEIMDALL_DOH_PATH") {
+            config.transport_config.doh_path = doh_path;
+        }
+
+        if let Ok(enable_well_known) = std::env::var("HEIMDALL_DOH_ENABLE_WELL_KNOWN") {
+            config.transport_config.doh_enable_well_known = parse_bool(&enable_well_known, true);
+        }
+
+        if let Ok(enable_json_api) = std::env::var("HEIMDALL_DOH_ENABLE_JSON_API") {
+            config.transport_config.doh_enable_json_api = parse_bool(&enable_json_api, true);
+        }
+
         // Redis configuration (auto-detected)
         config.redis_config = RedisConfig::from_env();
 
@@ -537,6 +647,56 @@ impl DnsConfig {
                             parts[1]
                         )));
                     }
+                }
+            }
+        }
+
+        // DoT configuration validation
+        if self.transport_config.enable_dot {
+            if self.transport_config.dot_bind_addr.is_none() {
+                return Err(ConfigError::ParseError(
+                    "DoT enabled but no bind address specified".to_string(),
+                ));
+            }
+            if self.transport_config.tls_config.is_none() {
+                return Err(ConfigError::ParseError(
+                    "DoT enabled but no TLS configuration provided".to_string(),
+                ));
+            }
+
+            // Validate TLS configuration if present
+            if let Some(ref tls_config) = self.transport_config.tls_config {
+                if let Err(e) = tls_config.validate() {
+                    return Err(ConfigError::ParseError(format!(
+                        "TLS configuration invalid: {}",
+                        e
+                    )));
+                }
+            }
+        }
+
+        // DoH configuration validation
+        if self.transport_config.enable_doh {
+            if self.transport_config.doh_bind_addr.is_none() {
+                return Err(ConfigError::ParseError(
+                    "DoH enabled but no bind address specified".to_string(),
+                ));
+            }
+
+            // DoH path validation
+            if !self.transport_config.doh_path.starts_with('/') {
+                return Err(ConfigError::ParseError(
+                    "DoH path must start with '/'".to_string(),
+                ));
+            }
+
+            // If TLS is enabled for DoH, validate TLS configuration
+            if let Some(ref tls_config) = self.transport_config.tls_config {
+                if let Err(e) = tls_config.validate() {
+                    return Err(ConfigError::ParseError(format!(
+                        "TLS configuration invalid for DoH: {}",
+                        e
+                    )));
                 }
             }
         }

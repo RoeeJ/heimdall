@@ -44,6 +44,7 @@ async fn test_create_truncated_response() {
         blocklist_update_interval: 86400,
         blocking_download_psl: false,
         dynamic_updates_enabled: false,
+        transport_config: heimdall::transport::TransportConfig::default(),
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -124,6 +125,7 @@ async fn test_udp_size_limits_basic() {
         blocklist_update_interval: 86400,
         blocking_download_psl: false,
         dynamic_updates_enabled: false,
+        transport_config: heimdall::transport::TransportConfig::default(),
     };
 
     let _resolver = DnsResolver::new(config, None)
@@ -193,6 +195,7 @@ async fn test_truncated_response_serialization() {
         blocklist_update_interval: 86400,
         blocking_download_psl: false,
         dynamic_updates_enabled: false,
+        transport_config: heimdall::transport::TransportConfig::default(),
     };
 
     let resolver = DnsResolver::new(config, None)
