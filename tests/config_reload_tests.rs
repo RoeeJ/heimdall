@@ -2,10 +2,14 @@ use heimdall::config::DnsConfig;
 use heimdall::config_reload::{ConfigChange, ConfigReloader, handle_config_changes};
 use std::io::Write;
 use std::net::SocketAddr;
+use std::sync::Mutex;
 use std::time::Duration;
 use tempfile::NamedTempFile;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
+
+// Mutex to ensure tests that modify environment variables don't run concurrently
+static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
 #[tokio::test]
 async fn test_config_reloader_creation() {
@@ -34,15 +38,32 @@ async fn test_take_change_receiver() {
 
 #[tokio::test]
 async fn test_reload_from_env() {
-    // Set some environment variables
-    unsafe {
-        std::env::set_var("HEIMDALL_BIND_ADDR", "127.0.0.1:5353");
-        std::env::set_var("HEIMDALL_UPSTREAM_SERVERS", "8.8.8.8:53,1.1.1.1:53");
-    }
+    // Save original values and set test values while holding the lock
+    let (_initial_config, reloader, mut change_rx, orig_bind_addr, orig_upstream) = {
+        let _guard = ENV_MUTEX.lock().unwrap();
 
-    let initial_config = DnsConfig::default();
-    let mut reloader = ConfigReloader::new(initial_config, None);
-    let mut change_rx = reloader.take_change_receiver().unwrap();
+        // Save original values
+        let orig_bind_addr = std::env::var("HEIMDALL_BIND_ADDR").ok();
+        let orig_upstream = std::env::var("HEIMDALL_UPSTREAM_SERVERS").ok();
+
+        // Set some environment variables
+        unsafe {
+            std::env::set_var("HEIMDALL_BIND_ADDR", "127.0.0.1:5353");
+            std::env::set_var("HEIMDALL_UPSTREAM_SERVERS", "8.8.8.8:53,1.1.1.1:53");
+        }
+
+        let initial_config = DnsConfig::default();
+        let mut reloader = ConfigReloader::new(initial_config.clone(), None);
+        let change_rx = reloader.take_change_receiver().unwrap();
+
+        (
+            initial_config,
+            reloader,
+            change_rx,
+            orig_bind_addr,
+            orig_upstream,
+        )
+    }; // Mutex guard is dropped here
 
     // Trigger reload
     reloader.reload_now().await.unwrap();
@@ -59,10 +80,19 @@ async fn test_reload_from_env() {
     );
     assert_eq!(change.new_config.upstream_servers.len(), 2);
 
-    // Clean up
-    unsafe {
-        std::env::remove_var("HEIMDALL_BIND_ADDR");
-        std::env::remove_var("HEIMDALL_UPSTREAM_SERVERS");
+    // Restore original values
+    {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        unsafe {
+            match orig_bind_addr {
+                Some(val) => std::env::set_var("HEIMDALL_BIND_ADDR", val),
+                None => std::env::remove_var("HEIMDALL_BIND_ADDR"),
+            }
+            match orig_upstream {
+                Some(val) => std::env::set_var("HEIMDALL_UPSTREAM_SERVERS", val),
+                None => std::env::remove_var("HEIMDALL_UPSTREAM_SERVERS"),
+            }
+        }
     }
 }
 
@@ -266,15 +296,27 @@ enable_caching = false
     .unwrap();
     temp_file.flush().unwrap();
 
-    let initial_config = DnsConfig::default();
-    let initial_caching = initial_config.enable_caching;
-    let _initial_bind_addr = initial_config.bind_addr;
+    let (_initial_config, initial_caching, expected_bind_addr, reloader, mut change_rx) = {
+        let _guard = ENV_MUTEX.lock().unwrap();
 
-    let mut reloader = ConfigReloader::new(
-        initial_config,
-        Some(temp_file.path().to_string_lossy().to_string()),
-    );
-    let mut change_rx = reloader.take_change_receiver().unwrap();
+        let initial_config = DnsConfig::default();
+        let initial_caching = initial_config.enable_caching;
+        let expected_bind_addr = initial_config.bind_addr;
+
+        let mut reloader = ConfigReloader::new(
+            initial_config.clone(),
+            Some(temp_file.path().to_string_lossy().to_string()),
+        );
+        let change_rx = reloader.take_change_receiver().unwrap();
+
+        (
+            initial_config,
+            initial_caching,
+            expected_bind_addr,
+            reloader,
+            change_rx,
+        )
+    }; // Mutex guard is dropped here
 
     // Trigger reload
     reloader.reload_now().await.unwrap();
@@ -291,7 +333,7 @@ enable_caching = false
 
     // Note: The current implementation creates a new config from defaults/env when reloading,
     // so other values like bind_addr will be reset to defaults even if not specified in the file
-    assert_eq!(change.new_config.bind_addr, DnsConfig::default().bind_addr);
+    assert_eq!(change.new_config.bind_addr, expected_bind_addr);
 }
 
 #[tokio::test]
@@ -306,15 +348,28 @@ async fn test_start_watching_without_file() {
 
 #[tokio::test]
 async fn test_multiple_reload_calls() {
-    let initial_config = DnsConfig::default();
-    let mut reloader = ConfigReloader::new(initial_config, None);
-    let mut change_rx = reloader.take_change_receiver().unwrap();
+    let (reloader, mut change_rx, orig_cache_size) = {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
+        // Save original value
+        let orig_cache_size = std::env::var("HEIMDALL_MAX_CACHE_SIZE").ok();
+
+        let initial_config = DnsConfig::default();
+        let mut reloader = ConfigReloader::new(initial_config, None);
+        let change_rx = reloader.take_change_receiver().unwrap();
+
+        (reloader, change_rx, orig_cache_size)
+    };
 
     // Multiple reloads should all succeed
     for i in 0..3 {
-        unsafe {
-            std::env::set_var("HEIMDALL_MAX_CACHE_SIZE", format!("{}", 1000 * (i + 1)));
+        {
+            let _guard = ENV_MUTEX.lock().unwrap();
+            unsafe {
+                std::env::set_var("HEIMDALL_MAX_CACHE_SIZE", format!("{}", 1000 * (i + 1)));
+            }
         }
+
         reloader.reload_now().await.unwrap();
 
         let change = timeout(Duration::from_secs(1), change_rx.recv())
@@ -325,7 +380,14 @@ async fn test_multiple_reload_calls() {
         assert_eq!(change.new_config.max_cache_size, 1000 * (i + 1));
     }
 
-    unsafe {
-        std::env::remove_var("HEIMDALL_MAX_CACHE_SIZE");
+    // Restore original value
+    {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        unsafe {
+            match orig_cache_size {
+                Some(val) => std::env::set_var("HEIMDALL_MAX_CACHE_SIZE", val),
+                None => std::env::remove_var("HEIMDALL_MAX_CACHE_SIZE"),
+            }
+        }
     }
 }
