@@ -162,6 +162,8 @@ pub enum DNSResourceClass {
     CS,
     CH,
     HS,
+    NONE,
+    ANY,
 }
 
 impl From<u16> for DNSResourceClass {
@@ -171,6 +173,8 @@ impl From<u16> for DNSResourceClass {
             2 => DNSResourceClass::CS,
             3 => DNSResourceClass::CH,
             4 => DNSResourceClass::HS,
+            254 => DNSResourceClass::NONE,
+            255 => DNSResourceClass::ANY,
             _ => DNSResourceClass::Unknown,
         }
     }
@@ -183,6 +187,8 @@ impl From<DNSResourceClass> for u16 {
             DNSResourceClass::CS => 2,
             DNSResourceClass::CH => 3,
             DNSResourceClass::HS => 4,
+            DNSResourceClass::NONE => 254,
+            DNSResourceClass::ANY => 255,
             DNSResourceClass::Unknown => 0,
         }
     }
@@ -523,7 +529,7 @@ impl DnsOpcode {
 
     /// Check if this opcode is implemented
     pub fn is_implemented(self) -> bool {
-        matches!(self, DnsOpcode::Query) // Only QUERY is currently implemented
+        matches!(self, DnsOpcode::Query | DnsOpcode::Update) // QUERY and UPDATE are implemented
     }
 
     /// Get human-readable description of the opcode

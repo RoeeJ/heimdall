@@ -51,6 +51,7 @@ async fn test_automatic_failover() {
         blocklist_auto_update: false,
         blocklist_update_interval: 86400,
         blocking_download_psl: false,
+        dynamic_updates_enabled: false,
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -182,6 +183,7 @@ async fn test_health_based_server_ordering() {
         blocklist_auto_update: false,
         blocklist_update_interval: 86400,
         blocking_download_psl: false,
+        dynamic_updates_enabled: false,
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -278,6 +280,7 @@ async fn test_server_health_recovery() {
         blocklist_auto_update: false,
         blocklist_update_interval: 86400,
         blocking_download_psl: false,
+        dynamic_updates_enabled: false,
     };
 
     let resolver = DnsResolver::new(config, None)

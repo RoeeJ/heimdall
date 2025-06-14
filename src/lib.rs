@@ -5,6 +5,7 @@ pub mod config;
 pub mod config_reload;
 pub mod dns;
 pub mod dnssec;
+pub mod dynamic_update;
 pub mod error;
 pub mod graceful_shutdown;
 pub mod http_server;

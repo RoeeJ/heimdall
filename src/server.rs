@@ -259,6 +259,61 @@ async fn handle_dns_query_optimized(
                 response.serialize_into(response_buf)?;
                 return Ok(());
             }
+
+            // Handle UPDATE messages separately
+            if opcode == DnsOpcode::Update {
+                debug!("Received UPDATE message id={}", packet.header.id);
+
+                // Check if zone store is available
+                if let Some(_zone_store) = &resolver.zone_store {
+                    // Get update processor (we'll need to add this to resolver)
+                    if let Some(update_processor) = &resolver.update_processor {
+                        match update_processor.process_update(&packet).await {
+                            Ok(response) => {
+                                debug!("UPDATE processed successfully id={}", packet.header.id);
+                                response.serialize_into(response_buf)?;
+                                return Ok(());
+                            }
+                            Err(e) => {
+                                warn!("UPDATE failed: {}", e);
+                                use crate::dynamic_update::UpdateError;
+                                let response = match e {
+                                    UpdateError::NotAuth(_) => {
+                                        metrics.record_error_response("notauth", protocol);
+                                        resolver.create_notauth_response(&packet)
+                                    }
+                                    UpdateError::Refused(_) => {
+                                        metrics.record_error_response("refused", protocol);
+                                        resolver.create_refused_response(&packet)
+                                    }
+                                    UpdateError::PrereqFailed(_) => {
+                                        metrics.record_error_response("nxrrset", protocol);
+                                        resolver.create_nxrrset_response(&packet)
+                                    }
+                                    _ => {
+                                        metrics.record_error_response("servfail", protocol);
+                                        resolver.create_servfail_response(&packet)
+                                    }
+                                };
+                                response.serialize_into(response_buf)?;
+                                return Ok(());
+                            }
+                        }
+                    } else {
+                        debug!("UPDATE not supported - no update processor configured");
+                        metrics.record_error_response("notimpl", protocol);
+                        let response = resolver.create_notimpl_response(&packet);
+                        response.serialize_into(response_buf)?;
+                        return Ok(());
+                    }
+                } else {
+                    debug!("UPDATE not supported - no zone store configured");
+                    metrics.record_error_response("notimpl", protocol);
+                    let response = resolver.create_notimpl_response(&packet);
+                    response.serialize_into(response_buf)?;
+                    return Ok(());
+                }
+            }
         }
         None => {
             debug!(

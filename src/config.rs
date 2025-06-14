@@ -75,6 +75,9 @@ pub struct DnsConfig {
     /// Whether to enable authoritative DNS serving
     pub authoritative_enabled: bool,
 
+    /// Whether to enable dynamic DNS updates (RFC 2136)
+    pub dynamic_updates_enabled: bool,
+
     /// Whether to enable DNS blocking
     pub blocking_enabled: bool,
 
@@ -165,6 +168,7 @@ impl Default for DnsConfig {
             dnssec_strict: false,  // Non-strict by default
             zone_files: vec![],    // No zones by default
             authoritative_enabled: false, // Disabled by default
+            dynamic_updates_enabled: false, // Disabled by default for security
             blocking_enabled,
             blocking_mode: "zero_ip".to_string(), // Use zero_ip as default (common choice)
             blocking_custom_ip: None,
@@ -384,6 +388,10 @@ impl DnsConfig {
 
         if let Ok(authoritative_enabled) = std::env::var("HEIMDALL_AUTHORITATIVE_ENABLED") {
             config.authoritative_enabled = parse_bool(&authoritative_enabled, false);
+        }
+
+        if let Ok(dynamic_updates_enabled) = std::env::var("HEIMDALL_DYNAMIC_UPDATES_ENABLED") {
+            config.dynamic_updates_enabled = parse_bool(&dynamic_updates_enabled, false);
         }
 
         // Blocking configuration

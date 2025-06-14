@@ -247,6 +247,43 @@ impl Zone {
         self.records.values().flat_map(|records| records.iter())
     }
 
+    /// Delete a record from the zone
+    pub fn delete_record(&mut self, record: &ZoneRecord) -> Result<()> {
+        let normalized_name = self.normalize_name(&record.name)?;
+        let should_remove_name;
+        let was_soa_removed;
+
+        // Use a scope to limit the borrow of self.records
+        {
+            if let Some(records) = self.records.get_mut(&normalized_name) {
+                let initial_len = records.len();
+
+                // Remove matching records
+                records.retain(|r| !(r.rtype == record.rtype && r.rdata == record.rdata));
+
+                should_remove_name = records.is_empty();
+                was_soa_removed =
+                    record.rtype == DNSResourceType::SOA && records.len() < initial_len;
+            } else {
+                self.last_modified = SystemTime::now();
+                return Ok(()); // Record not found is not an error for delete
+            }
+        }
+
+        // Now we can safely modify self.records again
+        if should_remove_name {
+            self.records.remove(&normalized_name);
+        }
+
+        // Update SOA record tracking if needed
+        if was_soa_removed {
+            self.soa_record = None;
+        }
+
+        self.last_modified = SystemTime::now();
+        Ok(())
+    }
+
     /// Update zone serial number
     pub fn update_serial(&mut self) {
         self.serial = Self::generate_serial();
