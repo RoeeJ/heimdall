@@ -283,6 +283,53 @@ impl<'a> DNSPacketRef<'a> {
         DNSPacket::parse(self.buffer)
     }
 
+    /// Get the first question without parsing all questions
+    pub fn first_question(&self) -> Result<DNSQuestion, ParseError> {
+        if self.header.qdcount == 0 {
+            return Err(ParseError::InvalidQuestionSection);
+        }
+        
+        let mut reader = BitReader::<_, BigEndian>::new(&self.buffer[self.sections.questions_start..]);
+        let mut question = DNSQuestion::default();
+        question.read_with_buffer(&mut reader, self.buffer)?;
+        Ok(question)
+    }
+
+    /// Check if packet has EDNS support without full parsing
+    pub fn has_edns(&self) -> bool {
+        if self.header.arcount == 0 {
+            return false;
+        }
+        
+        // Quick scan of additional records for OPT type
+        let mut offset = self.sections.additionals_start;
+        for _ in 0..self.header.arcount {
+            // Skip domain name
+            match Self::skip_domain_name(self.buffer, offset) {
+                Ok(new_offset) => offset = new_offset,
+                Err(_) => return false,
+            }
+            
+            // Check TYPE field
+            if offset + 2 > self.buffer.len() {
+                return false;
+            }
+            let rtype = u16::from_be_bytes([self.buffer[offset], self.buffer[offset + 1]]);
+            if rtype == 41 { // OPT record type
+                return true;
+            }
+            
+            // Skip rest of record
+            if offset + 10 > self.buffer.len() {
+                return false;
+            }
+            let rdlength = u16::from_be_bytes([self.buffer[offset + 8], self.buffer[offset + 9]]) as usize;
+            offset += 10 + rdlength;
+        }
+        
+        false
+    }
+
     /// SIMD-accelerated packet validation
     pub fn validate_simd(&self) -> bool {
         // Use SIMD to validate compression pointers
@@ -357,6 +404,68 @@ impl PacketBufferPool {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dns::enums::DNSResourceType;
+    
+    #[test]
+    fn test_dns_packet_ref_zero_copy() {
+        // Create a simple DNS query packet
+        let mut packet = DNSPacket::default();
+        packet.header.id = 12345;
+        packet.header.qr = false;
+        packet.header.qdcount = 1;
+        packet.questions.push(DNSQuestion {
+            labels: vec!["example".to_string(), "com".to_string()],
+            qtype: DNSResourceType::A,
+            qclass: enums::DNSResourceClass::IN,
+        });
+        
+        // Serialize the packet
+        let buf = packet.serialize().unwrap();
+        
+        // Test zero-copy parsing
+        let packet_ref = DNSPacketRef::parse_metadata(&buf).unwrap();
+        assert_eq!(packet_ref.header.id, 12345);
+        assert!(!packet_ref.header.qr);
+        assert_eq!(packet_ref.header.qdcount, 1);
+        assert!(packet_ref.is_query());
+        
+        // Test first question extraction
+        let question = packet_ref.first_question().unwrap();
+        assert_eq!(question.labels, vec!["example".to_string(), "com".to_string()]);
+        assert_eq!(question.qtype, DNSResourceType::A);
+        
+        // Test fast response creation
+        let response = DNSPacket::create_response_fast(&buf, &packet_ref).unwrap();
+        assert_eq!(response.header.id, 12345);
+        assert!(response.header.qr);  // Should be set as response
+        assert!(response.header.ra);  // Recursion available
+        assert_eq!(response.questions.len(), 1);
+    }
+    
+    #[test]
+    fn test_edns_detection() {
+        // Create packet with EDNS
+        let mut packet = DNSPacket::default();
+        packet.header.id = 12345;
+        packet.header.arcount = 1;
+        packet.edns = Some(EdnsOpt {
+            udp_payload_size: 4096,
+            extended_rcode: 0,
+            version: 0,
+            flags: 0,
+            options: Vec::new(),
+        });
+        
+        let buf = packet.serialize().unwrap();
+        let packet_ref = DNSPacketRef::parse_metadata(&buf).unwrap();
+        
+        assert!(packet_ref.has_edns());
+    }
+}
+
 impl Default for PacketBufferPool {
     fn default() -> Self {
         Self::new(4096, 32) // 4KB buffers, max 32 in pool
@@ -397,6 +506,43 @@ impl std::fmt::Display for ParseError {
 impl std::error::Error for ParseError {}
 
 impl DNSPacket {
+    /// Fast path for creating a response packet without full parsing
+    /// Only extracts essential fields for quick response generation
+    pub fn create_response_fast(query_buf: &[u8], packet_ref: &DNSPacketRef) -> Result<Self, ParseError> {
+        let mut packet = DNSPacket::default();
+        
+        // Copy header and set response flags
+        packet.header = packet_ref.header.clone();
+        packet.header.qr = true;  // This is a response
+        packet.header.ra = true;  // Recursion available
+        packet.header.ancount = 0;  // Will be filled by resolver
+        packet.header.nscount = 0;
+        packet.header.arcount = 0;
+        
+        // Only parse questions if needed
+        if packet.header.qdcount > 0 {
+            let mut reader = BitReader::<_, BigEndian>::new(&query_buf[12..]);  // Skip header
+            for _ in 0..packet.header.qdcount {
+                let mut question = DNSQuestion::default();
+                question.read_with_buffer(&mut reader, query_buf)?;
+                packet.questions.push(question);
+            }
+        }
+        
+        // Check for EDNS without full parsing
+        if packet_ref.has_edns() {
+            // For now, use a default EDNS response
+            packet.edns = Some(EdnsOpt {
+                udp_payload_size: 4096,
+                extended_rcode: 0,
+                version: 0,
+                flags: 0,  // DO bit not set
+                options: Vec::new(),
+            });
+        }
+        
+        Ok(packet)
+    }
     /// Basic validation for backward compatibility
     /// Use validate_comprehensive() for complete security validation
     pub fn valid(&self) -> bool {

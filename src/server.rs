@@ -188,23 +188,163 @@ async fn handle_dns_query_with_pool(
     protocol: &str,
     buffer_pool: &BufferPool,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    // Get a buffer from the pool for serialization
-    let mut response_buf = buffer_pool.get();
-
-    // Call the regular handler to get the response packet
-    let response = handle_dns_query(buf, resolver, metrics, protocol).await?;
-
-    // Deserialize response to get packet (for now, until we refactor to return DNSPacket)
-    let packet = DNSPacket::parse(&response)?;
-
-    // Serialize into the pooled buffer
-    packet.serialize_into(&mut response_buf)?;
-
+    // Get buffer from pool
+    let mut pooled_buffer = buffer_pool.get();
+    
+    // Process query and get response directly serialized into pooled buffer
+    handle_dns_query_optimized(buf, resolver, metrics, protocol, &mut pooled_buffer).await?;
+    
     // Return the buffer content as a Vec
-    Ok(response_buf.to_vec())
+    Ok(pooled_buffer.to_vec())
+}
+
+async fn handle_dns_query_optimized(
+    buf: &[u8],
+    resolver: &DnsResolver,
+    metrics: &DnsMetrics,
+    protocol: &str,
+    response_buf: &mut Vec<u8>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // First try zero-copy parsing for fast rejection of malformed packets
+    let packet_ref = match DNSPacketRef::parse_metadata(buf) {
+        Ok(pref) => pref,
+        Err(e) => {
+            debug!(
+                "Failed to parse DNS packet metadata: {:?} (packet length: {} bytes)",
+                e,
+                buf.len()
+            );
+            metrics.record_malformed_packet(protocol, "parse_error");
+            return Err(format!("Invalid DNS packet: {}", e).into());
+        }
+    };
+
+    // Quick validation checks using zero-copy
+    if !packet_ref.is_query() {
+        debug!("Received DNS response instead of query");
+        metrics.record_malformed_packet(protocol, "not_query");
+        return Err("Expected DNS query, got response".into());
+    }
+
+    // Try fast path for simple queries
+    let packet = match DNSPacket::create_response_fast(buf, &packet_ref) {
+        Ok(packet) => packet,
+        Err(_) => {
+            // Fallback to full parsing
+            match packet_ref.to_owned() {
+                Ok(packet) => packet,
+                Err(e) => {
+                    debug!(
+                        "Failed to parse DNS packet: {:?} (packet length: {} bytes)",
+                        e,
+                        buf.len()
+                    );
+                    metrics.record_malformed_packet(protocol, "parse_error");
+                    return Err(format!("Invalid DNS packet: {}", e).into());
+                }
+            }
+        }
+    };
+
+    // Validate opcode
+    match DnsOpcode::from_u8(packet.header.opcode) {
+        Some(opcode) => {
+            if !opcode.is_implemented() {
+                debug!(
+                    "Unsupported opcode {:?} ({}) in query id={}, returning NOTIMPL",
+                    opcode, packet.header.opcode, packet.header.id
+                );
+                metrics.record_error_response("notimpl", protocol);
+                let response = resolver.create_notimpl_response(&packet);
+                response.serialize_into(response_buf)?;
+                return Ok(());
+            }
+        }
+        None => {
+            debug!(
+                "Invalid opcode {} in query id={}, returning FORMERR",
+                packet.header.opcode, packet.header.id
+            );
+            metrics.record_error_response("formerr", protocol);
+            let response = resolver.create_formerr_response(&packet);
+            response.serialize_into(response_buf)?;
+            return Ok(());
+        }
+    }
+
+    // Validate the packet has at least one question
+    if packet.header.qdcount == 0 {
+        debug!(
+            "Query id={} has no questions, returning FORMERR",
+            packet.header.id
+        );
+        metrics.record_error_response("formerr", protocol);
+        let response = resolver.create_formerr_response(&packet);
+        response.serialize_into(response_buf)?;
+        return Ok(());
+    }
+
+    // Check for policy violations that should return REFUSED
+    if should_refuse_query(&packet) {
+        debug!(
+            "Query id={} violates policy, returning REFUSED",
+            packet.header.id
+        );
+        metrics.record_error_response("refused", protocol);
+        let response = resolver.create_refused_response(&packet);
+        response.serialize_into(response_buf)?;
+        return Ok(());
+    }
+
+    // Log the domain being queried
+    if packet.header.qdcount > 0 && !packet.questions.is_empty() {
+        let question = &packet.questions[0];
+        let domain = question
+            .labels
+            .iter()
+            .filter(|l| !l.is_empty())
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(".");
+        if !domain.is_empty() {
+            debug!("Query: {} {:?}", domain, question.qtype);
+        }
+    }
+
+    // Resolve the query using upstream servers
+    let response = match resolver.resolve(packet.clone(), packet.header.id).await {
+        Ok(response) => {
+            debug!(
+                "Successfully resolved query id={}, answers={}",
+                response.header.id, response.header.ancount
+            );
+            response
+        }
+        Err(e) => {
+            warn!("Failed to resolve query: {:?}", e);
+            resolver.create_servfail_response(&packet)
+        }
+    };
+
+    // Serialize response directly into provided buffer
+    response.serialize_into(response_buf)?;
+    Ok(())
 }
 
 async fn handle_dns_query(
+    buf: &[u8],
+    resolver: &DnsResolver,
+    metrics: &DnsMetrics,
+    protocol: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    // Create a temporary buffer for optimization
+    let mut buffer = Vec::with_capacity(4096);
+    handle_dns_query_optimized(buf, resolver, metrics, protocol, &mut buffer).await?;
+    Ok(buffer)
+}
+
+// Legacy implementation kept for reference
+async fn handle_dns_query_legacy(
     buf: &[u8],
     resolver: &DnsResolver,
     metrics: &DnsMetrics,
@@ -323,17 +463,37 @@ async fn handle_dns_query(
         return Ok(serialized);
     }
 
-    // Log the domain being queried
-    for question in &packet.questions {
-        let domain = question
-            .labels
-            .iter()
-            .filter(|l| !l.is_empty())
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(".");
-        if !domain.is_empty() {
-            debug!("Query: {} {:?}", domain, question.qtype);
+    // Log the domain being queried using zero-copy when possible
+    if packet.header.qdcount > 0 {
+        // Try to get first question without parsing all
+        match packet_ref.first_question() {
+            Ok(question) => {
+                let domain = question
+                    .labels
+                    .iter()
+                    .filter(|l| !l.is_empty())
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(".");
+                if !domain.is_empty() {
+                    debug!("Query: {} {:?}", domain, question.qtype);
+                }
+            }
+            Err(_) => {
+                // Fallback to full parsing if zero-copy fails
+                for question in &packet.questions {
+                    let domain = question
+                        .labels
+                        .iter()
+                        .filter(|l| !l.is_empty())
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(".");
+                    if !domain.is_empty() {
+                        debug!("Query: {} {:?}", domain, question.qtype);
+                    }
+                }
+            }
         }
     }
 

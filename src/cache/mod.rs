@@ -1,9 +1,11 @@
 pub mod local_backend;
+pub mod lockfree_cache;
 pub mod lockfree_lru;
 pub mod optimized;
 pub mod redis_backend;
 pub mod redis_helper;
 
+pub use lockfree_cache::LockFreeDnsCache;
 pub use redis_backend::{LayeredCache, RedisConfig};
 
 use crate::dns::{
