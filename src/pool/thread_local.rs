@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::mem;
 use std::rc::Rc;
 
 /// Buffer size for DNS packets (4KB is typical max UDP size with EDNS)
@@ -138,8 +137,10 @@ pub fn swap_pooled_buffer(buffer: &mut PooledBuffer) -> Vec<u8> {
     };
 
     // Swap the buffers
-    let old_buffer = mem::replace(&mut buffer.buffer, Some(new_buffer));
-    old_buffer.expect("Buffer should not be None")
+    buffer
+        .buffer
+        .replace(new_buffer)
+        .expect("Buffer should not be None")
 }
 
 /// Get thread-local pool statistics
