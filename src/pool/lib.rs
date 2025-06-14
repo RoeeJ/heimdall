@@ -93,6 +93,8 @@ impl<T> Drop for PooledItem<T> {
 /// Buffer pool specifically for DNS packet operations
 pub struct BufferPool {
     pool: Pool<Vec<u8>>,
+    use_thread_local: bool,
+    buffer_size: usize,
 }
 
 impl BufferPool {
@@ -103,7 +105,26 @@ impl BufferPool {
             max_buffers,
         );
 
-        Self { pool }
+        Self {
+            pool,
+            use_thread_local: false,
+            buffer_size,
+        }
+    }
+
+    /// Create a buffer pool that uses thread-local storage when available
+    pub fn with_thread_local(buffer_size: usize, max_buffers: usize) -> Self {
+        let pool = Pool::new(
+            move || Vec::with_capacity(buffer_size),
+            |buf| buf.clear(),
+            max_buffers,
+        );
+
+        Self {
+            pool,
+            use_thread_local: true,
+            buffer_size,
+        }
     }
 
     pub fn get(&self) -> PooledItem<Vec<u8>> {
@@ -115,6 +136,8 @@ impl Clone for BufferPool {
     fn clone(&self) -> Self {
         Self {
             pool: self.pool.clone(),
+            use_thread_local: self.use_thread_local,
+            buffer_size: self.buffer_size,
         }
     }
 }

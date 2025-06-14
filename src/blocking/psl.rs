@@ -1,5 +1,4 @@
 use crate::blocking::arena::{SharedArena, StringArena};
-use crate::blocking::lookup::count_labels;
 use crate::blocking::trie::{CompressedTrie, NodeFlags};
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -183,25 +182,6 @@ impl PublicSuffixList {
     pub fn load_common_suffixes(&self) -> Result<usize, String> {
         let common_suffixes = include_str!("../../assets/common_suffixes.txt");
         self.load_from_string(common_suffixes)
-    }
-
-    /// Find the public suffix length for a domain
-    #[allow(dead_code)]
-    fn find_public_suffix_len(&self, domain: &[u8]) -> usize {
-        let trie_guard = self.trie.read();
-        if let Some(trie) = trie_guard.as_ref() {
-            // The trie handles PSL lookup internally
-            if let Some(registrable) = trie.get_registrable_domain(domain) {
-                // Calculate suffix length from registrable domain
-                let reg_labels = count_labels(registrable);
-                let total_labels = count_labels(domain);
-                total_labels - reg_labels
-            } else {
-                0
-            }
-        } else {
-            0
-        }
     }
 
     /// Get the registrable domain (eTLD+1) for a given domain

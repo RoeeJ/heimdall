@@ -59,13 +59,11 @@ impl CachedEntry {
 pub struct RedisCache {
     client: ConnectionManager,
     key_prefix: String,
-    #[allow(dead_code)]
-    default_ttl: u64,
 }
 
 impl RedisCache {
     /// Create a new Redis cache backend
-    pub async fn new(redis_url: &str, key_prefix: String, default_ttl: u64) -> Result<Self> {
+    pub async fn new(redis_url: &str, key_prefix: String, _default_ttl: u64) -> Result<Self> {
         let client = redis::Client::open(redis_url)
             .map_err(|e| DnsError::Redis(format!("Failed to create Redis client: {}", e)))?;
 
@@ -78,7 +76,6 @@ impl RedisCache {
         Ok(Self {
             client: connection_manager,
             key_prefix,
-            default_ttl,
         })
     }
 
