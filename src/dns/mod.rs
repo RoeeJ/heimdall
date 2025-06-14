@@ -443,12 +443,12 @@ mod tests {
         );
         assert_eq!(question.qtype, DNSResourceType::A);
 
-        // Test fast response creation
-        let response = DNSPacket::create_response_fast(&buf, &packet_ref).unwrap();
-        assert_eq!(response.header.id, 12345);
-        assert!(response.header.qr); // Should be set as response
-        assert!(response.header.ra); // Recursion available
-        assert_eq!(response.questions.len(), 1);
+        // Test fast query parsing
+        let parsed_query = DNSPacket::parse_query_fast(&buf, &packet_ref).unwrap();
+        assert_eq!(parsed_query.header.id, 12345);
+        assert!(!parsed_query.header.qr); // Should remain a query
+        assert!(parsed_query.header.rd); // Recursion desired from original
+        assert_eq!(parsed_query.questions.len(), 1);
     }
 
     #[test]
@@ -512,9 +512,9 @@ impl std::fmt::Display for ParseError {
 impl std::error::Error for ParseError {}
 
 impl DNSPacket {
-    /// Fast path for creating a response packet without full parsing
-    /// Only extracts essential fields for quick response generation
-    pub fn create_response_fast(
+    /// Fast path for parsing a query packet without full parsing
+    /// Only extracts essential fields for quick processing
+    pub fn parse_query_fast(
         query_buf: &[u8],
         packet_ref: &DNSPacketRef,
     ) -> Result<Self, ParseError> {
@@ -523,10 +523,9 @@ impl DNSPacket {
             ..Default::default()
         };
 
-        // Set response flags
-        packet.header.qr = true; // This is a response
-        packet.header.ra = true; // Recursion available
-        packet.header.ancount = 0; // Will be filled by resolver
+        // Keep query flags intact - don't modify qr flag here
+        // The resolver will set response flags when creating the actual response
+        packet.header.ancount = 0;
         packet.header.nscount = 0;
         packet.header.arcount = 0;
 

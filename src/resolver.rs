@@ -1225,6 +1225,11 @@ impl DnsResolver {
         // Clone query to modify for DNSSEC if needed
         let mut query_to_send = query.clone();
 
+        // Ensure this is a query packet, not a response
+        query_to_send.header.qr = false;
+        query_to_send.header.aa = false;
+        query_to_send.header.ra = false; // We don't provide recursion
+
         // Set DNSSEC DO flag if validation is enabled
         if self.dnssec_validator.is_some() {
             // Ensure EDNS is present
