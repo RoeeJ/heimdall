@@ -418,6 +418,7 @@ mod tests {
         let mut packet = DNSPacket::default();
         packet.header.id = 12345;
         packet.header.qr = false;
+        packet.header.rd = true; // Set recursion desired
         packet.header.qdcount = 1;
         packet.questions.push(DNSQuestion {
             labels: vec!["example".to_string(), "com".to_string()],
