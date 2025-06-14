@@ -14,6 +14,7 @@ pub mod pool;
 pub mod rate_limiter;
 pub mod resolver;
 pub mod server;
+pub mod transport;
 pub mod validation;
 pub mod zone;
 

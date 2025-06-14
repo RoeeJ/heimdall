@@ -40,6 +40,13 @@ uuid = { version = "1.11", features = ["v4", "serde"] }
 smallvec = "1.13"
 rustc-hash = "2.1"
 ring = "0.17"
+tokio-rustls = "0.26"
+rustls = "0.23"
+rustls-pemfile = "2.2"
+hyper = { version = "1.5", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+http = "1.1"
+mime = "0.3"
 
 [dev-dependencies]
 criterion = "0.6"
