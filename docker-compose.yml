@@ -10,7 +10,7 @@ services:
   heimdall:
     build:
       context: .
-      target: runtime
+      # No target specified - uses default (runtime-debian)
       dockerfile: Dockerfile
     container_name: heimdall-dns
     restart: unless-stopped
