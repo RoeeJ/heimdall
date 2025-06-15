@@ -5,6 +5,7 @@ pub mod header;
 pub mod question;
 pub mod resource;
 pub mod simd;
+pub mod zero_copy;
 
 #[cfg(test)]
 pub mod compression_tests;

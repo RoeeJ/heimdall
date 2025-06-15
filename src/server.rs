@@ -1,6 +1,6 @@
 use crate::{
     config::DnsConfig,
-    dns::{DNSPacket, DNSPacketRef, enums::DnsOpcode},
+    dns::{DNSPacket, DNSPacketRef, enums::DnsOpcode, zero_copy::DNSPacketView},
     metrics::DnsMetrics,
     pool::BufferPool,
     rate_limiter::DnsRateLimiter,
@@ -24,11 +24,11 @@ pub async fn run_udp_server(
     let sock: Arc<UdpSocket> = Arc::new(UdpSocket::bind(config.bind_addr).await?);
     info!("UDP DNS server listening on {}", config.bind_addr);
 
-    // Create buffer pool for UDP packets
-    let buffer_pool = Arc::new(BufferPool::new(4096, 128)); // 4KB buffers, max 128 in pool
+    // Create buffer pool for UDP packets with thread-local optimization
+    let buffer_pool = Arc::new(BufferPool::with_thread_local(4096, 128)); // 4KB buffers, max 128 in pool
 
     loop {
-        // Get a buffer from the pool
+        // Get a buffer from the pool (will use thread-local pool if available)
         let mut buf = buffer_pool.get();
         buf.resize(4096, 0);
 
@@ -144,8 +144,8 @@ pub async fn run_tcp_server(
     let listener = TcpListener::bind(config.bind_addr).await?;
     info!("TCP DNS server listening on {}", config.bind_addr);
 
-    // Create buffer pool for TCP packets (max DNS message size is 64KB)
-    let buffer_pool = Arc::new(BufferPool::new(65536, 32)); // 64KB buffers, max 32 in pool
+    // Create buffer pool for TCP packets (max DNS message size is 64KB) with thread-local optimization
+    let buffer_pool = Arc::new(BufferPool::with_thread_local(65536, 32)); // 64KB buffers, max 32 in pool
 
     loop {
         tokio::select! {
@@ -205,47 +205,97 @@ async fn handle_dns_query_optimized(
     protocol: &str,
     response_buf: &mut Vec<u8>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // First try zero-copy parsing for fast rejection of malformed packets
-    let packet_ref = match DNSPacketRef::parse_metadata(buf) {
-        Ok(pref) => pref,
-        Err(e) => {
-            debug!(
-                "Failed to parse DNS packet metadata: {:?} (packet length: {} bytes)",
-                e,
-                buf.len()
-            );
-            metrics.record_malformed_packet(protocol, "parse_error");
-            return Err(format!("Invalid DNS packet: {}", e).into());
-        }
-    };
-
-    // Quick validation checks using zero-copy
-    if !packet_ref.is_query() {
-        debug!("Received DNS response instead of query");
-        metrics.record_malformed_packet(protocol, "not_query");
-        return Err("Expected DNS query, got response".into());
-    }
-
-    // Try fast path for simple queries
-    let packet = match DNSPacket::parse_query_fast(buf, &packet_ref) {
-        Ok(packet) => packet,
+    // Try zero-copy parsing first for maximum performance
+    let packet_view = match DNSPacketView::new(buf) {
+        Ok(view) => view,
         Err(_) => {
-            // Fallback to full parsing
-            match packet_ref.to_owned() {
-                Ok(packet) => packet,
+            // Fallback to DNSPacketRef for compatibility
+            let packet_ref = match DNSPacketRef::parse_metadata(buf) {
+                Ok(pref) => pref,
                 Err(e) => {
                     debug!(
-                        "Failed to parse DNS packet: {:?} (packet length: {} bytes)",
+                        "Failed to parse DNS packet metadata: {:?} (packet length: {} bytes)",
                         e,
                         buf.len()
                     );
                     metrics.record_malformed_packet(protocol, "parse_error");
                     return Err(format!("Invalid DNS packet: {}", e).into());
                 }
+            };
+
+            // Quick validation checks using zero-copy
+            if !packet_ref.is_query() {
+                debug!("Received DNS response instead of query");
+                metrics.record_malformed_packet(protocol, "not_query");
+                return Err("Expected DNS query, got response".into());
             }
+
+            // Parse the full packet
+            let packet = match DNSPacket::parse_query_fast(buf, &packet_ref) {
+                Ok(packet) => packet,
+                Err(_) => {
+                    // Fallback to full parsing
+                    match DNSPacket::parse(buf) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            debug!("Failed to parse DNS packet: {:?}", e);
+                            metrics.record_malformed_packet(protocol, "parse_error");
+                            return Err(format!("Invalid DNS packet: {}", e).into());
+                        }
+                    }
+                }
+            };
+
+            return handle_parsed_query(packet, resolver, metrics, protocol, response_buf).await;
         }
     };
 
+    // Quick validation with zero-copy view
+    if !packet_view.is_query() {
+        debug!("Received DNS response instead of query");
+        metrics.record_malformed_packet(protocol, "not_query");
+        return Err("Expected DNS query, got response".into());
+    }
+
+    // Check cache with zero-copy domain extraction
+    if packet_view.header.qdcount > 0 {
+        match packet_view.first_question_domain() {
+            Ok(domain) => {
+                // Try cache lookup with zero-copy domain
+                if let Some(cached_response) = resolver.check_cache_fast(&domain) {
+                    // Record cache hit (method might be named differently)
+                    // TODO: Add proper cache hit metric recording
+                    response_buf.clear();
+                    response_buf.extend_from_slice(&cached_response);
+                    return Ok(());
+                }
+            }
+            Err(_) => {
+                // Continue with full parsing
+            }
+        }
+    }
+
+    // If not in cache or complex query, parse the full packet
+    let packet = match DNSPacket::parse(buf) {
+        Ok(p) => p,
+        Err(e) => {
+            debug!("Failed to parse DNS packet: {:?}", e);
+            metrics.record_malformed_packet(protocol, "parse_error");
+            return Err(format!("Invalid DNS packet: {}", e).into());
+        }
+    };
+
+    handle_parsed_query(packet, resolver, metrics, protocol, response_buf).await
+}
+
+async fn handle_parsed_query(
+    packet: DNSPacket,
+    resolver: &DnsResolver,
+    metrics: &DnsMetrics,
+    protocol: &str,
+    response_buf: &mut Vec<u8>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Validate opcode
     match DnsOpcode::from_u8(packet.header.opcode) {
         Some(opcode) => {

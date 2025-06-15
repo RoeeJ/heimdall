@@ -7,17 +7,19 @@
 - Hardware: Local development machine
 - Configuration: Default Heimdall settings with caching enabled
 
-### Cache Hit Performance
-- **Throughput**: 4,493 QPS
-- **Latency**:
-  - Mean: 1.4ms
-  - P50: 1.3ms
-  - P90: 2.3ms
-  - P95: 2.7ms
-  - P99: 3.7ms
-  - P99.9: 8.4ms
-- **Packet Loss**: 0%
-- **Clients**: 100 concurrent
+### Performance Summary
+- **Peak Throughput**: 20,553 QPS (achieved)
+- **Optimal Range**: 15,000-18,000 QPS
+- **Cache Hit Performance** (baseline):
+  - Throughput: 4,493 QPS (100 clients)
+  - P99 Latency: 3.7ms
+  - Zero packet loss
+
+### Extreme Load Test Results
+- **20k QPS**: 16,736 actual, 3.5ms P99 latency
+- **30k QPS**: 20,553 actual, 8.6ms P99 latency (performance ceiling)
+- **50k QPS**: 20,444 actual, 20.6ms P99 latency
+- **100k QPS**: 18,647 actual, 48.1ms P99 latency
 
 ### Observations
 
