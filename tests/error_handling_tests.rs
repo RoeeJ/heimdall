@@ -180,14 +180,14 @@ async fn test_servfail_response() {
 /// Test that all DNS opcodes are properly handled
 #[tokio::test]
 async fn test_all_opcodes_handling() {
-    // Test Query opcode (should be implemented)
+    // Test implemented opcodes
     assert!(DnsOpcode::Query.is_implemented());
+    assert!(DnsOpcode::Update.is_implemented()); // Update is now implemented for dynamic DNS
 
-    // Test other opcodes (should not be implemented)
+    // Test opcodes that are not implemented
     assert!(!DnsOpcode::IQuery.is_implemented());
     assert!(!DnsOpcode::Status.is_implemented());
     assert!(!DnsOpcode::Notify.is_implemented());
-    assert!(!DnsOpcode::Update.is_implemented());
     assert!(!DnsOpcode::DSO.is_implemented());
 
     // Test opcode conversion

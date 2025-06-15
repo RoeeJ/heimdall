@@ -78,8 +78,9 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
     // Create metrics registry first
     let metrics = Arc::new(DnsMetrics::new().expect("Failed to create metrics registry"));
 
-    // Create resolver with metrics reference
-    let resolver = Arc::new(DnsResolver::new(config.clone(), Some(metrics.clone())).await?);
+    // Create resolver with fast startup (blocklists and PSL load in background)
+    info!("Initializing DNS resolver with fast startup mode...");
+    let resolver = DnsResolver::new_fast_startup(config.clone(), Some(metrics.clone())).await?;
 
     // Create semaphore for limiting concurrent queries
     let query_semaphore = Arc::new(Semaphore::new(config.max_concurrent_queries));
