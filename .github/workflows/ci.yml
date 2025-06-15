@@ -278,21 +278,6 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Setup Rust cache
-      uses: Swatinem/rust-cache@v2
-      with:
-        key: docker-build
-        cache-on-failure: true
-
-    - name: Build release binary
-      run: cargo build --release --bin heimdall --all-features
-
-    - name: Strip binary to reduce size
-      run: strip target/release/heimdall
-
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
@@ -316,67 +301,21 @@ jobs:
           type=sha,prefix={{branch}}-
           type=raw,value=latest,enable={{is_default_branch}}
 
-    - name: Create optimized Dockerfile
-      run: |
-        cat > Dockerfile << 'EOF'
-        # Optimized Dockerfile using pre-built binary with shell support for k8s probes
-        FROM debian:12-slim
-        
-        # Install minimal runtime dependencies needed for k8s readiness probes
-        RUN apt-get update && apt-get install -y \
-            ca-certificates \
-            dnsutils \
-            wget \
-            && rm -rf /var/lib/apt/lists/* \
-            && apt-get clean
-        
-        # Create non-root user
-        RUN useradd -m -u 65532 -s /bin/bash heimdall
-        
-        # Create blocklist directory with correct permissions
-        RUN mkdir -p /heimdall/blocklists && chown -R 65532:65532 /heimdall
-        
-        # Copy the pre-built binary from CI build context
-        COPY --chown=65532:65532 target/release/heimdall /usr/local/bin/heimdall
-        
-        # Expose DNS ports (UDP and TCP)
-        EXPOSE 1053/udp 1053/tcp
-        
-        # Expose HTTP port for metrics/health
-        EXPOSE 8080/tcp
-        
-        # Set environment variables for production defaults
-        ENV RUST_LOG=heimdall=info,warn
-        ENV HEIMDALL_BIND_ADDR=0.0.0.0:1053
-        ENV HEIMDALL_HTTP_BIND_ADDR=0.0.0.0:8080
-        ENV HEIMDALL_WORKER_THREADS=0
-        ENV HEIMDALL_BLOCKING_THREADS=512
-        ENV HEIMDALL_MAX_CONCURRENT_QUERIES=10000
-        ENV HEIMDALL_UPSTREAM_TIMEOUT=5
-        ENV HEIMDALL_ENABLE_CACHING=true
-        ENV HEIMDALL_MAX_CACHE_SIZE=10000
-        ENV HEIMDALL_DEFAULT_TTL=300
-        
-        # Set working directory so blocklists are created in the right place
-        WORKDIR /heimdall
-        
-        # Run as non-root user
-        USER 65532:65532
-        
-        # Set the entrypoint
-        ENTRYPOINT ["/usr/local/bin/heimdall"]
-        EOF
-
     - name: Build and push Docker image
       uses: docker/build-push-action@v6
       with:
         context: .
+        file: ./Dockerfile
+        # Use the multi-stage Dockerfile which compiles inside Docker
+        # This ensures the binary is built with the same GLIBC version it will run with
         platforms: linux/amd64
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        # The Dockerfile defaults to runtime-debian which has better compatibility
+        # No need to specify target as the default is already set in Dockerfile
 
   # Job 7: Coverage Report
   coverage:

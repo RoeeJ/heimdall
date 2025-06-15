@@ -137,8 +137,34 @@ docker inspect heimdall-dns --format='{{.State.Health.Status}}'
 1. Rebuild the image: `./build-docker.sh`
 2. Use Debian runtime (default)
 3. Don't use pre-compiled binaries
+4. **IMPORTANT**: The binary MUST be compiled inside Docker, not copied from outside
+5. If using CI/CD, ensure the Docker build uses the multi-stage Dockerfile
 
 ### Performance issues
 1. Enable optimized cache: `HEIMDALL_USE_OPTIMIZED_CACHE=true`
 2. Increase worker threads based on CPU cores
 3. Adjust cache size based on memory
+
+## CI/CD Integration
+
+The GitHub Actions workflow now builds the Docker image using the multi-stage Dockerfile. This ensures:
+
+1. **Binary Compilation Inside Docker**: The Rust binary is compiled within the Docker build environment
+2. **GLIBC Compatibility**: The compilation environment matches the runtime environment
+3. **No External Dependencies**: The CI doesn't need to build the binary separately
+
+### Key Changes Made:
+- Removed the step that builds the binary outside Docker
+- Removed the step that creates a custom Dockerfile with pre-built binary
+- Updated to use the existing multi-stage Dockerfile
+- The Docker build now handles all compilation internally
+
+### For Custom CI/CD:
+If you're using a different CI/CD system, ensure:
+```yaml
+# Use the multi-stage Dockerfile
+docker build -t heimdall:latest .
+
+# Don't copy pre-built binaries
+# Don't create custom Dockerfiles that bypass the build stage
+```
