@@ -51,6 +51,7 @@ async fn test_consecutive_failures_mark_unhealthy() {
         blocking_download_psl: false,
         dynamic_updates_enabled: false,
         transport_config: heimdall::transport::TransportConfig::default(),
+        cache_config: Default::default(),
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -188,6 +189,7 @@ async fn test_health_based_priority_ordering() {
         blocking_download_psl: false,
         dynamic_updates_enabled: false,
         transport_config: heimdall::transport::TransportConfig::default(),
+        cache_config: Default::default(),
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -306,6 +308,7 @@ async fn test_server_health_reset() {
         blocking_download_psl: false,
         dynamic_updates_enabled: false,
         transport_config: heimdall::transport::TransportConfig::default(),
+        cache_config: Default::default(),
     };
 
     let resolver = DnsResolver::new(config, None)

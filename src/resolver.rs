@@ -1,6 +1,6 @@
 use crate::blocking::updater::{BlocklistUpdater, default_blocklist_sources};
 use crate::blocking::{BlockingMode, BlocklistFormat, DnsBlocker};
-use crate::cache::{CacheKey, DnsCache};
+use crate::cache::{CacheKey, CacheWrapper};
 use crate::config::DnsConfig;
 use crate::dns::{
     DNSPacket, DNSPacketRef,
@@ -269,7 +269,7 @@ pub struct DnsResolver {
     config: DnsConfig,
     #[allow(dead_code)]
     client_socket: UdpSocket,
-    cache: Option<DnsCache>,
+    cache: Option<CacheWrapper>,
     /// In-flight queries for deduplication (query_key -> broadcast channel)
     in_flight_queries: Arc<DashMap<CacheKey, InFlightQuery>>,
     /// Connection pool for upstream queries
@@ -320,32 +320,43 @@ impl DnsResolver {
 
         // Initialize cache if enabled
         let cache = if config.enable_caching {
-            let cache = if let Some(cache_path) = &config.cache_file_path {
-                info!(
-                    "DNS cache initialized with persistence: max_size={}, negative_ttl={}s, file={}",
-                    config.max_cache_size, config.default_ttl, cache_path
-                );
-                let cache = DnsCache::with_persistence(
-                    config.max_cache_size,
-                    config.default_ttl,
-                    cache_path.clone(),
-                );
+            let cache_type = if config.cache_config.use_optimized_cache {
+                "optimized"
+            } else {
+                "standard"
+            };
 
-                // Load existing cache from disk
+            info!(
+                "DNS cache initialized ({}): max_size={}, negative_ttl={}s{}",
+                cache_type,
+                config.max_cache_size,
+                config.default_ttl,
+                if config.cache_file_path.is_some() {
+                    ", with persistence"
+                } else {
+                    ""
+                }
+            );
+
+            let cache = CacheWrapper::new(
+                config.cache_config.use_optimized_cache,
+                config.max_cache_size,
+                config.default_ttl,
+                config.cache_file_path.clone(),
+            );
+
+            // Load existing cache from disk (only for standard cache)
+            if config.cache_file_path.is_some() && !config.cache_config.use_optimized_cache {
                 if let Err(e) = cache.load_from_disk().await {
                     warn!("Failed to load cache from disk: {}", e);
                 } else {
-                    info!("Loaded cache from disk: {}", cache_path);
+                    info!(
+                        "Loaded cache from disk: {}",
+                        config.cache_file_path.as_ref().unwrap()
+                    );
                 }
+            }
 
-                cache
-            } else {
-                info!(
-                    "DNS cache initialized: max_size={}, negative_ttl={}s",
-                    config.max_cache_size, config.default_ttl
-                );
-                DnsCache::new(config.max_cache_size, config.default_ttl)
-            };
             Some(cache)
         } else {
             info!("DNS caching disabled");
@@ -600,32 +611,43 @@ impl DnsResolver {
 
         // Initialize cache if enabled
         let cache = if config.enable_caching {
-            let cache = if let Some(cache_path) = &config.cache_file_path {
-                info!(
-                    "DNS cache initialized with persistence: max_size={}, negative_ttl={}s, file={}",
-                    config.max_cache_size, config.default_ttl, cache_path
-                );
-                let cache = DnsCache::with_persistence(
-                    config.max_cache_size,
-                    config.default_ttl,
-                    cache_path.clone(),
-                );
+            let cache_type = if config.cache_config.use_optimized_cache {
+                "optimized"
+            } else {
+                "standard"
+            };
 
-                // Load existing cache from disk
+            info!(
+                "DNS cache initialized ({}): max_size={}, negative_ttl={}s{}",
+                cache_type,
+                config.max_cache_size,
+                config.default_ttl,
+                if config.cache_file_path.is_some() {
+                    ", with persistence"
+                } else {
+                    ""
+                }
+            );
+
+            let cache = CacheWrapper::new(
+                config.cache_config.use_optimized_cache,
+                config.max_cache_size,
+                config.default_ttl,
+                config.cache_file_path.clone(),
+            );
+
+            // Load existing cache from disk (only for standard cache)
+            if config.cache_file_path.is_some() && !config.cache_config.use_optimized_cache {
                 if let Err(e) = cache.load_from_disk().await {
                     warn!("Failed to load cache from disk: {}", e);
                 } else {
-                    info!("Loaded cache from disk: {}", cache_path);
+                    info!(
+                        "Loaded cache from disk: {}",
+                        config.cache_file_path.as_ref().unwrap()
+                    );
                 }
+            }
 
-                cache
-            } else {
-                info!(
-                    "DNS cache initialized: max_size={}, negative_ttl={}s",
-                    config.max_cache_size, config.default_ttl
-                );
-                DnsCache::new(config.max_cache_size, config.default_ttl)
-            };
             Some(cache)
         } else {
             info!("DNS caching disabled");
