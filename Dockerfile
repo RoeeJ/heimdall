@@ -3,6 +3,8 @@
 # ==============================================================================
 # This multi-stage Dockerfile builds a production-ready DNS server with
 # optimized image size, security, and performance characteristics.
+#
+# Default target is 'runtime-debian' for better compatibility.
 
 # ==============================================================================
 # Build Stage - Use official Rust image with build tools
@@ -145,10 +147,10 @@ ENTRYPOINT ["/usr/local/bin/heimdall"]
 # Build Instructions and Usage
 # ==============================================================================
 
-# To build with Debian slim (recommended for Kubernetes deployments):
-# docker build --target runtime-debian -t heimdall:latest .
+# To build with Debian slim (recommended - default):
+# docker build -t heimdall:latest .
 
-# To build with distroless (smaller image but no shell):
+# To build with distroless (smaller image but may have GLIBC compatibility issues):
 # docker build --target runtime -t heimdall:distroless .
 
 # To run the container:
@@ -175,3 +177,8 @@ ENTRYPOINT ["/usr/local/bin/heimdall"]
 #   --memory=512m \
 #   --cpus=2 \
 #   heimdall:latest
+
+# ==============================================================================
+# Default Stage - Use Debian runtime for better compatibility
+# ==============================================================================
+FROM runtime-debian
