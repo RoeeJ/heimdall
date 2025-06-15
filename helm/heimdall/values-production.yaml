@@ -88,14 +88,9 @@ startupProbe:
   failureThreshold: 30  # 60 seconds to start
 
 readinessProbe:
-  exec:
-    command:
-    - /bin/sh
-    - -c
-    - |
-      # Test actual DNS resolution
-      dig @127.0.0.1 -p 1053 +short +timeout=2 google.com A && \
-      dig @127.0.0.1 -p 1053 +tcp +short +timeout=2 google.com A
+  httpGet:
+    path: /health
+    port: http
   initialDelaySeconds: 5
   periodSeconds: 2
   timeoutSeconds: 3

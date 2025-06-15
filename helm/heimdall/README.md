@@ -85,6 +85,32 @@ The following table lists the configurable parameters and their default values:
 | `redis.persistence.size` | Redis PVC size | `10Gi` |
 | `redis.auth.enabled` | Enable Redis authentication | `false` |
 
+## Health Checks and Monitoring
+
+### Important Note on Container Compatibility
+The Heimdall container uses a distroless base image for security. This means:
+- **No shell access** - exec probes with shell commands won't work
+- **No curl/wget** - HTTP checks must use Kubernetes httpGet probes
+- **HTTP endpoint required** - Health checks are available on port 8080
+
+### Health Check Endpoints
+- `/health` - Basic health check (returns 200 if healthy)
+- `/health/detailed` - Detailed health status with component information
+- `/metrics` - Prometheus metrics endpoint
+
+### Probe Configuration
+All probes should use httpGet:
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http  # Port 8080
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+```
+
 ## Accessing the DNS Server
 
 Once deployed, the LoadBalancer service will be assigned an external IP. You can get it with:
@@ -98,6 +124,15 @@ Configure your clients to use this IP as their DNS server:
 ```bash
 # Test with dig
 dig google.com @<EXTERNAL-IP>
+
+# Check health status
+curl http://<EXTERNAL-IP>:8080/health
+
+# View detailed health
+curl http://<EXTERNAL-IP>:8080/health/detailed
+
+# Access metrics
+curl http://<EXTERNAL-IP>:8080/metrics
 ```
 
 ## Monitoring
