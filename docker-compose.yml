@@ -6,7 +6,7 @@
 version: '3.8'
 
 services:
-  # Production deployment
+  # Production deployment (Debian runtime - with health checks)
   heimdall:
     build:
       context: .
@@ -17,6 +17,7 @@ services:
     ports:
       - "1053:1053/udp"
       - "1053:1053/tcp"
+      - "8080:8080/tcp"  # HTTP API for health checks and metrics
     environment:
       # Bind to all interfaces in container
       HEIMDALL_BIND_ADDR: "0.0.0.0:1053"
@@ -56,9 +57,9 @@ services:
           memory: 128M
           cpus: '0.5'
     
-    # Health check
+    # Health check using dig (available in debian runtime)
     healthcheck:
-      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/1053' || exit 1"]
+      test: ["CMD", "dig", "@localhost", "-p", "1053", "google.com", "+time=5"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -84,6 +85,7 @@ services:
     ports:
       - "1053:1053/udp"
       - "1053:1053/tcp"
+      - "8080:8080/tcp"  # HTTP API for health checks and metrics
     environment:
       HEIMDALL_BIND_ADDR: "0.0.0.0:1053"
       HEIMDALL_UPSTREAM_SERVERS: "1.1.1.1:53,8.8.8.8:53"
@@ -156,6 +158,77 @@ services:
       retries: 3
       start_period: 10s
 
+  # Distroless production deployment (smaller image, no shell)
+  heimdall-distroless:
+    build:
+      context: .
+      target: runtime  # Explicitly use distroless target
+      dockerfile: Dockerfile
+    container_name: heimdall-dns-distroless
+    restart: unless-stopped
+    ports:
+      - "1053:1053/udp"
+      - "1053:1053/tcp"
+      - "8080:8080/tcp"  # HTTP API for health checks and metrics
+    environment:
+      # Same environment as production
+      HEIMDALL_BIND_ADDR: "0.0.0.0:1053"
+      HEIMDALL_HTTP_BIND_ADDR: "0.0.0.0:8080"  # Enable HTTP server
+      HEIMDALL_UPSTREAM_SERVERS: "1.1.1.1:53,8.8.8.8:53,8.8.4.4:53"
+      HEIMDALL_WORKER_THREADS: "0"
+      HEIMDALL_BLOCKING_THREADS: "512"
+      HEIMDALL_MAX_CONCURRENT_QUERIES: "10000"
+      HEIMDALL_UPSTREAM_TIMEOUT: "5"
+      HEIMDALL_MAX_RETRIES: "2"
+      HEIMDALL_ENABLE_CACHING: "true"
+      HEIMDALL_MAX_CACHE_SIZE: "10000"
+      HEIMDALL_DEFAULT_TTL: "300"
+      HEIMDALL_ENABLE_ITERATIVE: "true"
+      HEIMDALL_MAX_ITERATIONS: "16"
+      HEIMDALL_ENABLE_PARALLEL_QUERIES: "true"
+      RUST_LOG: "heimdall=info,warn"
+    # Note: Distroless doesn't support shell-based health checks
+    # Use HTTP endpoint for health checks instead
+    healthcheck:
+      # This won't work in distroless, rely on external monitoring
+      disable: true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '2.0'
+        reservations:
+          memory: 128M
+          cpus: '0.5'
+    # Security
+    user: "1001:1001"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+
+# ==============================================================================
+# Health Check Options for Different Environments:
+# ==============================================================================
+# 
+# 1. Kubernetes/OpenShift:
+#    Use httpGet probes pointing to http://<pod-ip>:8080/health
+#    
+# 2. Docker with Debian runtime:
+#    Use dig command: dig @localhost -p 1053 google.com +time=5
+#    
+# 3. Docker with Distroless:
+#    - Option A: Use external monitoring to check port 8080/health
+#    - Option B: Use Docker's built-in TCP health check (if supported)
+#    - Option C: Disable health checks and rely on restart policies
+#
+# 4. External monitoring:
+#    HTTP GET http://<host>:8080/health
+#    HTTP GET http://<host>:8080/health/detailed (for more info)
+#
 # ==============================================================================
 # Usage Examples:
 # ==============================================================================
