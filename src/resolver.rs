@@ -294,6 +294,24 @@ pub struct DnsResolver {
 }
 
 impl DnsResolver {
+    /// Create a new DNS resolver with immediate startup and background loading of optional components
+    pub async fn new_fast_startup(
+        config: DnsConfig,
+        metrics: Option<Arc<DnsMetrics>>,
+    ) -> Result<Arc<Self>> {
+        // First, create the resolver with essential components only
+        let resolver = Arc::new(Self::new_core_components(config.clone(), metrics).await?);
+
+        // Start background loading of optional components
+        let resolver_clone = Arc::clone(&resolver);
+        tokio::spawn(async move {
+            resolver_clone.load_optional_components_background().await;
+        });
+
+        Ok(resolver)
+    }
+
+    /// Original synchronous initialization method for backwards compatibility
     pub async fn new(config: DnsConfig, metrics: Option<Arc<DnsMetrics>>) -> Result<Self> {
         // Bind to a random port for upstream queries
         let client_socket = UdpSocket::bind("0.0.0.0:0")
@@ -568,6 +586,304 @@ impl DnsResolver {
             blocker,
             update_processor,
         })
+    }
+
+    /// Create DNS resolver with only core components for immediate startup
+    async fn new_core_components(
+        config: DnsConfig,
+        metrics: Option<Arc<DnsMetrics>>,
+    ) -> Result<Self> {
+        // Bind to a random port for upstream queries
+        let client_socket = UdpSocket::bind("0.0.0.0:0")
+            .await
+            .map_err(|e| DnsError::Io(e.to_string()))?;
+
+        // Initialize cache if enabled
+        let cache = if config.enable_caching {
+            let cache = if let Some(cache_path) = &config.cache_file_path {
+                info!(
+                    "DNS cache initialized with persistence: max_size={}, negative_ttl={}s, file={}",
+                    config.max_cache_size, config.default_ttl, cache_path
+                );
+                let cache = DnsCache::with_persistence(
+                    config.max_cache_size,
+                    config.default_ttl,
+                    cache_path.clone(),
+                );
+
+                // Load existing cache from disk
+                if let Err(e) = cache.load_from_disk().await {
+                    warn!("Failed to load cache from disk: {}", e);
+                } else {
+                    info!("Loaded cache from disk: {}", cache_path);
+                }
+
+                cache
+            } else {
+                info!(
+                    "DNS cache initialized: max_size={}, negative_ttl={}s",
+                    config.max_cache_size, config.default_ttl
+                );
+                DnsCache::new(config.max_cache_size, config.default_ttl)
+            };
+            Some(cache)
+        } else {
+            info!("DNS caching disabled");
+            None
+        };
+
+        info!(
+            "DNS resolver initialized with {} upstream servers",
+            config.upstream_servers.len()
+        );
+        debug!("Upstream servers: {:?}", config.upstream_servers);
+
+        let server_health = Arc::new(DashMap::new());
+
+        // Initialize health tracking for all upstream servers
+        for &server_addr in &config.upstream_servers {
+            server_health.insert(server_addr, ServerHealth::new());
+        }
+
+        // Initialize DNSSEC validator if enabled
+        let dnssec_validator = if config.dnssec_enabled {
+            info!("DNSSEC validation enabled");
+            let trust_anchors = Arc::new(TrustAnchorStore::new());
+            Some(Arc::new(DnsSecValidator::new(trust_anchors)))
+        } else {
+            info!("DNSSEC validation disabled");
+            None
+        };
+
+        // Initialize zone store if authoritative serving is enabled
+        let zone_store = if config.authoritative_enabled {
+            info!("Authoritative DNS serving enabled");
+            let store = Arc::new(ZoneStore::new());
+
+            // Load configured zone files
+            for zone_file in &config.zone_files {
+                match store.load_zone_file(zone_file) {
+                    Ok(origin) => info!("Loaded zone {} from {}", origin, zone_file),
+                    Err(e) => error!("Failed to load zone file {}: {}", zone_file, e),
+                }
+            }
+
+            info!("Loaded {} zones", store.zone_count());
+            Some(store)
+        } else {
+            info!("Authoritative DNS serving disabled");
+            None
+        };
+
+        // Initialize update processor if zone store is available
+        let update_processor = if let Some(ref zs) = zone_store {
+            if config.dynamic_updates_enabled {
+                info!("Dynamic DNS updates enabled");
+
+                // Create TSIG keys from config
+                let tsig_keys = Vec::new(); // TODO: Load from config
+
+                // Create update policy
+                let mut update_policy = crate::dynamic_update::UpdatePolicy::new();
+
+                // For now, require TSIG for all updates
+                update_policy
+                    .set_default_policy(crate::dynamic_update::UpdatePermission::RequireTsig);
+
+                let processor = crate::dynamic_update::DynamicUpdateProcessor::new(
+                    zs.clone(),
+                    tsig_keys,
+                    update_policy,
+                );
+
+                Some(Arc::new(processor))
+            } else {
+                info!("Dynamic DNS updates disabled");
+                None
+            }
+        } else {
+            None
+        };
+
+        // Create resolver with empty blocker initially (will be loaded in background)
+        let blocker = if config.blocking_enabled {
+            info!(
+                "DNS blocking enabled - initializing blocker (blocklists will load in background)"
+            );
+            let blocking_mode = match config.blocking_mode.as_str() {
+                "nxdomain" => BlockingMode::NxDomain,
+                "zero_ip" => BlockingMode::ZeroIp,
+                "custom_ip" => {
+                    if let Some(ref ip_str) = config.blocking_custom_ip {
+                        if let Ok(ip) = ip_str.parse() {
+                            BlockingMode::CustomIp(ip)
+                        } else {
+                            warn!(
+                                "Invalid custom blocking IP: {}, falling back to NxDomain",
+                                ip_str
+                            );
+                            BlockingMode::NxDomain
+                        }
+                    } else {
+                        warn!(
+                            "Custom IP mode selected but no IP provided, falling back to NxDomain"
+                        );
+                        BlockingMode::NxDomain
+                    }
+                }
+                "refused" => BlockingMode::Refused,
+                _ => {
+                    warn!(
+                        "Unknown blocking mode: {}, using NxDomain",
+                        config.blocking_mode
+                    );
+                    BlockingMode::NxDomain
+                }
+            };
+
+            Some(Arc::new(DnsBlocker::new(
+                blocking_mode,
+                config.blocking_enable_wildcards,
+            )))
+        } else {
+            info!("DNS blocking disabled");
+            None
+        };
+
+        Ok(Self {
+            config,
+            client_socket,
+            cache,
+            in_flight_queries: Arc::new(DashMap::new()),
+            connection_pool: ConnectionPool::new(5), // Pool up to 5 connections per server
+            server_health,
+            metrics,
+            query_counter: AtomicU64::new(0),
+            error_counter: AtomicU64::new(0),
+            dnssec_validator,
+            zone_store,
+            blocker,
+            update_processor,
+        })
+    }
+
+    /// Load optional components in background after DNS server is already running
+    async fn load_optional_components_background(self: &Arc<Self>) {
+        info!("Starting background loading of optional components...");
+
+        if let Some(blocker) = &self.blocker {
+            let config = &self.config;
+
+            // Load PSL in background
+            if config.blocking_download_psl {
+                info!("Loading Public Suffix List in background...");
+                if let Err(e) = blocker.initialize_psl().await {
+                    warn!("Failed to initialize PSL: {}", e);
+                } else {
+                    info!("PSL loading completed successfully");
+                }
+            } else {
+                debug!("PSL download disabled, using fallback list");
+            }
+
+            // Load allowlist
+            for domain in &config.allowlist {
+                blocker.add_to_allowlist(domain);
+            }
+            info!("Loaded {} allowlist entries", config.allowlist.len());
+
+            // Load blocklists in background
+            let mut _total_blocked = 0;
+            let mut missing_blocklists = Vec::new();
+
+            info!("Loading blocklists in background...");
+            for blocklist_spec in &config.blocklists {
+                let parts: Vec<&str> = blocklist_spec.split(':').collect();
+                if parts.len() == 3 {
+                    let path = parts[0];
+                    let format = match parts[1] {
+                        "domain_list" => BlocklistFormat::DomainList,
+                        "hosts" => BlocklistFormat::Hosts,
+                        "adblock" => BlocklistFormat::AdBlockPlus,
+                        "pihole" => BlocklistFormat::PiHole,
+                        "dnsmasq" => BlocklistFormat::Dnsmasq,
+                        "unbound" => BlocklistFormat::Unbound,
+                        _ => {
+                            warn!("Unknown blocklist format: {}", parts[1]);
+                            continue;
+                        }
+                    };
+                    let name = parts[2];
+
+                    // Check if file exists
+                    let path_buf = std::path::PathBuf::from(path);
+                    if !path_buf.exists() {
+                        warn!(
+                            "Blocklist file not found: {} (will download if auto-update enabled)",
+                            path
+                        );
+                        missing_blocklists.push((path_buf, format, name.to_string()));
+                        continue;
+                    }
+
+                    match blocker.load_blocklist(&path_buf, format, name) {
+                        Ok(count) => {
+                            info!("Loaded {} domains from blocklist: {}", count, name);
+                            _total_blocked += count;
+                        }
+                        Err(e) => {
+                            error!("Failed to load blocklist {}: {}", name, e);
+                        }
+                    }
+                }
+            }
+
+            // Download missing blocklists if auto-update is enabled
+            if config.blocklist_auto_update && !missing_blocklists.is_empty() {
+                info!("Auto-update enabled, downloading missing blocklists in background...");
+
+                // Use default blocklist sources
+                let mut sources = default_blocklist_sources();
+
+                // Update the update interval from config
+                for source in &mut sources {
+                    source.update_interval = Some(std::time::Duration::from_secs(
+                        config.blocklist_update_interval,
+                    ));
+                }
+
+                let updater = BlocklistUpdater::new(sources, Arc::clone(blocker));
+
+                // Try to download missing blocklists
+                for (path, _format, name) in missing_blocklists {
+                    // Find matching source
+                    if let Some(source) = updater.sources.iter().find(|s| s.path == path) {
+                        match updater.update_blocklist(source).await {
+                            Ok(_) => {
+                                info!("Successfully downloaded blocklist: {}", name);
+                                // The updater already loads the blocklist into the blocker
+                            }
+                            Err(e) => {
+                                warn!("Failed to download blocklist {}: {}", name, e);
+                            }
+                        }
+                    }
+                }
+
+                // Start background auto-updater task if needed
+                let updater = Arc::new(updater);
+                tokio::spawn(async move {
+                    updater.start_auto_update().await;
+                });
+            }
+
+            info!(
+                "Background blocklist loading completed. Total blocked domains: {}",
+                blocker.blocked_domain_count()
+            );
+        }
+
+        info!("All background component loading completed");
     }
 
     /// Fast path for cache lookups using zero-copy parsing
