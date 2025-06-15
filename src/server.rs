@@ -262,9 +262,19 @@ async fn handle_dns_query_optimized(
         match packet_view.first_question_domain() {
             Ok(domain) => {
                 // Try cache lookup with zero-copy domain
-                if let Some(cached_response) = resolver.check_cache_fast(&domain) {
+                if let Some(mut cached_response) = resolver.check_cache_fast(&domain) {
                     // Record cache hit (method might be named differently)
                     // TODO: Add proper cache hit metric recording
+
+                    // Fix the packet ID to match the original query
+                    // The cached response has the wrong ID, we need to update it
+                    if cached_response.len() >= 2 {
+                        // DNS packet ID is the first 2 bytes
+                        let id_bytes = packet_view.header.id.to_be_bytes();
+                        cached_response[0] = id_bytes[0];
+                        cached_response[1] = id_bytes[1];
+                    }
+
                     response_buf.clear();
                     response_buf.extend_from_slice(&cached_response);
                     return Ok(());
