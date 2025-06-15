@@ -37,8 +37,9 @@ RUN mkdir src && \
 RUN cargo build --release --bin heimdall && \
     rm -rf src target/release/deps/heimdall* target/release/heimdall*
 
-# Copy the actual source code
+# Copy the actual source code and assets
 COPY src/ ./src/
+COPY assets/ ./assets/
 
 # Build the actual application with optimizations
 ENV RUSTFLAGS="-C opt-level=3 -C codegen-units=1"

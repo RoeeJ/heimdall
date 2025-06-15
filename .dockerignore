@@ -1,0 +1,49 @@
+# Git files
+.git/
+.gitignore
+
+# Build artifacts
+target/
+Dockerfile
+.dockerignore
+
+# Development files
+*.log
+*.swp
+*.swo
+*~
+.DS_Store
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# Test and benchmark data
+benchmarks/
+extreme_load_results/
+load_test_results/
+*.json
+
+# Documentation (not needed for build)
+docs/
+*.md
+
+# Scripts (not needed for build)
+scripts/
+*.sh
+
+# Kubernetes/Helm files
+k8s/
+helm/
+*.yaml
+*.yml
+
+# Cache and temporary files
+heimdall_cache.rkyv
+blocklists/
+cache/
+
+# But ensure we keep the assets directory
+\!assets/
+EOF < /dev/null
