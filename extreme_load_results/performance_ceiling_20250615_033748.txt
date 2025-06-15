@@ -1,0 +1,125 @@
+Heimdall DNS Performance Ceiling Test
+====================================
+Timestamp: א' יונ 15 03:40:25 IDT 2025
+
+Maximum Sustained QPS: 0
+Best Test: 
+
+Detailed Results:
+
+Test: 01_baseline
+  Clients: N/A
+  QPS/client: N/A
+  Actual QPS: 
+  P50 Latency: ms
+  P99 Latency: ms
+  P99.9 Latency: ms
+  Packet Loss: %
+
+Test: 02_high_concurrency_200
+  Clients: N/A
+  QPS/client: N/A
+  Actual QPS: 
+  P50 Latency: ms
+  P99 Latency: ms
+  P99.9 Latency: ms
+  Packet Loss: %
+
+Test: 03_high_concurrency_500
+  Clients: N/A
+  QPS/client: N/A
+  Actual QPS: 
+  P50 Latency: ms
+  P99 Latency: ms
+  P99.9 Latency: ms
+  Packet Loss: %
+
+Test: 04_high_concurrency_1000
+  Clients: N/A
+  QPS/client: N/A
+  Actual QPS: 
+  P50 Latency: ms
+  P99 Latency: ms
+  P99.9 Latency: ms
+  Packet Loss: %
+
+Test: 05_high_qps_100
+  Clients: N/A
+  QPS/client: N/A
+  Actual QPS: 
+  P50 Latency: ms
+  P99 Latency: ms
+  P99.9 Latency: ms
+  Packet Loss: %
+
+Test: 06_high_qps_200
+  Clients: N/A
+  QPS/client: N/A
+  Actual QPS: 
+  P50 Latency: ms
+  P99 Latency: ms
+  P99.9 Latency: ms
+  Packet Loss: %
+
+Test: 07_high_qps_500
+  Clients: N/A
+  QPS/client: N/A
+  Actual QPS: 
+  P50 Latency: ms
+  P99 Latency: ms
+  P99.9 Latency: ms
+  Packet Loss: %
+
+Test: 08_extreme_5k
+  Clients: N/A
+  QPS/client: N/A
+  Actual QPS: 
+  P50 Latency: ms
+  P99 Latency: ms
+  P99.9 Latency: ms
+  Packet Loss: %
+
+Test: 09_extreme_10k
+  Clients: N/A
+  QPS/client: N/A
+  Actual QPS: 
+  P50 Latency: ms
+  P99 Latency: ms
+  P99.9 Latency: ms
+  Packet Loss: %
+
+Test: 10_extreme_20k
+  Clients: N/A
+  QPS/client: N/A
+  Actual QPS: 
+  P50 Latency: ms
+  P99 Latency: ms
+  P99.9 Latency: ms
+  Packet Loss: %
+
+Test: 11_breaking_30k
+  Clients: N/A
+  QPS/client: N/A
+  Actual QPS: 
+  P50 Latency: ms
+  P99 Latency: ms
+  P99.9 Latency: ms
+  Packet Loss: %
+
+Test: 12_breaking_50k
+  Clients: N/A
+  QPS/client: N/A
+  Actual QPS: 
+  P50 Latency: ms
+  P99 Latency: ms
+  P99.9 Latency: ms
+  Packet Loss: %
+
+Test: 13_breaking_100k
+  Clients: N/A
+  QPS/client: N/A
+  Actual QPS: 
+  P50 Latency: ms
+  P99 Latency: ms
+  P99.9 Latency: ms
+  Packet Loss: %

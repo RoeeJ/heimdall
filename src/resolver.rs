@@ -2268,6 +2268,31 @@ impl DnsResolver {
         self.cache.as_ref().map(|cache| cache.size())
     }
 
+    /// Fast cache check that returns the serialized response directly
+    /// This avoids parsing the cached packet and re-serializing it
+    pub fn check_cache_fast(&self, domain: &str) -> Option<Vec<u8>> {
+        if let Some(cache) = &self.cache {
+            // Create a simple question for A record queries (most common)
+            let question = crate::dns::question::DNSQuestion {
+                labels: domain.split('.').map(String::from).collect(),
+                qtype: DNSResourceType::A,
+                qclass: DNSResourceClass::IN,
+            };
+
+            // Create cache key using the interner
+            let cache_key = CacheKey::from_question_interned(&question, cache.string_interner());
+
+            // Check if we have a cached response
+            if let Some(cached_packet) = cache.get(&cache_key) {
+                // Serialize the cached packet directly
+                if let Ok(serialized) = cached_packet.serialize() {
+                    return Some(serialized);
+                }
+            }
+        }
+        None
+    }
+
     /// Get connection pool statistics
     pub async fn connection_pool_stats(&self) -> HashMap<SocketAddr, usize> {
         self.connection_pool.stats().await
