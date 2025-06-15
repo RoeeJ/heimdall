@@ -50,6 +50,7 @@ async fn test_exponential_backoff_for_failed_servers() {
         blocking_download_psl: false,
         dynamic_updates_enabled: false,
         transport_config: heimdall::transport::TransportConfig::default(),
+        cache_config: Default::default(),
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -166,6 +167,7 @@ async fn test_successful_failover_to_backup_servers() {
         blocking_download_psl: false,
         dynamic_updates_enabled: false,
         transport_config: heimdall::transport::TransportConfig::default(),
+        cache_config: Default::default(),
     };
 
     let resolver = DnsResolver::new(config, None)
@@ -307,6 +309,7 @@ async fn test_health_recovery_after_reset() {
         blocking_download_psl: false,
         dynamic_updates_enabled: false,
         transport_config: heimdall::transport::TransportConfig::default(),
+        cache_config: Default::default(),
     };
 
     let resolver = DnsResolver::new(config, None)

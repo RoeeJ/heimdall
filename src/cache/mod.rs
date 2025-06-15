@@ -1,11 +1,15 @@
+pub mod cache_wrapper;
 pub mod local_backend;
 pub mod lockfree_cache;
 pub mod lockfree_lru;
 pub mod optimized;
+pub mod optimized_cache;
 pub mod redis_backend;
 pub mod redis_helper;
 
+pub use cache_wrapper::CacheWrapper;
 pub use lockfree_cache::LockFreeDnsCache;
+pub use optimized_cache::OptimizedDnsCache;
 pub use redis_backend::{LayeredCache, RedisConfig};
 
 use crate::dns::{

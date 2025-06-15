@@ -203,6 +203,7 @@ async fn test_query_deduplication() {
         enable_caching: true,
         max_cache_size: 100,
         upstream_servers: vec!["8.8.8.8:53".parse().unwrap()],
+        cache_config: Default::default(),
         ..Default::default()
     };
 
@@ -272,6 +273,7 @@ async fn test_parallel_vs_sequential_queries() {
         upstream_servers: servers.clone(),
         enable_parallel_queries: true,
         enable_caching: false,
+        cache_config: Default::default(),
         ..Default::default()
     };
 
@@ -279,6 +281,7 @@ async fn test_parallel_vs_sequential_queries() {
         upstream_servers: servers,
         enable_parallel_queries: false,
         enable_caching: false,
+        cache_config: Default::default(),
         ..Default::default()
     };
 
