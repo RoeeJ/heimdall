@@ -1,0 +1,42 @@
+🚀 Heimdall DNS Load Test
+Target: 127.0.0.1:1053
+Test Type: CacheMiss
+Clients: 50
+Duration: 20s (5s warmup)
+
+🔥 Warming up for 5s...
+🏃 Running load test for 20s...
+Progress: 1324 queries sent, 264 QPS
+Progress: 2666 queries sent, 268 QPS
+Progress: 4029 queries sent, 272 QPS
+{
+  "latency_ms": {
+    "mean": 134.065,
+    "p50": 146.4,
+    "p90": 151.60000000000002,
+    "p95": 152.9,
+    "p99": 156.1,
+    "p99_9": 162.89999999999998
+  },
+  "performance": {
+    "queries_per_second": 266.9985960206821,
+    "responses_per_second": 268.830405412999
+  },
+  "query_stats": {
+    "loss_rate_percent": 0.0,
+    "nxdomain": 5430,
+    "servfail": 0,
+    "total_errors": 0,
+    "total_received": 5430,
+    "total_sent": 5393,
+    "total_timeouts": 0
+  },
+  "test_config": {
+    "clients": 50,
+    "duration_seconds": 20.198608084,
+    "qps_per_client": 20,
+    "server": "127.0.0.1:1053",
+    "test_type": "CacheMiss"
+  },
+  "test_passed": true
+}

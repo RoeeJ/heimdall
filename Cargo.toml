@@ -14,7 +14,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 parking_lot = "0.12"
 thiserror = "2.0"
-clap = "4.0"
+clap = { version = "4.5", features = ["derive"] }
 sysinfo = "0.35"
 futures = "0.3"
 chrono = "0.4"
@@ -47,6 +47,7 @@ hyper = { version = "1.5", features = ["full"] }
 hyper-util = { version = "0.1", features = ["full"] }
 http = "1.1"
 mime = "0.3"
+rand = "0.8"
 
 [dev-dependencies]
 criterion = "0.6"
@@ -60,6 +61,10 @@ path = "src/main.rs"
 [[bin]]
 name = "stress_test"
 path = "src/bin/stress_test.rs"
+
+[[bin]]
+name = "heimdall_load_test"
+path = "src/bin/heimdall_load_test.rs"
 
 [[bench]]
 name = "dns_parsing"
