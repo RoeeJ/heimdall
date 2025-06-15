@@ -70,12 +70,13 @@ USER 1001:1001
 # Runtime Configuration
 # ==============================================================================
 
-# Expose DNS ports (both UDP and TCP)
-EXPOSE 1053/udp 1053/tcp
+# Expose DNS ports (both UDP and TCP) and HTTP API port
+EXPOSE 1053/udp 1053/tcp 8080/tcp
 
 # Set environment variables for production defaults
 ENV RUST_LOG=heimdall=info,warn
 ENV HEIMDALL_BIND_ADDR=0.0.0.0:1053
+ENV HEIMDALL_HTTP_BIND_ADDR=0.0.0.0:8080
 ENV HEIMDALL_WORKER_THREADS=0
 ENV HEIMDALL_BLOCKING_THREADS=512
 ENV HEIMDALL_MAX_CONCURRENT_QUERIES=10000
@@ -84,10 +85,8 @@ ENV HEIMDALL_ENABLE_CACHING=true
 ENV HEIMDALL_MAX_CACHE_SIZE=10000
 ENV HEIMDALL_DEFAULT_TTL=300
 
-# Add health check (requires dig or nslookup to be added if needed)
-# For now, we'll use a simple port check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD timeout 5 bash -c '</dev/tcp/localhost/1053' || exit 1
+# Note: Distroless images don't support health checks with shell commands
+# Health checks should be handled by the orchestration platform (k8s, docker-compose, etc)
 
 # Set the entrypoint
 ENTRYPOINT ["/usr/local/bin/heimdall"]
@@ -129,6 +128,7 @@ EXPOSE 1053/udp 1053/tcp
 # Set environment variables
 ENV RUST_LOG=heimdall=info,warn
 ENV HEIMDALL_BIND_ADDR=0.0.0.0:1053
+ENV HEIMDALL_HTTP_BIND_ADDR=0.0.0.0:8080
 ENV HEIMDALL_WORKER_THREADS=0
 ENV HEIMDALL_BLOCKING_THREADS=512
 ENV HEIMDALL_MAX_CONCURRENT_QUERIES=10000
