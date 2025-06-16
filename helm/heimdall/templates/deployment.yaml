@@ -62,12 +62,12 @@ spec:
               protocol: TCP
             {{- if .Values.config.dot.enabled }}
             - name: dot
-              containerPort: 853
+              containerPort: 8853
               protocol: TCP
             {{- end }}
             {{- if .Values.config.doh.enabled }}
             - name: doh
-              containerPort: 943
+              containerPort: 8943
               protocol: TCP
             {{- end }}
           {{- if .Values.startupProbe }}

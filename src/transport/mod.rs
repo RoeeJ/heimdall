@@ -97,9 +97,9 @@ impl Default for TransportConfig {
     fn default() -> Self {
         Self {
             enable_dot: true, // Enable DoT by default
-            dot_bind_addr: Some("0.0.0.0:853".parse().expect("Valid DoT address")),
+            dot_bind_addr: Some("0.0.0.0:8853".parse().expect("Valid DoT address")),
             enable_doh: true, // Enable DoH by default
-            doh_bind_addr: Some("0.0.0.0:943".parse().expect("Valid DoH address")),
+            doh_bind_addr: Some("0.0.0.0:8943".parse().expect("Valid DoH address")),
             tls_config: Some(TlsConfig::default()), // Use default TLS config with auto-generation
             doh_path: "/dns-query".to_string(),
             doh_enable_well_known: true,

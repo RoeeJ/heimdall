@@ -49,9 +49,12 @@ dig example.com LOC @127.0.0.1 -p 1053       # Location records
 dig example.com NAPTR @127.0.0.1 -p 1053     # Naming Authority Pointer
 dig example.com SPF @127.0.0.1 -p 1053       # SPF records (usually TXT)
 
-# Test DNS-over-TLS (DoT)
-kdig +tls @127.0.0.1:853 google.com  # Using kdig (knot-dns)
+# Test DNS-over-TLS (DoT) - Note: Now using port 8853 (non-privileged)
+kdig +tls @127.0.0.1:8853 google.com  # Using kdig (knot-dns)
 # or with stunnel/openssl for testing
+
+# Test DNS-over-HTTPS (DoH) - Note: Now using port 8943 (non-privileged)
+curl -H "accept: application/dns-message" "http://127.0.0.1:8943/dns-query?dns=$(echo -n 'google.com' | base64)"
 
 # Test DNS-over-HTTPS (DoH)
 curl -H "accept: application/dns-message" \

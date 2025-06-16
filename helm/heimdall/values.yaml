@@ -75,7 +75,7 @@ config:
   # DNS-over-TLS (DoT) configuration
   dot:
     enabled: false
-    bindAddr: "0.0.0.0:853"
+    bindAddr: "0.0.0.0:8853"
     # TLS certificate configuration
     # For production, use cert-manager or provide your own certificates
     tls:
@@ -88,7 +88,7 @@ config:
   # DNS-over-HTTPS (DoH) configuration
   doh:
     enabled: false
-    bindAddr: "0.0.0.0:943"
+    bindAddr: "0.0.0.0:8943"
     # DoH path (RFC 8484 compliant)
     path: "/dns-query"
     # TLS certificate configuration (can share with DoT)
@@ -108,10 +108,10 @@ service:
   httpPort: 8080
   httpProtocol: TCP
   # DNS-over-TLS port
-  dotPort: 853
+  dotPort: 8853
   dotProtocol: TCP
   # DNS-over-HTTPS port
-  dohPort: 943
+  dohPort: 8943
   dohProtocol: TCP
   
   # Session affinity to prevent DNS query disruptions

@@ -74,7 +74,7 @@ USER 1001:1001
 # ==============================================================================
 
 # Expose DNS ports (both UDP and TCP) and HTTP API port
-EXPOSE 1053/udp 1053/tcp 8080/tcp 853/tcp 943/tcp
+EXPOSE 1053/udp 1053/tcp 8080/tcp 8853/tcp 8943/tcp
 
 # Set environment variables for production defaults
 ENV RUST_LOG=heimdall=info,warn
@@ -126,7 +126,7 @@ WORKDIR /heimdall
 USER appuser
 
 # Expose DNS and transport ports
-EXPOSE 1053/udp 1053/tcp 8080/tcp 853/tcp 943/tcp
+EXPOSE 1053/udp 1053/tcp 8080/tcp 8853/tcp 8943/tcp
 
 # Set environment variables
 ENV RUST_LOG=heimdall=info,warn
