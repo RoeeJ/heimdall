@@ -96,6 +96,8 @@ pub struct DnsConfig {
     pub blocking_enable_wildcards: bool,
 
     /// Blocklist file paths with format: path:format:name
+    /// If empty, uses default blocklist sources from default_blocklist_sources()
+    /// Format types: domain_list, hosts, adblock, pihole, dnsmasq, unbound
     pub blocklists: Vec<String>,
 
     /// Allowlist domains (never blocked)
@@ -184,11 +186,7 @@ impl Default for DnsConfig {
             blocking_mode: "zero_ip".to_string(), // Use zero_ip as default (common choice)
             blocking_custom_ip: None,
             blocking_enable_wildcards: true,
-            blocklists: vec![
-                // Default blocklists in path:format:name format
-                "blocklists/stevenblack-hosts.txt:hosts:StevenBlack".to_string(),
-                "blocklists/malware-domains.txt:hosts:MalwareDomains".to_string(),
-            ],
+            blocklists: vec![], // Empty = use default_blocklist_sources()
             allowlist: vec![],
             blocklist_auto_update,
             blocklist_update_interval: 86400, // 24 hours

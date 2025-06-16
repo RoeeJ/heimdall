@@ -22,7 +22,7 @@ pub mod trie;
 pub mod updater;
 
 pub use parser::{BlocklistFormat, BlocklistParser};
-pub use updater::BlocklistUpdater;
+pub use updater::{BlocklistSource, BlocklistUpdater, default_blocklist_sources};
 
 /// Blocking mode determines how blocked queries are handled
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -108,9 +108,9 @@ impl BlockingStats {
 /// DNS blocking engine
 pub struct DnsBlocker {
     /// Blocked domains stored in a concurrent hashmap for fast lookups
-    blocked_domains: Arc<DashMap<String, BlocklistSource>>,
+    blocked_domains: Arc<DashMap<String, BlocklistEntry>>,
     /// Blocked domain patterns (for wildcard blocking)
-    blocked_patterns: Arc<DashMap<String, BlocklistSource>>,
+    blocked_patterns: Arc<DashMap<String, BlocklistEntry>>,
     /// Allowlist for domains that should never be blocked
     allowlist: Arc<DashMap<String, ()>>,
     /// Blocking mode
@@ -129,7 +129,7 @@ pub struct DnsBlocker {
 
 /// Source of a blocklist entry
 #[derive(Debug, Clone)]
-pub struct BlocklistSource {
+pub struct BlocklistEntry {
     /// Name of the blocklist
     pub list_name: String,
     /// When this entry was added
@@ -272,7 +272,7 @@ impl DnsBlocker {
     }
 
     /// Add domain to blocklist without deduplication (for bulk loading)
-    fn add_to_blocklist_fast(&self, domain: &str, source: BlocklistSource) {
+    fn add_to_blocklist_fast(&self, domain: &str, source: BlocklistEntry) {
         if let Some(stripped) = domain.strip_prefix("*.") {
             if self.enable_wildcards {
                 let pattern = stripped.to_lowercase();
@@ -319,7 +319,7 @@ impl DnsBlocker {
 
             if let Some(domain) = parser.parse_line(&line) {
                 // For bulk loading, skip expensive deduplication
-                let source = BlocklistSource {
+                let source = BlocklistEntry {
                     list_name: list_name.to_string(),
                     added: Instant::now(),
                 };
@@ -387,7 +387,7 @@ impl DnsBlocker {
 
     /// Add domain to blocklist with PSL-based intelligent deduplication
     pub fn add_to_blocklist(&self, domain: &str, source: &str) {
-        let source = BlocklistSource {
+        let source = BlocklistEntry {
             list_name: source.to_string(),
             added: Instant::now(),
         };

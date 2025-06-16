@@ -1,5 +1,7 @@
-use crate::blocking::updater::{BlocklistUpdater, default_blocklist_sources};
-use crate::blocking::{BlockingMode, BlocklistFormat, DnsBlocker};
+use crate::blocking::{
+    BlockingMode, BlocklistFormat, BlocklistSource, BlocklistUpdater, DnsBlocker,
+    default_blocklist_sources,
+};
 use crate::cache::{CacheKey, CacheWrapper};
 use crate::config::DnsConfig;
 use crate::dns::{
@@ -814,85 +816,110 @@ impl DnsResolver {
             }
             info!("Loaded {} allowlist entries", config.allowlist.len());
 
-            // Load blocklists in background
-            let mut _total_blocked = 0;
-            let mut missing_blocklists = Vec::new();
+            // Use default blocklist sources
+            let mut sources = default_blocklist_sources();
 
-            info!("Loading blocklists in background...");
-            for blocklist_spec in &config.blocklists {
-                let parts: Vec<&str> = blocklist_spec.split(':').collect();
-                if parts.len() == 3 {
-                    let path = parts[0];
-                    let format = match parts[1] {
-                        "domain_list" => BlocklistFormat::DomainList,
-                        "hosts" => BlocklistFormat::Hosts,
-                        "adblock" => BlocklistFormat::AdBlockPlus,
-                        "pihole" => BlocklistFormat::PiHole,
-                        "dnsmasq" => BlocklistFormat::Dnsmasq,
-                        "unbound" => BlocklistFormat::Unbound,
-                        _ => {
-                            warn!("Unknown blocklist format: {}", parts[1]);
-                            continue;
-                        }
-                    };
-                    let name = parts[2];
+            // Update the update interval from config
+            for source in &mut sources {
+                source.update_interval = Some(std::time::Duration::from_secs(
+                    config.blocklist_update_interval,
+                ));
+            }
 
-                    // Check if file exists
-                    let path_buf = std::path::PathBuf::from(path);
-                    if !path_buf.exists() {
-                        warn!(
-                            "Blocklist file not found: {} (will download if auto-update enabled)",
-                            path
-                        );
-                        missing_blocklists.push((path_buf, format, name.to_string()));
-                        continue;
-                    }
+            // Override with custom blocklists from config if specified
+            if !config.blocklists.is_empty() {
+                info!("Using custom blocklists from configuration");
+                sources.clear();
 
-                    match blocker.load_blocklist(&path_buf, format, name) {
-                        Ok(count) => {
-                            info!("Loaded {} domains from blocklist: {}", count, name);
-                            _total_blocked += count;
-                        }
-                        Err(e) => {
-                            error!("Failed to load blocklist {}: {}", name, e);
-                        }
+                for blocklist_spec in &config.blocklists {
+                    let parts: Vec<&str> = blocklist_spec.split(':').collect();
+                    if parts.len() == 3 {
+                        let path = parts[0];
+                        let format = match parts[1] {
+                            "domain_list" => BlocklistFormat::DomainList,
+                            "hosts" => BlocklistFormat::Hosts,
+                            "adblock" => BlocklistFormat::AdBlockPlus,
+                            "pihole" => BlocklistFormat::PiHole,
+                            "dnsmasq" => BlocklistFormat::Dnsmasq,
+                            "unbound" => BlocklistFormat::Unbound,
+                            _ => {
+                                warn!("Unknown blocklist format: {}", parts[1]);
+                                continue;
+                            }
+                        };
+                        let name = parts[2];
+
+                        // Find if this is a default source to get the URL
+                        let url = default_blocklist_sources()
+                            .iter()
+                            .find(|s| s.name == name)
+                            .map(|s| s.url.clone())
+                            .unwrap_or_else(|| format!("https://example.com/{}", name));
+
+                        sources.push(BlocklistSource {
+                            name: name.to_string(),
+                            url,
+                            path: std::path::PathBuf::from(path),
+                            format,
+                            update_interval: Some(std::time::Duration::from_secs(
+                                config.blocklist_update_interval,
+                            )),
+                            enabled: true,
+                        });
                     }
                 }
             }
 
-            // Download missing blocklists if auto-update is enabled
-            if config.blocklist_auto_update && !missing_blocklists.is_empty() {
-                info!("Auto-update enabled, downloading missing blocklists in background...");
+            // Create updater with configured sources
+            let updater = BlocklistUpdater::new(sources.clone(), Arc::clone(blocker));
 
-                // Use default blocklist sources
-                let mut sources = default_blocklist_sources();
-
-                // Update the update interval from config
-                for source in &mut sources {
-                    source.update_interval = Some(std::time::Duration::from_secs(
-                        config.blocklist_update_interval,
-                    ));
+            // Load existing blocklists
+            let mut _total_blocked = 0;
+            for source in &sources {
+                if source.enabled && source.path.exists() {
+                    match blocker.load_blocklist(&source.path, source.format, &source.name) {
+                        Ok(count) => {
+                            info!("Loaded {} domains from blocklist: {}", count, source.name);
+                            _total_blocked += count;
+                        }
+                        Err(e) => {
+                            error!("Failed to load blocklist {}: {}", source.name, e);
+                        }
+                    }
+                } else if !source.path.exists() {
+                    warn!(
+                        "Blocklist file not found: {} (will download if auto-update enabled)",
+                        source.path.display()
+                    );
                 }
+            }
 
-                let updater = BlocklistUpdater::new(sources, Arc::clone(blocker));
+            // Download missing blocklists if auto-update is enabled
+            if config.blocklist_auto_update {
+                let missing_sources: Vec<_> = sources
+                    .iter()
+                    .filter(|s| s.enabled && !s.path.exists())
+                    .collect();
 
-                // Try to download missing blocklists
-                for (path, _format, name) in missing_blocklists {
-                    // Find matching source
-                    if let Some(source) = updater.sources.iter().find(|s| s.path == path) {
+                if !missing_sources.is_empty() {
+                    info!(
+                        "Auto-update enabled, downloading {} missing blocklists...",
+                        missing_sources.len()
+                    );
+
+                    for source in missing_sources {
                         match updater.update_blocklist(source).await {
                             Ok(_) => {
-                                info!("Successfully downloaded blocklist: {}", name);
-                                // The updater already loads the blocklist into the blocker
+                                info!("Successfully downloaded blocklist: {}", source.name);
                             }
                             Err(e) => {
-                                warn!("Failed to download blocklist {}: {}", name, e);
+                                warn!("Failed to download blocklist {}: {}", source.name, e);
                             }
                         }
                     }
                 }
 
-                // Start background auto-updater task if needed
+                // Start background auto-updater task
                 let updater = Arc::new(updater);
                 tokio::spawn(async move {
                     updater.start_auto_update().await;

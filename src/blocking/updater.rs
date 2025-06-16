@@ -227,6 +227,15 @@ impl BlocklistUpdater {
 pub fn default_blocklist_sources() -> Vec<BlocklistSource> {
     vec![
         BlocklistSource {
+            name: "Multi Ultimate".to_string(),
+            url: "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/ultimate.txt"
+                .to_string(),
+            path: PathBuf::from("blocklists/multi-ultimate.txt"),
+            format: BlocklistFormat::Hosts,
+            update_interval: Some(Duration::from_secs(86400)), // 24 hours
+            enabled: true,
+        },
+        BlocklistSource {
             name: "StevenBlack".to_string(),
             url: "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts".to_string(),
             path: PathBuf::from("blocklists/stevenblack-hosts.txt"),
