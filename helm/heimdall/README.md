@@ -70,10 +70,19 @@ The following table lists the configurable parameters and their default values:
 | `service.type` | Service type | `LoadBalancer` |
 | `service.dnsPort` | DNS service port | `53` |
 | `service.httpPort` | HTTP metrics port | `8080` |
+| `service.dotPort` | DNS-over-TLS port | `853` |
+| `service.dohPort` | DNS-over-HTTPS port | `943` |
 | `config.upstreamServers` | Upstream DNS servers | `["1.1.1.1:53", "8.8.8.8:53", "8.8.4.4:53"]` |
 | `config.cache.enabled` | Enable caching | `true` |
 | `config.cache.maxSize` | Maximum cache entries | `10000` |
 | `config.rateLimiting.enabled` | Enable rate limiting | `false` |
+| `config.dot.enabled` | Enable DNS-over-TLS | `false` |
+| `config.dot.bindAddr` | DoT bind address | `"0.0.0.0:853"` |
+| `config.dot.tls.autoGenerate` | Auto-generate self-signed certificates | `true` |
+| `config.doh.enabled` | Enable DNS-over-HTTPS | `false` |
+| `config.doh.bindAddr` | DoH bind address | `"0.0.0.0:943"` |
+| `config.doh.path` | DoH endpoint path | `"/dns-query"` |
+| `config.doh.tls.autoGenerate` | Auto-generate self-signed certificates | `true` |
 | `persistence.enabled` | Enable persistent cache | `true` |
 | `persistence.size` | PVC size | `1Gi` |
 | `resources.requests.cpu` | CPU request | `100m` |
@@ -84,6 +93,109 @@ The following table lists the configurable parameters and their default values:
 | `redis.persistence.enabled` | Enable Redis persistence | `true` |
 | `redis.persistence.size` | Redis PVC size | `10Gi` |
 | `redis.auth.enabled` | Enable Redis authentication | `false` |
+
+## DNS Transport Protocols
+
+Heimdall supports multiple DNS transport protocols for enhanced privacy and security:
+
+### DNS-over-TLS (DoT)
+DNS-over-TLS provides encryption for DNS queries using TLS on port 853.
+
+To enable DoT:
+```yaml
+# values.yaml
+config:
+  dot:
+    enabled: true
+    bindAddr: "0.0.0.0:853"
+    tls:
+      autoGenerate: true  # For testing only
+      # For production, disable autoGenerate and provide certificates:
+      # autoGenerate: false
+      # certPath: "/tls/tls.crt"
+      # keyPath: "/tls/tls.key"
+```
+
+### DNS-over-HTTPS (DoH)
+DNS-over-HTTPS provides encryption for DNS queries using HTTPS on port 943.
+
+To enable DoH:
+```yaml
+# values.yaml
+config:
+  doh:
+    enabled: true
+    bindAddr: "0.0.0.0:943"
+    path: "/dns-query"  # RFC 8484 compliant endpoint
+    tls:
+      autoGenerate: true  # For testing only
+      # For production, see TLS certificate section below
+```
+
+### TLS Certificate Management
+
+For production deployments, you should provide proper TLS certificates:
+
+1. **Using cert-manager** (recommended):
+```yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: heimdall-tls
+spec:
+  secretName: heimdall-tls
+  issuerRef:
+    name: your-issuer
+    kind: ClusterIssuer
+  dnsNames:
+  - dns.example.com
+```
+
+2. **Manual certificate creation**:
+```bash
+kubectl create secret tls heimdall-tls \
+  --cert=path/to/tls.crt \
+  --key=path/to/tls.key \
+  -n <namespace>
+```
+
+Then update values.yaml:
+```yaml
+config:
+  dot:
+    enabled: true
+    tls:
+      autoGenerate: false
+      certPath: "/tls/tls.crt"
+      keyPath: "/tls/tls.key"
+  doh:
+    enabled: true
+    tls:
+      autoGenerate: false
+      certPath: "/tls/tls.crt"  # Can share certificates with DoT
+      keyPath: "/tls/tls.key"
+```
+
+### Testing Encrypted DNS
+
+Test DNS-over-TLS:
+```bash
+# Using kdig (from knot-dnsutils package)
+kdig -d @<EXTERNAL-IP> +tls -p 853 google.com
+
+# Using systemd-resolve
+systemd-resolve --tlsa=<EXTERNAL-IP>#853 google.com
+```
+
+Test DNS-over-HTTPS:
+```bash
+# Using curl
+curl -H "accept: application/dns-message" \
+  "https://<EXTERNAL-IP>:943/dns-query?dns=<base64-encoded-dns-query>"
+
+# Using dog (DNS client with DoH support)
+dog google.com --https @https://<EXTERNAL-IP>:943/dns-query
+```
 
 ## Health Checks and Monitoring
 

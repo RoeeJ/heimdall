@@ -39,5 +39,17 @@ spec:
       targetPort: http
       protocol: {{ .Values.service.httpProtocol }}
       name: http
+    {{- if .Values.config.dot.enabled }}
+    - port: {{ .Values.service.dotPort }}
+      targetPort: dot
+      protocol: {{ .Values.service.dotProtocol }}
+      name: dot
+    {{- end }}
+    {{- if .Values.config.doh.enabled }}
+    - port: {{ .Values.service.dohPort }}
+      targetPort: doh
+      protocol: {{ .Values.service.dohProtocol }}
+      name: doh
+    {{- end }}
   selector:
     {{- include "heimdall.selectorLabels" . | nindent 4 }}

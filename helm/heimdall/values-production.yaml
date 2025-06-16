@@ -51,6 +51,27 @@ config:
     enabled: true
     queriesPerSecondPerIP: 1000
     globalQueriesPerSecond: 50000
+  
+  # DNS-over-TLS (DoT) configuration
+  dot:
+    enabled: true
+    bindAddr: "0.0.0.0:853"
+    tls:
+      # For production, use cert-manager or provide certificates
+      autoGenerate: false
+      certPath: "/tls/tls.crt"
+      keyPath: "/tls/tls.key"
+  
+  # DNS-over-HTTPS (DoH) configuration
+  doh:
+    enabled: true
+    bindAddr: "0.0.0.0:943"
+    path: "/dns-query"
+    tls:
+      # For production, use cert-manager or provide certificates
+      autoGenerate: false
+      certPath: "/tls/tls.crt"
+      keyPath: "/tls/tls.key"
 
 # Service configuration optimized for MetalLB
 service:
