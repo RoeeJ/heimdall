@@ -245,8 +245,9 @@ async fn test_cached_entry_serialization() {
     let entry = create_test_entry(300);
 
     // Test that entry can be serialized/deserialized
-    let serialized = bincode::serialize(&entry).unwrap();
-    let deserialized: CachedEntry = bincode::deserialize(&serialized).unwrap();
+    let serialized = bincode::serde::encode_to_vec(&entry, bincode::config::standard()).unwrap();
+    let (deserialized, _): (CachedEntry, _) =
+        bincode::serde::decode_from_slice(&serialized, bincode::config::standard()).unwrap();
 
     assert_eq!(deserialized.cached_at, entry.cached_at);
 }
