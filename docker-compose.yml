@@ -18,8 +18,8 @@ services:
       - "1053:1053/udp"
       - "1053:1053/tcp"
       - "8080:8080/tcp"  # HTTP API for health checks and metrics
-      - "853:853/tcp"   # DNS-over-TLS
-      - "943:943/tcp"   # DNS-over-HTTPS
+      - "853:8853/tcp"   # DNS-over-TLS
+      - "943:8943/tcp"   # DNS-over-HTTPS
     volumes:
       - tls-certs:/tls
     environment:
@@ -90,8 +90,8 @@ services:
       - "1053:1053/udp"
       - "1053:1053/tcp"
       - "8080:8080/tcp"  # HTTP API for health checks and metrics
-      - "853:853/tcp"   # DNS-over-TLS
-      - "943:943/tcp"   # DNS-over-HTTPS
+      - "853:8853/tcp"   # DNS-over-TLS
+      - "943:8943/tcp"   # DNS-over-HTTPS
     volumes:
       - tls-certs-dev:/tls
     environment:
@@ -123,8 +123,8 @@ services:
       - "53:1053/udp"   # Map to standard DNS port
       - "53:1053/tcp"
       - "8080:8080/tcp"  # HTTP API
-      - "853:853/tcp"   # DNS-over-TLS
-      - "943:943/tcp"   # DNS-over-HTTPS
+      - "853:8853/tcp"   # DNS-over-TLS
+      - "943:8943/tcp"   # DNS-over-HTTPS
     volumes:
       - tls-certs-prod:/tls
     environment:
@@ -183,8 +183,8 @@ services:
       - "1053:1053/udp"
       - "1053:1053/tcp"
       - "8080:8080/tcp"  # HTTP API for health checks and metrics
-      - "853:853/tcp"   # DNS-over-TLS
-      - "943:943/tcp"   # DNS-over-HTTPS
+      - "853:8853/tcp"   # DNS-over-TLS
+      - "943:8943/tcp"   # DNS-over-HTTPS
     volumes:
       - tls-certs-distroless:/tls
     environment:
