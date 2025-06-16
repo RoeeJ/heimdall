@@ -271,7 +271,7 @@ pub struct DotServerStats {
 
 impl DotServer {
     /// Create a new DNS-over-TLS server
-    pub fn new(
+    pub async fn new(
         bind_addr: SocketAddr,
         tls_config: TlsConfig,
         resolver: Arc<DnsResolver>,
@@ -280,7 +280,7 @@ impl DotServer {
         connection_timeout: Duration,
         keepalive_timeout: Duration,
     ) -> Result<Self, TlsError> {
-        let tls_acceptor = tls_config.create_acceptor()?;
+        let tls_acceptor = tls_config.create_acceptor().await?;
 
         let config = DotServerConfig {
             max_connections,

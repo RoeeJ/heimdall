@@ -17,6 +17,9 @@ heimdall_cache.rkyv
 packet.bin
 *.bin
 
+# Auto-generated certificates
+certs/
+
 # Benchmark results (keep baseline.json tracked)
 /target/criterion
 

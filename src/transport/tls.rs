@@ -16,10 +16,10 @@ use tracing::{debug, info, warn};
 #[derive(Debug, Clone)]
 pub struct TlsConfig {
     /// Path to the TLS certificate file (PEM format)
-    pub cert_path: String,
+    pub cert_path: Option<String>,
 
     /// Path to the private key file (PEM format)  
-    pub key_path: String,
+    pub key_path: Option<String>,
 
     /// Server name for SNI (Server Name Indication)
     pub server_name: Option<String>,
@@ -35,6 +35,12 @@ pub struct TlsConfig {
 
     /// Path to CA certificates for client validation
     pub client_ca_path: Option<String>,
+
+    /// Whether to auto-generate self-signed certificate if not found
+    pub auto_generate_cert: bool,
+
+    /// Additional Subject Alternative Names for auto-generated certificates
+    pub additional_sans: Vec<String>,
 }
 
 /// TLS version enumeration
@@ -79,13 +85,15 @@ pub enum TlsError {
 impl Default for TlsConfig {
     fn default() -> Self {
         Self {
-            cert_path: "certs/server.crt".to_string(),
-            key_path: "certs/server.key".to_string(),
+            cert_path: Some("certs/server.crt".to_string()),
+            key_path: Some("certs/server.key".to_string()),
             server_name: None,
             min_tls_version: TlsVersion::V1_2,
             max_tls_version: TlsVersion::V1_3,
             require_client_cert: false,
             client_ca_path: None,
+            auto_generate_cert: true,
+            additional_sans: vec![],
         }
     }
 }
@@ -94,8 +102,8 @@ impl TlsConfig {
     /// Create a new TLS configuration
     pub fn new(cert_path: String, key_path: String) -> Self {
         Self {
-            cert_path,
-            key_path,
+            cert_path: Some(cert_path),
+            key_path: Some(key_path),
             ..Default::default()
         }
     }
@@ -121,10 +129,12 @@ impl TlsConfig {
     }
 
     /// Create a TLS acceptor from this configuration
-    pub fn create_acceptor(&self) -> Result<TlsAcceptor, TlsError> {
-        // Load certificates and private key
-        let certs = self.load_certificates()?;
-        let key = self.load_private_key()?;
+    pub async fn create_acceptor(&self) -> Result<TlsAcceptor, TlsError> {
+        // Install default crypto provider if not already installed
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+        // Load or generate certificates and private key
+        let (certs, key) = self.load_or_generate_certificates().await?;
 
         // Create server configuration with default crypto provider
         let config = if self.require_client_cert {
@@ -160,11 +170,88 @@ impl TlsConfig {
         Ok(TlsAcceptor::from(Arc::new(config)))
     }
 
+    /// Load or generate certificates
+    async fn load_or_generate_certificates(
+        &self,
+    ) -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>), TlsError> {
+        if self.auto_generate_cert {
+            // Determine hostname for certificate generation
+            let hostname = self.server_name.as_deref().unwrap_or("localhost");
+
+            // Get paths for certificates
+            let cert_path = self.cert_path.as_ref().map(Path::new);
+            let key_path = self.key_path.as_ref().map(Path::new);
+
+            // Load or generate certificate
+            match crate::transport::cert_gen::load_or_generate_cert(
+                cert_path,
+                key_path,
+                hostname,
+                self.additional_sans.clone(),
+            )
+            .await
+            {
+                Ok((cert_pem, key_pem)) => {
+                    // Parse the PEM data
+                    let mut cert_cursor = std::io::Cursor::new(cert_pem);
+                    let certs: Result<Vec<CertificateDer<'static>>, _> =
+                        rustls_pemfile::certs(&mut cert_cursor).collect();
+                    let certs = certs.map_err(|e| TlsError::CertificateParse(e.to_string()))?;
+
+                    let mut key_cursor = std::io::Cursor::new(key_pem);
+                    let keys: Result<Vec<_>, _> =
+                        rustls_pemfile::pkcs8_private_keys(&mut key_cursor).collect();
+                    let keys = keys.map_err(|e| TlsError::PrivateKeyParse(e.to_string()))?;
+
+                    if keys.is_empty() {
+                        // Try RSA format
+                        key_cursor.set_position(0);
+                        let keys: Result<Vec<_>, _> =
+                            rustls_pemfile::rsa_private_keys(&mut key_cursor).collect();
+                        let keys = keys.map_err(|e| TlsError::PrivateKeyParse(e.to_string()))?;
+
+                        if !keys.is_empty() {
+                            return Ok((certs, PrivateKeyDer::Pkcs1(keys[0].clone_key())));
+                        }
+                        return Err(TlsError::NoPrivateKey);
+                    }
+
+                    Ok((certs, PrivateKeyDer::Pkcs8(keys[0].clone_key())))
+                }
+                Err(e) => {
+                    warn!("Failed to load or generate certificate: {}", e);
+                    // Fall back to loading from file
+                    if self.cert_path.is_some() && self.key_path.is_some() {
+                        let certs = self.load_certificates()?;
+                        let key = self.load_private_key()?;
+                        Ok((certs, key))
+                    } else {
+                        Err(TlsError::CertificateRead(std::io::Error::new(
+                            std::io::ErrorKind::NotFound,
+                            "No certificate path provided and auto-generation failed",
+                        )))
+                    }
+                }
+            }
+        } else {
+            // Traditional loading from file
+            let certs = self.load_certificates()?;
+            let key = self.load_private_key()?;
+            Ok((certs, key))
+        }
+    }
+
     /// Load certificates from file
     fn load_certificates(&self) -> Result<Vec<CertificateDer<'static>>, TlsError> {
-        debug!("Loading TLS certificate from: {}", self.cert_path);
+        let cert_path = self.cert_path.as_ref().ok_or_else(|| {
+            TlsError::CertificateRead(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "No certificate path provided",
+            ))
+        })?;
+        debug!("Loading TLS certificate from: {}", cert_path);
 
-        let cert_data = fs::read(&self.cert_path)?;
+        let cert_data = fs::read(cert_path)?;
         let mut cursor = std::io::Cursor::new(cert_data);
 
         let certs: Result<Vec<CertificateDer<'static>>, _> =
@@ -175,19 +262,19 @@ impl TlsConfig {
             return Err(TlsError::NoCertificate);
         }
 
-        info!(
-            "Loaded {} certificate(s) from {}",
-            certs.len(),
-            self.cert_path
-        );
+        info!("Loaded {} certificate(s) from {}", certs.len(), cert_path);
         Ok(certs)
     }
 
     /// Load private key from file
     fn load_private_key(&self) -> Result<PrivateKeyDer<'static>, TlsError> {
-        debug!("Loading private key from: {}", self.key_path);
+        let key_path = self
+            .key_path
+            .as_ref()
+            .ok_or_else(|| TlsError::PrivateKeyParse("No key path provided".to_string()))?;
+        debug!("Loading private key from: {}", key_path);
 
-        let key_data = fs::read(&self.key_path)?;
+        let key_data = fs::read(key_path)?;
         let mut cursor = std::io::Cursor::new(key_data);
 
         // Try to parse as different key formats
@@ -195,7 +282,7 @@ impl TlsConfig {
         let keys = keys.map_err(|e| TlsError::PrivateKeyParse(e.to_string()))?;
 
         if !keys.is_empty() {
-            info!("Loaded PKCS8 private key from {}", self.key_path);
+            info!("Loaded PKCS8 private key from {}", key_path);
             return Ok(PrivateKeyDer::Pkcs8(keys[0].clone_key()));
         }
 
@@ -205,7 +292,7 @@ impl TlsConfig {
         let keys = keys.map_err(|e| TlsError::PrivateKeyParse(e.to_string()))?;
 
         if !keys.is_empty() {
-            info!("Loaded RSA private key from {}", self.key_path);
+            info!("Loaded RSA private key from {}", key_path);
             return Ok(PrivateKeyDer::Pkcs1(keys[0].clone_key()));
         }
 
@@ -232,21 +319,40 @@ impl TlsConfig {
 
     /// Validate the TLS configuration (check if files exist and are readable)
     pub fn validate(&self) -> Result<(), TlsError> {
+        // If auto-generation is enabled, skip validation
+        if self.auto_generate_cert {
+            return Ok(());
+        }
+
         // Check certificate file
-        if !Path::new(&self.cert_path).exists() {
-            warn!("TLS certificate file not found: {}", self.cert_path);
+        if let Some(cert_path) = &self.cert_path {
+            if !Path::new(cert_path).exists() {
+                warn!("TLS certificate file not found: {}", cert_path);
+                return Err(TlsError::CertificateRead(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Certificate file not found: {}", cert_path),
+                )));
+            }
+        } else {
             return Err(TlsError::CertificateRead(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                format!("Certificate file not found: {}", self.cert_path),
+                "No certificate path provided".to_string(),
             )));
         }
 
         // Check private key file
-        if !Path::new(&self.key_path).exists() {
-            warn!("TLS private key file not found: {}", self.key_path);
+        if let Some(key_path) = &self.key_path {
+            if !Path::new(key_path).exists() {
+                warn!("TLS private key file not found: {}", key_path);
+                return Err(TlsError::CertificateRead(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Private key file not found: {}", key_path),
+                )));
+            }
+        } else {
             return Err(TlsError::CertificateRead(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                format!("Private key file not found: {}", self.key_path),
+                "No private key path provided".to_string(),
             )));
         }
 
@@ -333,8 +439,8 @@ mod tests {
     #[test]
     fn test_default_tls_config() {
         let config = TlsConfig::default();
-        assert_eq!(config.cert_path, "certs/server.crt");
-        assert_eq!(config.key_path, "certs/server.key");
+        assert_eq!(config.cert_path, Some("certs/server.crt".to_string()));
+        assert_eq!(config.key_path, Some("certs/server.key".to_string()));
         assert_eq!(config.min_tls_version, TlsVersion::V1_2);
         assert_eq!(config.max_tls_version, TlsVersion::V1_3);
         assert!(!config.require_client_cert);
@@ -347,8 +453,8 @@ mod tests {
             .with_tls_versions(TlsVersion::V1_3, TlsVersion::V1_3)
             .with_client_cert_required("ca.crt".to_string());
 
-        assert_eq!(config.cert_path, "test.crt");
-        assert_eq!(config.key_path, "test.key");
+        assert_eq!(config.cert_path, Some("test.crt".to_string()));
+        assert_eq!(config.key_path, Some("test.key".to_string()));
         assert_eq!(config.server_name, Some("example.com".to_string()));
         assert_eq!(config.min_tls_version, TlsVersion::V1_3);
         assert_eq!(config.max_tls_version, TlsVersion::V1_3);

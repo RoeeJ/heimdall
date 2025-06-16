@@ -3,9 +3,10 @@
 //! This module provides support for various DNS transport protocols:
 //! - Traditional UDP and TCP (RFC 1035)
 //! - DNS-over-TLS (DoT) (RFC 7858)
-//! - Future: DNS-over-HTTPS (DoH) (RFC 8484)
+//! - DNS-over-HTTPS (DoH) (RFC 8484)
 //! - Future: DNS-over-QUIC (DoQ) (Draft)
 
+pub mod cert_gen;
 pub mod doh;
 pub mod dot;
 pub mod tls;
@@ -33,7 +34,7 @@ impl TransportProtocol {
         match self {
             TransportProtocol::Udp | TransportProtocol::Tcp => 53,
             TransportProtocol::Tls => 853,
-            TransportProtocol::Https => 443,
+            TransportProtocol::Https => 943, // Custom port for Heimdall DoH
             TransportProtocol::Quic => 853,
         }
     }
@@ -95,11 +96,11 @@ pub struct TransportConfig {
 impl Default for TransportConfig {
     fn default() -> Self {
         Self {
-            enable_dot: false,
-            dot_bind_addr: Some("127.0.0.1:853".parse().expect("Valid DoT address")),
-            enable_doh: false,
-            doh_bind_addr: Some("127.0.0.1:443".parse().expect("Valid DoH address")),
-            tls_config: None,
+            enable_dot: true, // Enable DoT by default
+            dot_bind_addr: Some("0.0.0.0:853".parse().expect("Valid DoT address")),
+            enable_doh: true, // Enable DoH by default
+            doh_bind_addr: Some("0.0.0.0:943".parse().expect("Valid DoH address")),
+            tls_config: Some(TlsConfig::default()), // Use default TLS config with auto-generation
             doh_path: "/dns-query".to_string(),
             doh_enable_well_known: true,
             doh_enable_json_api: true,
@@ -147,7 +148,8 @@ impl TransportManager {
                     self.config.max_connections,
                     self.config.connection_timeout,
                     self.config.keepalive_timeout,
-                )?;
+                )
+                .await?;
 
                 let mut shutdown_rx = self.shutdown_tx.subscribe();
                 let dot_task = tokio::spawn(async move {
@@ -172,7 +174,7 @@ impl TransportManager {
         if self.config.enable_doh {
             if let Some(bind_addr) = self.config.doh_bind_addr {
                 let doh_config = crate::transport::doh::DohServerConfig {
-                    enable_tls: self.config.tls_config.is_some(),
+                    enable_tls: false, // TODO: Implement proper TLS support for DoH
                     path: self.config.doh_path.clone(),
                     enable_well_known: self.config.doh_enable_well_known,
                     enable_json_api: self.config.doh_enable_json_api,
@@ -186,7 +188,8 @@ impl TransportManager {
                     resolver.clone(),
                     metrics.clone(),
                     doh_config,
-                )?;
+                )
+                .await?;
 
                 let mut shutdown_rx = self.shutdown_tx.subscribe();
                 let doh_task = tokio::spawn(async move {
