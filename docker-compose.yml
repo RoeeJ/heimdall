@@ -18,6 +18,10 @@ services:
       - "1053:1053/udp"
       - "1053:1053/tcp"
       - "8080:8080/tcp"  # HTTP API for health checks and metrics
+      - "853:853/tcp"   # DNS-over-TLS
+      - "943:943/tcp"   # DNS-over-HTTPS
+    volumes:
+      - tls-certs:/tls
     environment:
       # Bind to all interfaces in container
       HEIMDALL_BIND_ADDR: "0.0.0.0:1053"
@@ -86,6 +90,10 @@ services:
       - "1053:1053/udp"
       - "1053:1053/tcp"
       - "8080:8080/tcp"  # HTTP API for health checks and metrics
+      - "853:853/tcp"   # DNS-over-TLS
+      - "943:943/tcp"   # DNS-over-HTTPS
+    volumes:
+      - tls-certs-dev:/tls
     environment:
       HEIMDALL_BIND_ADDR: "0.0.0.0:1053"
       HEIMDALL_UPSTREAM_SERVERS: "1.1.1.1:53,8.8.8.8:53"
@@ -114,6 +122,11 @@ services:
     ports:
       - "53:1053/udp"   # Map to standard DNS port
       - "53:1053/tcp"
+      - "8080:8080/tcp"  # HTTP API
+      - "853:853/tcp"   # DNS-over-TLS
+      - "943:943/tcp"   # DNS-over-HTTPS
+    volumes:
+      - tls-certs-prod:/tls
     environment:
       HEIMDALL_BIND_ADDR: "0.0.0.0:1053"
       HEIMDALL_UPSTREAM_SERVERS: "1.1.1.1:53,8.8.8.8:53,8.8.4.4:53,1.0.0.1:53"
@@ -170,6 +183,10 @@ services:
       - "1053:1053/udp"
       - "1053:1053/tcp"
       - "8080:8080/tcp"  # HTTP API for health checks and metrics
+      - "853:853/tcp"   # DNS-over-TLS
+      - "943:943/tcp"   # DNS-over-HTTPS
+    volumes:
+      - tls-certs-distroless:/tls
     environment:
       # Same environment as production
       HEIMDALL_BIND_ADDR: "0.0.0.0:1053"
@@ -253,3 +270,9 @@ services:
 
 # Scale for load testing:
 # docker-compose up -d --scale heimdall=3
+
+volumes:
+  tls-certs:
+  tls-certs-dev:
+  tls-certs-prod:
+  tls-certs-distroless:

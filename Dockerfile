@@ -63,6 +63,9 @@ COPY --from=builder /etc/group /etc/group
 # Copy the binary from builder stage
 COPY --from=builder /app/target/release/heimdall /usr/local/bin/heimdall
 
+# Create required directories (must be done in builder stage for distroless)
+# Note: For TLS certificates, use volume mounts as distroless filesystem is read-only
+
 # Set user to non-root
 USER 1001:1001
 
@@ -71,7 +74,7 @@ USER 1001:1001
 # ==============================================================================
 
 # Expose DNS ports (both UDP and TCP) and HTTP API port
-EXPOSE 1053/udp 1053/tcp 8080/tcp
+EXPOSE 1053/udp 1053/tcp 8080/tcp 853/tcp 943/tcp
 
 # Set environment variables for production defaults
 ENV RUST_LOG=heimdall=info,warn
@@ -106,8 +109,8 @@ RUN apt-get update && apt-get install -y \
 # Create non-root user
 RUN useradd -m -u 1001 -s /bin/bash appuser
 
-# Create blocklist directory with correct permissions
-RUN mkdir -p /heimdall/blocklists && chown -R appuser:appuser /heimdall
+# Create blocklist and TLS directories with correct permissions
+RUN mkdir -p /heimdall/blocklists /tls && chown -R appuser:appuser /heimdall /tls
 
 # Copy the binary from builder stage
 COPY --from=builder /app/target/release/heimdall /usr/local/bin/heimdall
@@ -122,8 +125,8 @@ WORKDIR /heimdall
 # Switch to non-root user
 USER appuser
 
-# Expose DNS ports
-EXPOSE 1053/udp 1053/tcp
+# Expose DNS and transport ports
+EXPOSE 1053/udp 1053/tcp 8080/tcp 853/tcp 943/tcp
 
 # Set environment variables
 ENV RUST_LOG=heimdall=info,warn
