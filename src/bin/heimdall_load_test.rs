@@ -5,8 +5,7 @@ use heimdall::dns::{
     header::DNSHeader,
     question::DNSQuestion,
 };
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::Rng;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -258,7 +257,7 @@ impl LatencyHistogram {
 /// Generate test domains based on scenario
 fn generate_test_domains(test_type: &TestType, count: usize) -> Vec<String> {
     let mut domains = Vec::with_capacity(count);
-    let mut rng = StdRng::from_entropy();
+    let mut rng = rand::rng();
 
     match test_type {
         TestType::RandomA | TestType::CacheMiss => {
@@ -267,7 +266,7 @@ fn generate_test_domains(test_type: &TestType, count: usize) -> Vec<String> {
                 domains.push(format!(
                     "test-{}-{}.example.com",
                     i,
-                    rng.gen_range(0..1000000)
+                    rng.random_range(0..1000000)
                 ));
             }
         }
@@ -281,7 +280,7 @@ fn generate_test_domains(test_type: &TestType, count: usize) -> Vec<String> {
                 "shared.example.com",
             ];
             for _ in 0..count {
-                domains.push(cache_domains[rng.gen_range(0..cache_domains.len())].to_string());
+                domains.push(cache_domains[rng.random_range(0..cache_domains.len())].to_string());
             }
         }
         TestType::Mixed => {
@@ -294,13 +293,14 @@ fn generate_test_domains(test_type: &TestType, count: usize) -> Vec<String> {
                 "stackoverflow.com",
             ];
             for i in 0..count {
-                if rng.gen_bool(0.8) {
-                    domains.push(cache_domains[rng.gen_range(0..cache_domains.len())].to_string());
+                if rng.random_bool(0.8) {
+                    domains
+                        .push(cache_domains[rng.random_range(0..cache_domains.len())].to_string());
                 } else {
                     domains.push(format!(
                         "unique-{}-{}.example.com",
                         i,
-                        rng.gen_range(0..1000000)
+                        rng.random_range(0..1000000)
                     ));
                 }
             }
@@ -311,7 +311,7 @@ fn generate_test_domains(test_type: &TestType, count: usize) -> Vec<String> {
                 domains.push(format!(
                     "nonexistent-{}-{}.invalid",
                     i,
-                    rng.gen_range(0..1000000)
+                    rng.random_range(0..1000000)
                 ));
             }
         }
@@ -326,7 +326,7 @@ fn generate_test_domains(test_type: &TestType, count: usize) -> Vec<String> {
             ];
             for _ in 0..count {
                 domains.push(
-                    large_response_domains[rng.gen_range(0..large_response_domains.len())]
+                    large_response_domains[rng.random_range(0..large_response_domains.len())]
                         .to_string(),
                 );
             }
@@ -386,7 +386,6 @@ async fn run_client(
     socket.connect(&args.server).await?;
 
     let domains = generate_test_domains(&args.test_type, 1000);
-    let mut rng = StdRng::from_entropy();
     let mut query_id = (client_id * 1000) as u16;
 
     // Calculate delay between queries
@@ -403,11 +402,12 @@ async fn run_client(
         let _permit = semaphore.acquire().await?;
 
         // Select domain and query type
-        let domain = &domains[rng.gen_range(0..domains.len())];
+        let domain_idx = rand::random::<u32>() as usize % domains.len();
+        let domain = &domains[domain_idx];
         let query_type = match &args.test_type {
             TestType::RecordTypes => {
                 // Rotate through different record types
-                match rng.gen_range(0..6) {
+                match rand::random::<u8>() % 6 {
                     0 => DNSResourceType::A,
                     1 => DNSResourceType::AAAA,
                     2 => DNSResourceType::MX,
