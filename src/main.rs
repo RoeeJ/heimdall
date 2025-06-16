@@ -228,12 +228,22 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
         None
     };
 
-    // Start DNS-over-TLS server if enabled
-    let dot_task = if config.transport_config.enable_dot {
-        info!(
-            "Starting DNS-over-TLS server on {:?}",
-            config.transport_config.dot_bind_addr
-        );
+    // Start encrypted DNS transport servers (DoT/DoH) if enabled
+    let transport_task = if config.transport_config.enable_dot || config.transport_config.enable_doh
+    {
+        if config.transport_config.enable_dot {
+            info!(
+                "DNS-over-TLS server enabled on {:?}",
+                config.transport_config.dot_bind_addr
+            );
+        }
+        if config.transport_config.enable_doh {
+            info!(
+                "DNS-over-HTTPS server enabled on {:?}",
+                config.transport_config.doh_bind_addr
+            );
+        }
+
         let transport_manager = TransportManager::new(config.transport_config.clone());
         let resolver_clone = resolver.clone();
         let metrics_clone = metrics.clone();
@@ -243,11 +253,11 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
                 .start_servers(resolver_clone, Some(metrics_clone))
                 .await
             {
-                error!("DoT transport manager error: {}", e);
+                error!("Transport manager error: {}", e);
             }
         }))
     } else {
-        info!("DNS-over-TLS server disabled");
+        info!("DNS-over-TLS and DNS-over-HTTPS servers disabled");
         None
     };
 
@@ -298,6 +308,9 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
         result = cleanup_task => {
             error!("Rate limiter cleanup task exited: {:?}", result);
         }
+        result = async { transport_task.unwrap().await }, if transport_task.is_some() => {
+            error!("Transport servers exited: {:?}", result);
+        }
         result = async {
             if let Some(task) = cache_save_task {
                 task.await
@@ -327,16 +340,6 @@ async fn async_main(config: DnsConfig) -> Result<(), Box<dyn std::error::Error>>
             }
         } => {
             error!("Configuration change handler exited: {:?}", result);
-        }
-        result = async {
-            if let Some(task) = dot_task {
-                task.await
-            } else {
-                // If no DoT task, wait forever
-                std::future::pending::<Result<(), tokio::task::JoinError>>().await
-            }
-        } => {
-            error!("DNS-over-TLS server exited: {:?}", result);
         }
         _ = shutdown_signal => {
             info!("Heimdall DNS server shutting down gracefully");

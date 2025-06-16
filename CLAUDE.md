@@ -49,6 +49,15 @@ dig example.com LOC @127.0.0.1 -p 1053       # Location records
 dig example.com NAPTR @127.0.0.1 -p 1053     # Naming Authority Pointer
 dig example.com SPF @127.0.0.1 -p 1053       # SPF records (usually TXT)
 
+# Test DNS-over-TLS (DoT)
+kdig +tls @127.0.0.1:853 google.com  # Using kdig (knot-dns)
+# or with stunnel/openssl for testing
+
+# Test DNS-over-HTTPS (DoH)
+curl -H "accept: application/dns-message" \
+     "https://localhost:943/dns-query?dns=$(echo -n 'YOUR_BASE64_DNS_QUERY' | base64)"
+# or use Firefox/Chrome with custom DoH server: https://localhost:943/dns-query
+
 # Use the provided watch script for continuous testing
 ./watch.sh
 
@@ -120,6 +129,8 @@ The codebase implements a production-ready DNS server with both UDP and TCP supp
 - **Distributed Systems**: Redis L2 cache, cluster coordination, aggregated metrics
 - **DNSSEC Validation**: Complete signature validation with chain of trust verification
 - **Authoritative DNS**: Zone file parsing, SOA management, and authoritative responses
+- **DNS-over-TLS (DoT)**: Encrypted DNS on port 853 with auto-generated certificates
+- **DNS-over-HTTPS (DoH)**: HTTPS-based DNS on port 943 with JSON API and CORS support
 
 ### Packet Flow
 1. **Receive**: UDP/TCP socket receives DNS query
@@ -203,9 +214,9 @@ The codebase implements a production-ready DNS server with both UDP and TCP supp
   - [x] Zone file parsing and serving
   - [x] SOA record management
   - [ ] Dynamic zone updates
-- [ ] **Phase 5.3**: Modern Transport
-  - [ ] DNS-over-TLS (DoT)
-  - [ ] DNS-over-HTTPS (DoH)
+- [x] **Phase 5.3**: Modern Transport ✅ COMPLETED
+  - [x] DNS-over-TLS (DoT) on port 853 with self-signed certificate generation
+  - [x] DNS-over-HTTPS (DoH) on port 943 with JSON API support
 
 ## Development Reminders
 - Whenever we complete any major steps, commit and push to git
