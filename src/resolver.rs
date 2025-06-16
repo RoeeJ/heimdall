@@ -899,10 +899,16 @@ impl DnsResolver {
                 });
             }
 
+            let total_blocked = blocker.blocked_domain_count();
             info!(
                 "Background blocklist loading completed. Total blocked domains: {}",
-                blocker.blocked_domain_count()
+                total_blocked
             );
+
+            // Update blocking metrics
+            if let Some(metrics) = &self.metrics {
+                metrics.update_blocking_stats(total_blocked, self.config.allowlist.len());
+            }
         }
 
         info!("All background component loading completed");
