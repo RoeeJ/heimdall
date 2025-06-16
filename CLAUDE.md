@@ -50,8 +50,16 @@ dig example.com NAPTR @127.0.0.1 -p 1053     # Naming Authority Pointer
 dig example.com SPF @127.0.0.1 -p 1053       # SPF records (usually TXT)
 
 # Test DNS-over-TLS (DoT) - Note: Now using port 8853 (non-privileged)
-kdig +tls @127.0.0.1:8853 google.com  # Using kdig (knot-dns)
-# or with stunnel/openssl for testing
+# Note: Heimdall uses self-signed certificates by default. You may need to disable certificate validation for testing.
+
+# Using kdig (may require +tls-ca to specify CA or disable validation)
+kdig +tls @127.0.0.1 -p 8853 google.com
+
+# Using openssl for testing the TLS connection
+echo -e '\x00\x1d\x00\x00\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x06google\x03com\x00\x00\x01\x00\x01' | openssl s_client -connect 127.0.0.1:8853 -quiet -no_ign_eof
+
+# Using dig with stunnel (create stunnel config first)
+# or use other DoT testing tools that accept self-signed certificates
 
 # Test DNS-over-HTTPS (DoH) - Note: Now using port 8943 (non-privileged)
 curl -H "accept: application/dns-message" "http://127.0.0.1:8943/dns-query?dns=$(echo -n 'google.com' | base64)"
