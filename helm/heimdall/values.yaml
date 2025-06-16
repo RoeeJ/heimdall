@@ -80,8 +80,8 @@ config:
     # For production, use cert-manager or provide your own certificates
     tls:
       # Path to TLS certificate and key files
-      certPath: "/tls/tls.crt"
-      keyPath: "/tls/tls.key"
+      certPath: "/tls/server.crt"
+      keyPath: "/tls/server.key"
       # Enable automatic TLS certificate generation (self-signed)
       autoGenerate: true
   
@@ -93,8 +93,8 @@ config:
     path: "/dns-query"
     # TLS certificate configuration (can share with DoT)
     tls:
-      certPath: "/tls/tls.crt"
-      keyPath: "/tls/tls.key"
+      certPath: "/tls/server.crt"
+      keyPath: "/tls/server.key"
       autoGenerate: true
 
 service:
