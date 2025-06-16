@@ -43,3 +43,6 @@ coverage/
 lcov.info
 cobertura.xml
 tarpaulin-report.html
+
+# Blocklists
+blocklists/

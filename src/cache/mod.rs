@@ -1,16 +1,10 @@
-pub mod cache_wrapper;
 pub mod local_backend;
-pub mod lockfree_cache;
-pub mod lockfree_lru;
-pub mod optimized;
-pub mod optimized_cache;
 pub mod redis_backend;
 pub mod redis_helper;
+pub mod unified;
 
-pub use cache_wrapper::CacheWrapper;
-pub use lockfree_cache::LockFreeDnsCache;
-pub use optimized_cache::OptimizedDnsCache;
 pub use redis_backend::{LayeredCache, RedisConfig};
+pub use unified::UnifiedDnsCache;
 
 use crate::dns::{
     DNSPacket,
@@ -695,30 +689,10 @@ impl DnsCache {
     }
 
     /// Skip a DNS domain name in wire format and return the new position
-    fn skip_domain_name(&self, data: &[u8], mut pos: usize) -> Option<usize> {
-        while pos < data.len() {
-            let length = data[pos] as usize;
+    fn skip_domain_name(&self, data: &[u8], pos: usize) -> Option<usize> {
+        use crate::dns::unified_parser::UnifiedDnsParser;
 
-            if length == 0 {
-                // End of domain name
-                return Some(pos + 1);
-            }
-
-            if length >= 192 {
-                // Compression pointer (RFC 1035 Section 4.1.4)
-                // Skip the 2-byte pointer
-                return Some(pos + 2);
-            }
-
-            // Regular label
-            if pos + 1 + length > data.len() {
-                return None; // Invalid label length
-            }
-
-            pos += 1 + length;
-        }
-
-        None // Incomplete domain name
+        UnifiedDnsParser::skip_domain_name(data, pos).ok()
     }
 
     /// Check if this is a negative response (NXDOMAIN, NODATA) per RFC 2308

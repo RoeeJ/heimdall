@@ -2,7 +2,7 @@ use crate::blocking::{
     BlockingMode, BlocklistFormat, BlocklistSource, BlocklistUpdater, DnsBlocker,
     default_blocklist_sources,
 };
-use crate::cache::{CacheKey, CacheWrapper};
+use crate::cache::{CacheKey, UnifiedDnsCache};
 use crate::config::DnsConfig;
 use crate::dns::{
     DNSPacket, DNSPacketRef,
@@ -271,7 +271,7 @@ pub struct DnsResolver {
     config: DnsConfig,
     #[allow(dead_code)]
     client_socket: UdpSocket,
-    cache: Option<CacheWrapper>,
+    cache: Option<UnifiedDnsCache>,
     /// In-flight queries for deduplication (query_key -> broadcast channel)
     in_flight_queries: Arc<DashMap<CacheKey, InFlightQuery>>,
     /// Connection pool for upstream queries
@@ -322,15 +322,8 @@ impl DnsResolver {
 
         // Initialize cache if enabled
         let cache = if config.enable_caching {
-            let cache_type = if config.cache_config.use_optimized_cache {
-                "optimized"
-            } else {
-                "standard"
-            };
-
             info!(
-                "DNS cache initialized ({}): max_size={}, negative_ttl={}s{}",
-                cache_type,
+                "DNS cache initialized (unified): max_size={}, negative_ttl={}s{}",
                 config.max_cache_size,
                 config.default_ttl,
                 if config.cache_file_path.is_some() {
@@ -340,15 +333,14 @@ impl DnsResolver {
                 }
             );
 
-            let cache = CacheWrapper::new(
-                config.cache_config.use_optimized_cache,
+            let cache = UnifiedDnsCache::new(
                 config.max_cache_size,
                 config.default_ttl,
                 config.cache_file_path.clone(),
             );
 
-            // Load existing cache from disk (only for standard cache)
-            if config.cache_file_path.is_some() && !config.cache_config.use_optimized_cache {
+            // Load existing cache from disk
+            if config.cache_file_path.is_some() {
                 if let Err(e) = cache.load_from_disk().await {
                     warn!("Failed to load cache from disk: {}", e);
                 } else {
@@ -613,15 +605,8 @@ impl DnsResolver {
 
         // Initialize cache if enabled
         let cache = if config.enable_caching {
-            let cache_type = if config.cache_config.use_optimized_cache {
-                "optimized"
-            } else {
-                "standard"
-            };
-
             info!(
-                "DNS cache initialized ({}): max_size={}, negative_ttl={}s{}",
-                cache_type,
+                "DNS cache initialized (unified): max_size={}, negative_ttl={}s{}",
                 config.max_cache_size,
                 config.default_ttl,
                 if config.cache_file_path.is_some() {
@@ -631,15 +616,14 @@ impl DnsResolver {
                 }
             );
 
-            let cache = CacheWrapper::new(
-                config.cache_config.use_optimized_cache,
+            let cache = UnifiedDnsCache::new(
                 config.max_cache_size,
                 config.default_ttl,
                 config.cache_file_path.clone(),
             );
 
-            // Load existing cache from disk (only for standard cache)
-            if config.cache_file_path.is_some() && !config.cache_config.use_optimized_cache {
+            // Load existing cache from disk
+            if config.cache_file_path.is_some() {
                 if let Err(e) = cache.load_from_disk().await {
                     warn!("Failed to load cache from disk: {}", e);
                 } else {
@@ -954,6 +938,11 @@ impl DnsResolver {
         // For now, fall back to full parsing for cache lookup
         // This could be optimized further with zero-copy cache keys
         None
+    }
+
+    /// Resolve a DNS query (convenience method for protocol handlers)
+    pub async fn resolve_query(&self, query: &DNSPacket) -> Result<DNSPacket> {
+        self.resolve(query.clone(), query.header.id).await
     }
 
     /// Resolve a DNS query with automatic mode detection
@@ -2229,30 +2218,16 @@ impl DnsResolver {
 
     /// Parse a domain name from DNS rdata (simplified)
     fn parse_domain_name_from_rdata(&self, rdata: &[u8]) -> Result<String> {
+        use crate::dns::unified_parser::UnifiedDnsParser;
+
         if rdata.is_empty() {
             return Err(DnsError::Parse("Empty rdata".to_string()));
         }
 
-        let mut name_parts = Vec::new();
-        let mut pos = 0;
-
-        while pos < rdata.len() {
-            let len = rdata[pos] as usize;
-
-            if len == 0 {
-                break; // End of name
-            }
-
-            if pos + 1 + len > rdata.len() {
-                return Err(DnsError::Parse("Invalid label length in rdata".to_string()));
-            }
-
-            let label = String::from_utf8_lossy(&rdata[pos + 1..pos + 1 + len]);
-            name_parts.push(label.to_string());
-            pos += 1 + len;
+        match UnifiedDnsParser::parse_domain_name(rdata, 0) {
+            Ok((labels, _)) => Ok(labels.join(".")),
+            Err(_) => Err(DnsError::Parse("Invalid domain name in rdata".to_string())),
         }
-
-        Ok(name_parts.join("."))
     }
 
     /// Resolve a nameserver hostname to an IP address

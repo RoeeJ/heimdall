@@ -1,7 +1,6 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use heimdall::cache::{CacheKey, DnsCache};
 use heimdall::dns::enums::{DNSResourceClass, DNSResourceType};
-use heimdall::dns::simd::SimdParser;
 use heimdall::dns::{DNSPacket, DNSPacketRef, PacketBufferPool};
 use std::hint::black_box;
 use std::time::Duration;
@@ -113,18 +112,6 @@ fn benchmark_packet_parsing(c: &mut Criterion) {
         },
     );
 
-    // Benchmark SIMD-hint parsing
-    group.bench_with_input(
-        BenchmarkId::new("simd_hint", "large_packet"),
-        &large_packet,
-        |b, packet| {
-            b.iter(|| {
-                let parsed = DNSPacket::parse_with_simd_hint(black_box(packet)).unwrap();
-                black_box(parsed);
-            });
-        },
-    );
-
     group.finish();
 }
 
@@ -203,49 +190,6 @@ fn benchmark_cache_operations(c: &mut Criterion) {
     group.finish();
 }
 
-fn benchmark_simd_operations(c: &mut Criterion) {
-    let test_data = create_large_packet();
-    let mut group = c.benchmark_group("simd_operations");
-
-    // Benchmark compression pointer search
-    group.bench_function("find_compression_pointers", |b| {
-        b.iter(|| {
-            let pointers = SimdParser::find_compression_pointers_simd(black_box(&test_data));
-            black_box(pointers);
-        });
-    });
-
-    // Benchmark record type pattern search
-    group.bench_function("find_a_records", |b| {
-        b.iter(|| {
-            let positions = SimdParser::find_record_type_pattern_simd(
-                black_box(&test_data),
-                black_box(&[0x00, 0x01]),
-            );
-            black_box(positions);
-        });
-    });
-
-    // Benchmark checksum calculation
-    group.bench_function("packet_checksum", |b| {
-        b.iter(|| {
-            let checksum = SimdParser::calculate_packet_checksum_simd(black_box(&test_data));
-            black_box(checksum);
-        });
-    });
-
-    // Benchmark domain validation
-    let domain_data = b"test.example.com";
-    group.bench_function("domain_validation", |b| {
-        b.iter(|| {
-            let valid = SimdParser::validate_domain_name_simd(black_box(domain_data));
-            black_box(valid);
-        });
-    });
-
-    group.finish();
-}
-
 fn benchmark_serialization(c: &mut Criterion) {
     let packet = DNSPacket::parse(&create_large_packet()).unwrap();
     let mut buffer = Vec::with_capacity(512);
@@ -281,7 +225,6 @@ criterion_group! {
         benchmark_packet_parsing,
         benchmark_buffer_pool,
         benchmark_cache_operations,
-        benchmark_simd_operations,
         benchmark_serialization
 }
 

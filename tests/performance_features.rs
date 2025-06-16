@@ -2,7 +2,6 @@ use heimdall::cache::{CacheKey, DnsCache};
 use heimdall::config::DnsConfig;
 use heimdall::dns::enums::{DNSResourceClass, DNSResourceType};
 use heimdall::dns::question::DNSQuestion;
-use heimdall::dns::simd::SimdParser;
 use heimdall::dns::{DNSPacket, DNSPacketRef, PacketBufferPool};
 use heimdall::resolver::DnsResolver;
 use std::sync::Arc;
@@ -53,9 +52,6 @@ fn test_zero_copy_parsing() {
 fn test_zero_copy_validation() {
     let packet_data = create_test_packet();
     let zero_copy_packet = DNSPacketRef::parse_metadata(&packet_data).unwrap();
-
-    // Test SIMD validation - may not always pass for simple test packets
-    let _validation_result = zero_copy_packet.validate_simd();
 
     // Test question containment - our implementation is simplified
     let contains_example = zero_copy_packet.contains_question("example.com", DNSResourceType::A);
@@ -145,42 +141,6 @@ fn test_domain_trie_operations() {
 }
 
 #[test]
-fn test_simd_operations() {
-    let test_data = create_test_packet();
-
-    // Test compression pointer detection
-    let pointers = SimdParser::find_compression_pointers_simd(&test_data);
-    assert_eq!(pointers, Vec::<usize>::new()); // Test packet has no compression pointers
-
-    // Test with data containing compression pointers
-    let compressed_data = vec![0x03, b'w', b'w', b'w', 0xC0, 0x0C];
-    let pointers = SimdParser::find_compression_pointers_simd(&compressed_data);
-    assert_eq!(pointers, vec![4_usize]); // Pointer at position 4
-
-    // Test record type pattern search
-    let positions = SimdParser::find_record_type_pattern_simd(&test_data, &[0x00, 0x01]);
-    assert!(!positions.is_empty()); // Should find A record type
-
-    // Test domain validation
-    let valid_domain = SimdParser::validate_domain_name_simd(b"example.com");
-    let empty_domain = SimdParser::validate_domain_name_simd(b"");
-    let long_domain = SimdParser::validate_domain_name_simd(&[b'a'; 256]); // Too long
-
-    println!(
-        "Domain validation results: valid={}, empty={}, long={}",
-        valid_domain, empty_domain, long_domain
-    );
-
-    // At least empty and too-long should fail
-    assert!(!empty_domain);
-    assert!(!long_domain);
-
-    // Test checksum calculation
-    let checksum = SimdParser::calculate_packet_checksum_simd(&test_data);
-    assert!(checksum > 0);
-}
-
-#[test]
 fn test_zero_copy_serialization() {
     let packet = DNSPacket::parse(&create_test_packet()).unwrap();
     let mut buffer = Vec::new();
@@ -203,7 +163,6 @@ async fn test_query_deduplication() {
         enable_caching: true,
         max_cache_size: 100,
         upstream_servers: vec!["8.8.8.8:53".parse().unwrap()],
-        cache_config: Default::default(),
         ..Default::default()
     };
 
@@ -273,7 +232,6 @@ async fn test_parallel_vs_sequential_queries() {
         upstream_servers: servers.clone(),
         enable_parallel_queries: true,
         enable_caching: false,
-        cache_config: Default::default(),
         ..Default::default()
     };
 
@@ -281,7 +239,6 @@ async fn test_parallel_vs_sequential_queries() {
         upstream_servers: servers,
         enable_parallel_queries: false,
         enable_caching: false,
-        cache_config: Default::default(),
         ..Default::default()
     };
 

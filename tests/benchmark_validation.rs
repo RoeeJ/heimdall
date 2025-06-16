@@ -1,6 +1,5 @@
 use heimdall::cache::{CacheKey, DnsCache};
 use heimdall::dns::enums::{DNSResourceClass, DNSResourceType};
-use heimdall::dns::simd::SimdParser;
 use heimdall::dns::{DNSPacket, DNSPacketRef, PacketBufferPool};
 use std::time::Instant;
 
@@ -147,49 +146,6 @@ fn benchmark_serialization_methods() {
 
     let speedup = regular_duration.as_nanos() as f64 / zerocopy_duration.as_nanos() as f64;
     println!("Zero-copy serialization speedup: {:.2}x", speedup);
-}
-
-#[test]
-fn benchmark_simd_operations() {
-    let test_data = create_test_packet();
-    let iterations = 10000;
-
-    // Benchmark compression pointer search
-    let start = Instant::now();
-    for _ in 0..iterations {
-        let _pointers = SimdParser::find_compression_pointers_simd(&test_data);
-    }
-    let compression_duration = start.elapsed();
-
-    // Benchmark pattern search
-    let start = Instant::now();
-    for _ in 0..iterations {
-        let _positions = SimdParser::find_record_type_pattern_simd(&test_data, &[0x00, 0x01]);
-    }
-    let pattern_duration = start.elapsed();
-
-    // Benchmark checksum calculation
-    let start = Instant::now();
-    for _ in 0..iterations {
-        let _checksum = SimdParser::calculate_packet_checksum_simd(&test_data);
-    }
-    let checksum_duration = start.elapsed();
-
-    println!(
-        "Compression pointer search: {:?} ({:.2} ns/operation)",
-        compression_duration,
-        compression_duration.as_nanos() as f64 / iterations as f64
-    );
-    println!(
-        "Pattern search: {:?} ({:.2} ns/operation)",
-        pattern_duration,
-        pattern_duration.as_nanos() as f64 / iterations as f64
-    );
-    println!(
-        "Checksum calculation: {:?} ({:.2} ns/operation)",
-        checksum_duration,
-        checksum_duration.as_nanos() as f64 / iterations as f64
-    );
 }
 
 #[test]

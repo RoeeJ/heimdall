@@ -20,7 +20,6 @@ async fn test_dnssec_validation_cloudflare() {
             "1.1.1.1:53".parse().unwrap(), // Cloudflare DNS (DNSSEC-enabled)
             "8.8.8.8:53".parse().unwrap(), // Google DNS (DNSSEC-enabled)
         ],
-        cache_config: Default::default(),
         ..Default::default()
     };
 
@@ -90,7 +89,6 @@ async fn test_dnssec_validation_failure() {
         dnssec_enabled: true,
         dnssec_strict: true, // Strict mode - reject bogus responses
         upstream_servers: vec!["1.1.1.1:53".parse().unwrap()],
-        cache_config: Default::default(),
         ..Default::default()
     };
 

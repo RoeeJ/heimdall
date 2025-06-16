@@ -587,6 +587,85 @@ impl DnsMetrics {
         self.concurrent_queries.set(count);
     }
 
+    /// Increment parse errors
+    pub fn increment_parse_errors(&self) {
+        self.record_malformed_packet("unknown", "parse_error");
+    }
+
+    /// Increment resolution errors
+    pub fn increment_resolution_errors(&self) {
+        self.record_error_response("SERVFAIL", "unknown");
+    }
+
+    /// Record query duration
+    pub fn record_query_duration(&self, duration: std::time::Duration) {
+        self.query_duration
+            .with_label_values(&["unknown", "unknown"])
+            .observe(duration.as_secs_f64());
+    }
+
+    /// Increment queries by protocol
+    pub fn increment_queries_by_protocol(&self, protocol: &str) {
+        self.queries_total
+            .with_label_values(&[protocol, "unknown", "unknown"])
+            .inc();
+    }
+
+    /// Additional helper methods for protocol handlers
+    pub fn increment_successful_queries(&self) {
+        self.queries_total
+            .with_label_values(&["unknown", "unknown", "NOERROR"])
+            .inc();
+    }
+
+    pub fn increment_cache_hits(&self) {
+        // This is handled by record_query with cache_hit=true
+    }
+
+    pub fn increment_rate_limited(&self) {
+        self.record_rate_limit_drop("unknown", "unknown");
+    }
+
+    pub fn increment_timeouts(&self) {
+        self.record_error_response("TIMEOUT", "unknown");
+    }
+
+    pub fn increment_refused(&self) {
+        self.record_error_response("REFUSED", "unknown");
+    }
+
+    pub fn increment_not_implemented(&self) {
+        self.record_error_response("NOTIMPL", "unknown");
+    }
+
+    pub fn increment_responses_by_protocol(&self, protocol: &str) {
+        // Track as successful query for now
+        self.queries_total
+            .with_label_values(&[protocol, "unknown", "response"])
+            .inc();
+    }
+
+    pub fn increment_errors_by_type(&self, protocol: &str, error_type: &str) {
+        self.record_malformed_packet(protocol, error_type);
+    }
+
+    pub fn increment_connections_by_protocol(&self, _protocol: &str) {
+        // Use concurrent queries gauge as a proxy
+        self.concurrent_queries.inc();
+    }
+
+    pub fn decrement_connections_by_protocol(&self, _protocol: &str) {
+        self.concurrent_queries.dec();
+    }
+
+    pub fn add_bytes_received(&self, _protocol: &str, _bytes: usize) {
+        // Could add new metrics for this in future
+    }
+
+    pub fn add_bytes_sent(&self, _protocol: &str, _bytes: usize) {
+        // Could add new metrics for this in future
+    }
+
     /// Update blocking metrics
     pub fn update_blocking_stats(&self, blocked_domains: usize, allowlist_size: usize) {
         self.blocked_domains_total.set(blocked_domains as i64);

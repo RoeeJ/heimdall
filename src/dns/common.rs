@@ -1,5 +1,4 @@
 use bitstream_io::{BitRead, BitReader, BitWrite, BitWriter, Endianness};
-use tracing::trace;
 
 use super::ParseError;
 
@@ -34,71 +33,77 @@ pub trait PacketComponent {
         reader: &mut BitReader<&[u8], E>,
         packet_buf: Option<&[u8]>,
     ) -> Result<Vec<String>, ParseError> {
-        let mut labels = Vec::new();
-        let mut jump_count = 0;
+        use crate::dns::unified_parser::UnifiedDnsParser;
 
-        loop {
-            let first_byte = reader.read_var::<u8>(8)?;
-            trace!("Reading label byte: 0x{:02x}", first_byte);
+        if let Some(buf) = packet_buf {
+            // We need to peek at the current position to use the unified parser
+            // Since we can't get position from BitReader, we'll read byte by byte and handle compression
+            let mut labels = Vec::new();
+            let mut jump_count = 0;
 
-            // Check for compression pointer (top 2 bits set)
-            if (first_byte & 0xC0) == 0xC0 {
-                // This is a compression pointer
-                let second_byte = reader.read_var::<u8>(8)?;
-                let pointer = ((first_byte as u16 & 0x3F) << 8) | second_byte as u16;
+            loop {
+                let first_byte = reader.read_var::<u8>(8)?;
 
-                trace!("Found compression pointer: 0x{:04x}", pointer);
-
-                if let Some(buf) = packet_buf {
-                    // Follow the compression pointer
-                    if (pointer as usize) < buf.len() {
-                        let mut pointer_reader = BitReader::<_, E>::new(&buf[pointer as usize..]);
-
-                        // Read labels from the pointer location
-                        let mut pointer_labels =
-                            self.read_labels_with_buffer(&mut pointer_reader, Some(buf))?;
-
-                        // Remove empty terminating label if present
-                        if let Some(last) = pointer_labels.last() {
-                            if last.is_empty() {
-                                pointer_labels.pop();
-                            }
-                        }
-
-                        labels.extend(pointer_labels);
-                        break;
-                    } else {
-                        return Err(ParseError::InvalidLabel);
-                    }
-                } else {
-                    // No buffer provided - fall back to empty label
-                    labels.push(String::new());
+                if first_byte == 0 {
                     break;
                 }
-            } else if first_byte == 0 {
-                // Null terminator - end of name
-                break;
-            } else {
-                // Regular label
-                let label_len = first_byte as usize;
-                if label_len > 63 {
+
+                if (first_byte & 0xC0) == 0xC0 {
+                    // This is a compression pointer
+                    let second_byte = reader.read_var::<u8>(8)?;
+                    let pointer = ((first_byte as u16 & 0x3F) << 8) | second_byte as u16;
+
+                    // Use unified parser to read from the pointer location
+                    let (pointer_labels, _) =
+                        UnifiedDnsParser::parse_domain_name(buf, pointer as usize)?;
+                    labels.extend(pointer_labels);
+                    break;
+                }
+
+                if first_byte > 63 {
                     return Err(ParseError::InvalidLabel);
                 }
 
-                let mut buf = vec![0; label_len];
+                let mut label_buf = vec![0; first_byte as usize];
+                reader.read_bytes(&mut label_buf)?;
+                let label = String::from_utf8(label_buf).map_err(|_| ParseError::InvalidLabel)?;
+                labels.push(label);
+
+                jump_count += 1;
+                if jump_count > 100 {
+                    return Err(ParseError::InvalidLabel);
+                }
+            }
+
+            Ok(labels)
+        } else {
+            // Fallback to simple parsing without compression support
+            let mut labels = Vec::new();
+
+            loop {
+                let first_byte = reader.read_var::<u8>(8)?;
+
+                if first_byte == 0 {
+                    break;
+                }
+
+                if (first_byte & 0xC0) == 0xC0 {
+                    // Compression pointer without buffer - can't follow
+                    return Err(ParseError::InvalidLabel);
+                }
+
+                if first_byte > 63 {
+                    return Err(ParseError::InvalidLabel);
+                }
+
+                let mut buf = vec![0; first_byte as usize];
                 reader.read_bytes(&mut buf)?;
                 let label = String::from_utf8(buf).map_err(|_| ParseError::InvalidLabel)?;
-                trace!("Read label: {}", label);
                 labels.push(label);
             }
 
-            jump_count += 1;
-            if jump_count > 100 {
-                return Err(ParseError::InvalidLabel); // Prevent infinite loops
-            }
+            Ok(labels)
         }
-
-        Ok(labels)
     }
 
     fn write_labels<E: Endianness>(

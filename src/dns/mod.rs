@@ -1,10 +1,11 @@
 pub mod common;
+pub mod constants;
 pub mod edns;
 pub mod enums;
 pub mod header;
 pub mod question;
 pub mod resource;
-pub mod simd;
+pub mod unified_parser;
 pub mod zero_copy;
 
 #[cfg(test)]
@@ -13,12 +14,15 @@ pub mod compression_tests;
 use bitstream_io::{BigEndian, BitReader, BitWrite, BitWriter};
 use common::PacketComponent;
 use edns::EdnsOpt;
-use header::DNSHeader;
+use enums::DNSResourceType;
 use parking_lot::Mutex;
 use question::DNSQuestion;
 use resource::DNSResource;
 use std::sync::Arc;
 use tracing::{debug, trace};
+
+pub use constants::{DNSRcode, Opcode};
+pub use header::DNSHeader;
 // Move validation usage to method implementations to avoid circular dependencies
 
 #[derive(
@@ -158,59 +162,9 @@ impl<'a> DNSPacketRef<'a> {
     }
 
     /// Skip a domain name and return the next offset
-    fn skip_domain_name(buf: &[u8], mut offset: usize) -> Result<usize, ParseError> {
-        let mut jumps = 0;
-        let mut original_offset = None;
-
-        loop {
-            if offset >= buf.len() {
-                return Err(ParseError::InvalidLabel);
-            }
-
-            let label_length = buf[offset];
-
-            // Check for compression pointer
-            if (label_length & 0xC0) == 0xC0 {
-                if offset + 1 >= buf.len() {
-                    return Err(ParseError::InvalidLabel);
-                }
-
-                // This is a compression pointer
-                jumps += 1;
-                if jumps > 5 {
-                    // Prevent infinite loops
-                    return Err(ParseError::InvalidLabel);
-                }
-
-                if original_offset.is_none() {
-                    original_offset = Some(offset + 2);
-                }
-
-                let pointer = u16::from_be_bytes([buf[offset] & 0x3F, buf[offset + 1]]) as usize;
-                offset = pointer;
-                continue;
-            }
-
-            if label_length == 0 {
-                // End of name
-                offset += 1;
-                break;
-            }
-
-            // Regular label
-            if (label_length as usize) > 63 {
-                return Err(ParseError::InvalidLabel);
-            }
-
-            offset += 1 + label_length as usize;
-        }
-
-        // If we followed pointers, return to the original position
-        if let Some(orig) = original_offset {
-            Ok(orig)
-        } else {
-            Ok(offset)
-        }
+    fn skip_domain_name(buf: &[u8], offset: usize) -> Result<usize, ParseError> {
+        use crate::dns::unified_parser::UnifiedDnsParser;
+        UnifiedDnsParser::skip_domain_name(buf, offset)
     }
 
     /// Get a slice of the questions section for lazy parsing
@@ -219,17 +173,41 @@ impl<'a> DNSPacketRef<'a> {
     }
 
     /// Check if packet contains specific question without full parsing
-    pub fn contains_question(&self, domain: &str, _qtype: enums::DNSResourceType) -> bool {
-        // This would require implementing a zero-copy domain name comparison
-        // For now, we'll do a simplified check
-        let domain_lower = domain.to_lowercase();
-        let domain_bytes = domain_lower.as_bytes();
+    pub fn contains_question(&self, domain: &str, qtype: enums::DNSResourceType) -> bool {
+        use crate::dns::unified_parser::UnifiedDnsParser;
 
-        // Simple substring search in questions section (not comprehensive)
-        let questions_data = self.questions_slice();
-        questions_data
-            .windows(domain_bytes.len())
-            .any(|window| window == domain_bytes)
+        if self.header.qdcount == 0 {
+            return false;
+        }
+
+        // Check domain match
+        match UnifiedDnsParser::compare_domain_name(
+            self.buffer,
+            self.sections.questions_start,
+            domain,
+        ) {
+            Ok(matches) => {
+                if !matches {
+                    return false;
+                }
+
+                // Check type match
+                match UnifiedDnsParser::skip_domain_name(self.buffer, self.sections.questions_start)
+                {
+                    Ok(offset) => {
+                        if offset + 2 <= self.buffer.len() {
+                            let record_type =
+                                u16::from_be_bytes([self.buffer[offset], self.buffer[offset + 1]]);
+                            return DNSResourceType::from(record_type) == qtype;
+                        }
+                    }
+                    Err(_) => return false,
+                }
+
+                false
+            }
+            Err(_) => false,
+        }
     }
 
     /// Get the first question domain without allocating (returns byte offsets)
@@ -335,30 +313,6 @@ impl<'a> DNSPacketRef<'a> {
         }
 
         false
-    }
-
-    /// SIMD-accelerated packet validation
-    pub fn validate_simd(&self) -> bool {
-        // Use SIMD to validate compression pointers
-        let pointers = simd::SimdParser::find_compression_pointers_simd(self.buffer);
-
-        // Validate that compression pointers are in valid positions
-        for &pos in &pointers {
-            if pos >= self.buffer.len() - 1 {
-                return false;
-            }
-            // Additional validation could be added here
-        }
-
-        // Use SIMD for quick domain name validation in questions section
-        let questions_data = self.questions_slice();
-        if !questions_data.is_empty()
-            && !simd::SimdParser::validate_domain_name_simd(questions_data)
-        {
-            return false;
-        }
-
-        true
     }
 }
 
@@ -588,20 +542,6 @@ impl DNSPacket {
     pub fn parse(buf: &[u8]) -> Result<Self, ParseError> {
         trace!("Parsing DNS packet, size: {} bytes", buf.len());
 
-        // SIMD pre-validation for performance
-        if buf.len() > 32 {
-            // Use SIMD to quickly check for obvious malformed packets
-            let checksum = simd::SimdParser::calculate_packet_checksum_simd(buf);
-            trace!("SIMD packet checksum: {}", checksum);
-
-            // Find compression pointers early for validation
-            let compression_pointers = simd::SimdParser::find_compression_pointers_simd(buf);
-            debug!(
-                "Found {} compression pointers during SIMD scan",
-                compression_pointers.len()
-            );
-        }
-
         let mut reader = BitReader::<_, BigEndian>::new(buf);
         let mut packet = DNSPacket::default();
         packet.header.read(&mut reader)?;
@@ -671,6 +611,11 @@ impl DNSPacket {
         let mut buf = Vec::new();
         self.serialize_into(&mut buf)?;
         Ok(buf)
+    }
+
+    /// Convenience method for protocol handlers
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.serialize().unwrap_or_else(|_| Vec::new())
     }
 
     /// Serialize into a pre-allocated buffer to avoid allocations
@@ -905,40 +850,6 @@ impl DNSPacket {
         self.header.arcount = additional_count as u16;
 
         self.serialize_to_buffer(buffer)
-    }
-
-    /// Fast packet parsing using SIMD optimizations where possible
-    pub fn parse_with_simd_hint(buf: &[u8]) -> Result<Self, ParseError> {
-        // For small packets, use regular parsing
-        if buf.len() <= 64 {
-            return Self::parse(buf);
-        }
-
-        trace!("Using SIMD-optimized parsing for {} byte packet", buf.len());
-
-        // Use SIMD to quickly find record type patterns for optimization hints
-        let a_record_positions =
-            simd::SimdParser::find_record_type_pattern_simd(buf, &[0x00, 0x01]);
-        let aaaa_record_positions =
-            simd::SimdParser::find_record_type_pattern_simd(buf, &[0x00, 0x1C]);
-
-        debug!(
-            "SIMD found {} A records, {} AAAA records",
-            a_record_positions.len(),
-            aaaa_record_positions.len()
-        );
-
-        // Use regular parsing but with SIMD-gathered intelligence
-        let packet = Self::parse(buf)?;
-
-        // Add SIMD-specific validation
-        if buf.len() > 32 {
-            // Validate using SIMD checksum
-            let _simd_checksum = simd::SimdParser::calculate_packet_checksum_simd(buf);
-            trace!("SIMD validation checksum passed");
-        }
-
-        Ok(packet)
     }
 }
 

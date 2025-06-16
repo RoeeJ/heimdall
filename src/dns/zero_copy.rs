@@ -326,52 +326,9 @@ fn skip_question(data: &[u8], offset: usize) -> Result<usize, ParseError> {
 }
 
 /// Skip a domain name and return the offset after it
-fn skip_domain_name(data: &[u8], mut offset: usize) -> Result<usize, ParseError> {
-    let mut jumps = 0;
-    let mut first_pointer_offset = None;
-
-    loop {
-        if offset >= data.len() {
-            return Err(ParseError::InvalidLabel);
-        }
-
-        let len = data[offset];
-
-        // Check for compression pointer
-        if (len & 0xC0) == 0xC0 {
-            if offset + 1 >= data.len() {
-                return Err(ParseError::InvalidLabel);
-            }
-
-            jumps += 1;
-            if jumps > 5 {
-                return Err(ParseError::InvalidLabel);
-            }
-
-            // Remember where we found the first pointer
-            if first_pointer_offset.is_none() {
-                first_pointer_offset = Some(offset + 2);
-            }
-
-            let pointer = u16::from_be_bytes([data[offset] & 0x3F, data[offset + 1]]) as usize;
-            offset = pointer;
-            continue;
-        }
-
-        if len == 0 {
-            offset += 1;
-            break;
-        }
-
-        if (len as usize) > 63 {
-            return Err(ParseError::InvalidLabel);
-        }
-
-        offset += 1 + len as usize;
-    }
-
-    // If we followed pointers, return to after the first pointer
-    Ok(first_pointer_offset.unwrap_or(offset))
+fn skip_domain_name(data: &[u8], offset: usize) -> Result<usize, ParseError> {
+    use crate::dns::unified_parser::UnifiedDnsParser;
+    UnifiedDnsParser::skip_domain_name(data, offset)
 }
 
 #[cfg(test)]

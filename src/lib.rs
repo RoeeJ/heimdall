@@ -11,6 +11,7 @@ pub mod graceful_shutdown;
 pub mod http_server;
 pub mod metrics;
 pub mod pool;
+pub mod protocol;
 pub mod rate_limiter;
 pub mod resolver;
 pub mod server;

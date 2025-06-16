@@ -7,7 +7,6 @@ use std::time::Instant;
 
 use heimdall::cache::{CacheKey, DnsCache};
 use heimdall::dns::enums::{DNSResourceClass, DNSResourceType};
-use heimdall::dns::simd::SimdParser;
 use heimdall::dns::{DNSPacket, DNSPacketRef, PacketBufferPool};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,7 +111,6 @@ fn run_benchmarks(iterations: usize) -> HashMap<String, BenchmarkResult> {
     results.extend(benchmark_cache_operations(iterations));
 
     // SIMD Operation Benchmarks
-    results.extend(benchmark_simd_operations(iterations));
 
     // Serialization Benchmarks
     results.extend(benchmark_serialization(iterations));
@@ -238,56 +236,6 @@ fn benchmark_cache_operations(iterations: usize) -> HashMap<String, BenchmarkRes
     );
 
     println!("✅ ({:.0}ns hits, {:.0}ns misses)", hit_ns, miss_ns);
-    results
-}
-
-fn benchmark_simd_operations(iterations: usize) -> HashMap<String, BenchmarkResult> {
-    let mut results = HashMap::new();
-    let test_data = create_test_packet();
-
-    print!("⚡ SIMD Operations... ");
-
-    // Compression pointer search
-    let start = Instant::now();
-    for _ in 0..iterations {
-        let _pointers = SimdParser::find_compression_pointers_simd(&test_data);
-    }
-    let compression_duration = start.elapsed();
-
-    // Pattern search
-    let start = Instant::now();
-    for _ in 0..iterations {
-        let _positions = SimdParser::find_record_type_pattern_simd(&test_data, &[0x00, 0x01]);
-    }
-    let pattern_duration = start.elapsed();
-
-    let compression_ns = compression_duration.as_nanos() as f64 / iterations as f64;
-    let pattern_ns = pattern_duration.as_nanos() as f64 / iterations as f64;
-
-    results.insert(
-        "simd_compression_search".to_string(),
-        BenchmarkResult {
-            mean_time_ns: compression_ns,
-            std_dev_ns: compression_ns * 0.1,
-            name: "simd_compression_search".to_string(),
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        },
-    );
-
-    results.insert(
-        "simd_pattern_search".to_string(),
-        BenchmarkResult {
-            mean_time_ns: pattern_ns,
-            std_dev_ns: pattern_ns * 0.1,
-            name: "simd_pattern_search".to_string(),
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        },
-    );
-
-    println!(
-        "✅ ({:.0}ns compression, {:.0}ns pattern)",
-        compression_ns, pattern_ns
-    );
     results
 }
 

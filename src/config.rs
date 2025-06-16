@@ -1,13 +1,9 @@
-pub mod cache_config;
-
 use crate::cache::RedisConfig;
 use crate::error::ConfigError;
 use crate::rate_limiter::RateLimitConfig;
 use crate::transport::{TlsConfig, TransportConfig};
 use std::net::SocketAddr;
 use std::time::Duration;
-
-pub use cache_config::CacheConfig;
 
 #[derive(Debug, Clone)]
 pub struct DnsConfig {
@@ -114,9 +110,6 @@ pub struct DnsConfig {
 
     /// Transport layer configuration for DNS-over-TLS and other protocols
     pub transport_config: TransportConfig,
-
-    /// Cache configuration with optimizations
-    pub cache_config: CacheConfig,
 }
 
 impl Default for DnsConfig {
@@ -192,7 +185,6 @@ impl Default for DnsConfig {
             blocklist_update_interval: 86400, // 24 hours
             blocking_download_psl,
             transport_config: TransportConfig::default(),
-            cache_config: CacheConfig::default(),
         }
     }
 }
@@ -445,9 +437,6 @@ impl DnsConfig {
         if let Ok(auto_update) = std::env::var("HEIMDALL_BLOCKLIST_AUTO_UPDATE") {
             config.blocklist_auto_update = parse_bool(&auto_update, false);
         }
-
-        // Load cache configuration from environment
-        config.cache_config = CacheConfig::from_env();
 
         if let Ok(update_interval) = std::env::var("HEIMDALL_BLOCKLIST_UPDATE_INTERVAL") {
             config.blocklist_update_interval = update_interval.parse::<u64>().map_err(|_| {

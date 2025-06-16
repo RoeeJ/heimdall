@@ -1,7 +1,6 @@
 use criterion::Criterion;
 use heimdall::cache::{CacheKey, DnsCache};
 use heimdall::dns::enums::{DNSResourceClass, DNSResourceType};
-use heimdall::dns::simd::SimdParser;
 use heimdall::dns::{DNSPacket, DNSPacketRef, PacketBufferPool};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -88,7 +87,6 @@ impl DnsRegressionTester {
         // Run all benchmark suites
         self.benchmark_dns_parsing(c);
         self.benchmark_cache_operations(c);
-        self.benchmark_simd_operations(c);
         self.benchmark_serialization(c);
         self.benchmark_buffer_pool(c);
 
@@ -179,44 +177,6 @@ impl DnsRegressionTester {
                         black_box(DNSResourceType::A),
                         black_box(DNSResourceClass::IN),
                     );
-                }
-            })
-        });
-
-        group.finish();
-    }
-
-    fn benchmark_simd_operations(&mut self, c: &mut Criterion) {
-        let test_data = create_test_dns_packet();
-        let iterations = 10000;
-
-        let mut group = c.benchmark_group("simd_operations");
-
-        group.bench_function("compression_pointer_search", |b| {
-            b.iter(|| {
-                for _ in 0..iterations {
-                    let _pointers =
-                        SimdParser::find_compression_pointers_simd(black_box(&test_data));
-                }
-            })
-        });
-
-        group.bench_function("pattern_search", |b| {
-            b.iter(|| {
-                for _ in 0..iterations {
-                    let _positions = SimdParser::find_record_type_pattern_simd(
-                        black_box(&test_data),
-                        black_box(&[0x00, 0x01]),
-                    );
-                }
-            })
-        });
-
-        group.bench_function("checksum_calculation", |b| {
-            b.iter(|| {
-                for _ in 0..iterations {
-                    let _checksum =
-                        SimdParser::calculate_packet_checksum_simd(black_box(&test_data));
                 }
             })
         });

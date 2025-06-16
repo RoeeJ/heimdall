@@ -250,37 +250,12 @@ impl DnsSecValidator {
 
     /// Parse a domain name from wire format
     fn parse_domain_name(&self, data: &[u8]) -> Result<(String, usize)> {
-        let mut labels = Vec::new();
-        let mut pos = 0;
+        use crate::dns::unified_parser::UnifiedDnsParser;
 
-        while pos < data.len() {
-            let len = data[pos] as usize;
-            if len == 0 {
-                pos += 1;
-                break;
-            }
-
-            if len > 63 {
-                // Compression pointer - not handled in RRSIG signer field
-                return Err(DnsSecError::InvalidSignature);
-            }
-
-            pos += 1;
-            if pos + len > data.len() {
-                return Err(DnsSecError::InvalidSignature);
-            }
-
-            labels.push(String::from_utf8_lossy(&data[pos..pos + len]).to_string());
-            pos += len;
+        match UnifiedDnsParser::parse_domain_name(data, 0) {
+            Ok((labels, offset)) => Ok((labels.join(".").to_lowercase(), offset)),
+            Err(_) => Err(DnsSecError::InvalidSignature),
         }
-
-        let name = if labels.is_empty() {
-            ".".to_string()
-        } else {
-            labels.join(".")
-        };
-
-        Ok((name, pos))
     }
 
     /// Check signature validity period
