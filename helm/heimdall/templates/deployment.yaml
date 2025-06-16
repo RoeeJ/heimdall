@@ -60,6 +60,16 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
+            {{- if .Values.config.dot.enabled }}
+            - name: dot
+              containerPort: 853
+              protocol: TCP
+            {{- end }}
+            {{- if .Values.config.doh.enabled }}
+            - name: doh
+              containerPort: 943
+              protocol: TCP
+            {{- end }}
           {{- if .Values.startupProbe }}
           startupProbe:
             {{- toYaml .Values.startupProbe | nindent 12 }}
@@ -107,6 +117,32 @@ spec:
               value: {{ .Values.config.maxRetries | quote }}
             - name: HEIMDALL_ENABLE_PARALLEL_QUERIES
               value: {{ .Values.config.enableParallelQueries | quote }}
+            {{- if .Values.config.dot.enabled }}
+            - name: HEIMDALL_ENABLE_DOT
+              value: "true"
+            - name: HEIMDALL_DOT_BIND_ADDR
+              value: {{ .Values.config.dot.bindAddr | quote }}
+            - name: HEIMDALL_DOT_CERT_PATH
+              value: {{ .Values.config.dot.tls.certPath | quote }}
+            - name: HEIMDALL_DOT_KEY_PATH
+              value: {{ .Values.config.dot.tls.keyPath | quote }}
+            - name: HEIMDALL_DOT_AUTO_CERT
+              value: {{ .Values.config.dot.tls.autoGenerate | quote }}
+            {{- end }}
+            {{- if .Values.config.doh.enabled }}
+            - name: HEIMDALL_ENABLE_DOH
+              value: "true"
+            - name: HEIMDALL_DOH_BIND_ADDR
+              value: {{ .Values.config.doh.bindAddr | quote }}
+            - name: HEIMDALL_DOH_PATH
+              value: {{ .Values.config.doh.path | quote }}
+            - name: HEIMDALL_DOH_CERT_PATH
+              value: {{ .Values.config.doh.tls.certPath | quote }}
+            - name: HEIMDALL_DOH_KEY_PATH
+              value: {{ .Values.config.doh.tls.keyPath | quote }}
+            - name: HEIMDALL_DOH_AUTO_CERT
+              value: {{ .Values.config.doh.tls.autoGenerate | quote }}
+            {{- end }}
             {{- if .Values.redis.enabled }}
             - name: HEIMDALL_REDIS_URL
               {{- if .Values.redis.auth.enabled }}
@@ -151,6 +187,11 @@ spec:
             {{- end }}
             - name: tmp
               mountPath: /tmp
+            {{- if or .Values.config.dot.enabled .Values.config.doh.enabled }}
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            {{- end }}
             {{- with .Values.volumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -171,6 +212,15 @@ spec:
         {{- end }}
         - name: tmp
           emptyDir: {}
+        {{- if or .Values.config.dot.enabled .Values.config.doh.enabled }}
+        - name: tls
+          {{- if or .Values.config.dot.tls.autoGenerate .Values.config.doh.tls.autoGenerate }}
+          emptyDir: {}
+          {{- else }}
+          secret:
+            secretName: {{ include "heimdall.fullname" . }}-tls
+          {{- end }}
+        {{- end }}
         {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

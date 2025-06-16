@@ -71,6 +71,31 @@ config:
   upstreamTimeout: 2  # seconds (max: 300)
   maxRetries: 3
   enableParallelQueries: true
+  
+  # DNS-over-TLS (DoT) configuration
+  dot:
+    enabled: false
+    bindAddr: "0.0.0.0:853"
+    # TLS certificate configuration
+    # For production, use cert-manager or provide your own certificates
+    tls:
+      # Path to TLS certificate and key files
+      certPath: "/tls/tls.crt"
+      keyPath: "/tls/tls.key"
+      # Enable automatic TLS certificate generation (self-signed)
+      autoGenerate: true
+  
+  # DNS-over-HTTPS (DoH) configuration
+  doh:
+    enabled: false
+    bindAddr: "0.0.0.0:943"
+    # DoH path (RFC 8484 compliant)
+    path: "/dns-query"
+    # TLS certificate configuration (can share with DoT)
+    tls:
+      certPath: "/tls/tls.crt"
+      keyPath: "/tls/tls.key"
+      autoGenerate: true
 
 service:
   type: LoadBalancer
@@ -82,6 +107,12 @@ service:
   # HTTP port for metrics/health
   httpPort: 8080
   httpProtocol: TCP
+  # DNS-over-TLS port
+  dotPort: 853
+  dotProtocol: TCP
+  # DNS-over-HTTPS port
+  dohPort: 943
+  dohProtocol: TCP
   
   # Session affinity to prevent DNS query disruptions
   sessionAffinity: ClientIP

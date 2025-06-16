@@ -38,3 +38,22 @@ data:
     max_concurrent_queries = {{ .Values.config.maxConcurrentQueries }}
     max_retries = {{ .Values.config.maxRetries }}
     enable_parallel_queries = {{ .Values.config.enableParallelQueries }}
+    
+    {{- if .Values.config.dot.enabled }}
+    # DNS-over-TLS Configuration
+    enable_dot = true
+    dot_bind_addr = "{{ .Values.config.dot.bindAddr }}"
+    dot_cert_path = "{{ .Values.config.dot.tls.certPath }}"
+    dot_key_path = "{{ .Values.config.dot.tls.keyPath }}"
+    dot_auto_cert = {{ .Values.config.dot.tls.autoGenerate }}
+    {{- end }}
+    
+    {{- if .Values.config.doh.enabled }}
+    # DNS-over-HTTPS Configuration
+    enable_doh = true
+    doh_bind_addr = "{{ .Values.config.doh.bindAddr }}"
+    doh_path = "{{ .Values.config.doh.path }}"
+    doh_cert_path = "{{ .Values.config.doh.tls.certPath }}"
+    doh_key_path = "{{ .Values.config.doh.tls.keyPath }}"
+    doh_auto_cert = {{ .Values.config.doh.tls.autoGenerate }}
+    {{- end }}

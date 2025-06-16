@@ -28,6 +28,16 @@
   
   # Using TCP
   dig google.com @$SERVICE_IP -p {{ .Values.service.dnsPort }} +tcp
+  
+  {{- if .Values.config.dot.enabled }}
+  # Using DNS-over-TLS (DoT)
+  kdig -d @$SERVICE_IP -p {{ .Values.service.dotPort }} +tls google.com
+  {{- end }}
+  
+  {{- if .Values.config.doh.enabled }}
+  # Using DNS-over-HTTPS (DoH)
+  curl -H "accept: application/dns-message" "https://$SERVICE_IP:{{ .Values.service.dohPort }}{{ .Values.config.doh.path }}?dns=$(echo -n 'google.com' | base64)"
+  {{- end }}
 
 3. Check health status:
   curl http://$SERVICE_IP:{{ .Values.service.httpPort }}/health
@@ -41,3 +51,27 @@ IMPORTANT NOTES:
 - The container image uses distroless base, so shell-based exec probes are not supported
 - Always use httpGet probes pointing to /health or /health/detailed
 - The DNS server binds to port 1053 inside the container, exposed as port {{ .Values.service.dnsPort }}
+{{- if .Values.config.dot.enabled }}
+- DNS-over-TLS (DoT) is enabled on port {{ .Values.service.dotPort }}
+  {{- if .Values.config.dot.tls.autoGenerate }}
+  - Using auto-generated self-signed certificates (NOT for production)
+  {{- else }}
+  - Using provided TLS certificates
+  {{- end }}
+{{- end }}
+{{- if .Values.config.doh.enabled }}
+- DNS-over-HTTPS (DoH) is enabled on port {{ .Values.service.dohPort }}
+  - DoH endpoint: https://$SERVICE_IP:{{ .Values.service.dohPort }}{{ .Values.config.doh.path }}
+  {{- if .Values.config.doh.tls.autoGenerate }}
+  - Using auto-generated self-signed certificates (NOT for production)
+  {{- else }}
+  - Using provided TLS certificates
+  {{- end }}
+{{- end }}
+{{- if or .Values.config.dot.enabled .Values.config.doh.enabled }}
+
+For production TLS certificates:
+1. Disable auto-generation in values.yaml
+2. Create a TLS secret: kubectl create secret tls {{ include "heimdall.fullname" . }}-tls --cert=path/to/tls.crt --key=path/to/tls.key
+3. Deploy the chart
+{{- end }}
