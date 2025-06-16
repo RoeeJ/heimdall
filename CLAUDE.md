@@ -249,5 +249,12 @@ The codebase implements a production-ready DNS server with both UDP and TCP supp
 - **Cache**: `/cache` - Used for persistent cache storage (rkyv format)
 - **Blocklists**: `/heimdall/blocklists` - Used for downloaded blocklist files
 - **Temporary**: `/tmp` - Used for temporary files during operations
+- **TLS Certificates**: `/tls` - Used for DNS-over-TLS/HTTPS certificates (auto-generated or custom)
 
 The Docker container sets WORKDIR to `/heimdall` so that blocklists are created in the mounted volume.
+
+### TLS Certificate Notes
+- When DoT/DoH is enabled with auto-generation, certificates are saved to `/tls/server.crt` and `/tls/server.key`
+- The `/tls` volume must be writable for auto-generation to work
+- In Kubernetes, use an `emptyDir` volume for auto-generated certificates
+- For custom certificates, mount them as a secret or configmap to `/tls`

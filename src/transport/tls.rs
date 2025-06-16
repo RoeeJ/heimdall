@@ -85,8 +85,8 @@ pub enum TlsError {
 impl Default for TlsConfig {
     fn default() -> Self {
         Self {
-            cert_path: Some("certs/server.crt".to_string()),
-            key_path: Some("certs/server.key".to_string()),
+            cert_path: Some("/tls/server.crt".to_string()),
+            key_path: Some("/tls/server.key".to_string()),
             server_name: None,
             min_tls_version: TlsVersion::V1_2,
             max_tls_version: TlsVersion::V1_3,
