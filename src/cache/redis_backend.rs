@@ -108,8 +108,11 @@ impl CacheBackend for RedisCache {
 
         match conn.get::<_, Vec<u8>>(&redis_key).await {
             Ok(data) => {
-                match bincode::deserialize::<CachedEntry>(&data) {
-                    Ok(entry) => {
+                match bincode::serde::decode_from_slice::<CachedEntry, _>(
+                    &data,
+                    bincode::config::standard(),
+                ) {
+                    Ok((entry, _)) => {
                         if entry.is_expired() {
                             // Remove expired entry
                             let _ = conn.del::<_, ()>(&redis_key).await;
@@ -141,7 +144,7 @@ impl CacheBackend for RedisCache {
         // Calculate TTL
         let ttl = entry.remaining_ttl().as_secs().max(1);
 
-        match bincode::serialize(&entry) {
+        match bincode::serde::encode_to_vec(&entry, bincode::config::standard()) {
             Ok(data) => {
                 if let Err(e) = conn.set_ex::<_, _, ()>(&redis_key, data, ttl).await {
                     error!("Failed to set cache entry in Redis: {}", e);
