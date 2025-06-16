@@ -987,7 +987,7 @@ dependencies = [
  "notify",
  "parking_lot",
  "prometheus",
- "rand 0.8.5",
+ "rand 0.9.1",
  "rcgen",
  "redis",
  "reqwest",
