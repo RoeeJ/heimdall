@@ -218,14 +218,31 @@ The codebase implements a production-ready DNS server with both UDP and TCP supp
   - [x] DNS-over-TLS (DoT) on port 853 with self-signed certificate generation
   - [x] DNS-over-HTTPS (DoH) on port 943 with JSON API support
 
+### 🚀 Phase 6: Future Enhancements (PLANNED)
+- [ ] **Phase 6.1**: Complete DoH TLS Support
+  - [ ] Implement proper HTTPS for DoH (currently HTTP only)
+  - [ ] HTTP/2 support for better performance
+  - [ ] Connection coalescing for HTTP/2
+- [ ] **Phase 6.2**: Advanced Transport Features
+  - [ ] DNS-over-QUIC (DoQ) implementation
+  - [ ] Oblivious DNS-over-HTTPS (ODoH)
+  - [ ] DNS-over-Websocket for browser clients
+- [ ] **Phase 6.3**: Enterprise Features
+  - [ ] Dynamic zone updates (RFC 2136)
+  - [ ] DNS views and split-horizon DNS
+  - [ ] Response Policy Zones (RPZ)
+  - [ ] Extended DNS Errors (RFC 8914)
+
 ## Development Reminders
 - Whenever we complete any major steps, commit and push to git
 - All core DNS functionality is now complete and fully tested
-- Server handles both UDP and TCP with proper compression support
+- Server handles UDP, TCP, DoT (port 853), and DoH (port 943)
 - Caching provides excellent performance with sub-ms response times
 - RFC compliance is a priority - enhanced error handling and negative caching complete
 - Modern DNS record types (HTTPS/SVCB, LOC, NAPTR, DNAME, SPF) are fully supported
 - Distributed systems features (Redis L2 cache, cluster coordination) are operational
+- DoT/DoH use auto-generated self-signed certificates (stored in certs/ directory)
+- DoH currently runs in HTTP mode - HTTPS implementation is planned for Phase 6.1
 - Always run `cargo fmt` and `cargo clippy` before committing
 
 ## Volume Mappings
