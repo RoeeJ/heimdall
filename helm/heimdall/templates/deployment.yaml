@@ -190,7 +190,9 @@ spec:
             {{- if or .Values.config.dot.enabled .Values.config.doh.enabled }}
             - name: tls
               mountPath: /tls
+              {{- if not (or .Values.config.dot.tls.autoGenerate .Values.config.doh.tls.autoGenerate) }}
               readOnly: true
+              {{- end }}
             {{- end }}
             {{- with .Values.volumeMounts }}
             {{- toYaml . | nindent 12 }}
