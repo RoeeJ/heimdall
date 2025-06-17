@@ -348,6 +348,17 @@ mod tests {
             "ns1.example.com. admin.example.com. 2024010101 3600 900 604800 86400".to_string(),
         );
         zone.add_record(soa).unwrap();
+
+        // Add NS record (required for zone validation)
+        let ns = ZoneRecord::new(
+            "@".to_string(),
+            Some(3600),
+            DNSResourceClass::IN,
+            DNSResourceType::NS,
+            "ns1.example.com.".to_string(),
+        );
+        zone.add_record(ns).unwrap();
+
         store.add_zone(zone).unwrap();
 
         // Create NOTIFY packet
