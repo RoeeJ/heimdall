@@ -169,7 +169,14 @@ impl ConfigReloader {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Read and parse the config file
         let config_content = tokio::fs::read_to_string(config_path).await?;
-        let new_config = Self::parse_config_file(&config_content)?;
+
+        // Get current config to use as base for partial updates
+        let current_config_snapshot = {
+            let current = config.read().await;
+            current.clone()
+        };
+
+        let new_config = Self::parse_config_file(&config_content, &current_config_snapshot)?;
 
         // Get current config and update
         let old_config = {
@@ -230,75 +237,21 @@ impl ConfigReloader {
         Ok(())
     }
 
-    /// Parse configuration from TOML content
+    /// Parse configuration from TOML content and apply it to the current config
     fn parse_config_file(
         content: &str,
+        current_config: &DnsConfig,
     ) -> Result<DnsConfig, Box<dyn std::error::Error + Send + Sync>> {
-        // For now, we'll use environment variables as the primary config source
-        // In the future, this could parse TOML and merge with env vars
-
         // Parse TOML to get file-based overrides
         let toml_value: toml::Value = toml::from_str(content)?;
 
-        // Start with environment-based config
-        let mut config = match DnsConfig::from_env() {
-            Ok(cfg) => cfg,
-            Err(e) => return Err(Box::new(e)),
-        };
+        // Start with a clone of the current config instead of defaults
+        let mut config = current_config.clone();
 
-        // Apply TOML overrides
-        if let Some(bind_addr) = toml_value.get("bind_addr").and_then(|v| v.as_str()) {
-            config.bind_addr = bind_addr
-                .parse()
-                .map_err(|_| format!("Invalid bind address in config file: {}", bind_addr))?;
-        }
-
-        if let Some(upstream_servers) = toml_value
-            .get("upstream_servers")
-            .and_then(|v| v.as_array())
-        {
-            let servers: Vec<_> = upstream_servers
-                .iter()
-                .filter_map(|v| v.as_str())
-                .filter_map(|s| s.parse().ok())
-                .collect();
-            if !servers.is_empty() {
-                config.upstream_servers = servers;
-            }
-        }
-
-        if let Some(enable_caching) = toml_value.get("enable_caching").and_then(|v| v.as_bool()) {
-            config.enable_caching = enable_caching;
-        }
-
-        if let Some(max_cache_size) = toml_value
-            .get("max_cache_size")
-            .and_then(|v| v.as_integer())
-        {
-            if max_cache_size <= 0 {
-                return Err("max_cache_size must be positive".into());
-            }
-            config.max_cache_size = max_cache_size as usize;
-        }
-
-        if let Some(enable_rate_limiting) = toml_value
-            .get("rate_limiting")
-            .and_then(|v| v.as_table())
-            .and_then(|t| t.get("enable"))
-            .and_then(|v| v.as_bool())
-        {
-            config.rate_limit_config.enable_rate_limiting = enable_rate_limiting;
-        }
-
-        if let Some(http_addr) = toml_value.get("http_bind_addr").and_then(|v| v.as_str()) {
-            if http_addr == "disabled" {
-                config.http_bind_addr = None;
-            } else {
-                config.http_bind_addr = Some(http_addr.parse().map_err(|_| {
-                    format!("Invalid HTTP bind address in config file: {}", http_addr)
-                })?);
-            }
-        }
+        // Apply partial updates from the TOML file
+        config
+            .apply_partial_update(&toml_value)
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
         // Validate the final configuration
         config

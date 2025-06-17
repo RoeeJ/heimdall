@@ -561,6 +561,74 @@ impl DnsConfig {
         Ok(config)
     }
 
+    /// Apply partial updates from a TOML value to this config
+    /// Only fields present in the TOML will be updated
+    pub fn apply_partial_update(&mut self, toml_value: &toml::Value) -> Result<(), ConfigError> {
+        // Apply each field if present in the TOML
+        if let Some(bind_addr) = toml_value.get("bind_addr").and_then(|v| v.as_str()) {
+            self.bind_addr = bind_addr
+                .parse()
+                .map_err(|_| ConfigError::InvalidBindAddress(bind_addr.to_string()))?;
+        }
+
+        if let Some(upstream_servers) = toml_value
+            .get("upstream_servers")
+            .and_then(|v| v.as_array())
+        {
+            let servers: Result<Vec<_>, _> = upstream_servers
+                .iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.parse::<SocketAddr>())
+                .collect();
+            self.upstream_servers = servers.map_err(|_| {
+                ConfigError::ParseError("Invalid upstream server address".to_string())
+            })?;
+        }
+
+        if let Some(enable_caching) = toml_value.get("enable_caching").and_then(|v| v.as_bool()) {
+            self.enable_caching = enable_caching;
+        }
+
+        if let Some(max_cache_size) = toml_value
+            .get("max_cache_size")
+            .and_then(|v| v.as_integer())
+        {
+            if max_cache_size <= 0 {
+                return Err(ConfigError::InvalidCacheSize(
+                    "Cache size must be positive".to_string(),
+                ));
+            }
+            self.max_cache_size = max_cache_size as usize;
+        }
+
+        if let Some(enable_rate_limiting) = toml_value
+            .get("rate_limiting")
+            .and_then(|v| v.as_table())
+            .and_then(|t| t.get("enable"))
+            .and_then(|v| v.as_bool())
+        {
+            self.rate_limit_config.enable_rate_limiting = enable_rate_limiting;
+        }
+
+        if let Some(http_addr) = toml_value.get("http_bind_addr").and_then(|v| v.as_str()) {
+            if http_addr == "disabled" {
+                self.http_bind_addr = None;
+            } else {
+                self.http_bind_addr = Some(http_addr.parse().map_err(|_| {
+                    ConfigError::InvalidBindAddress(format!(
+                        "Invalid HTTP bind address: {}",
+                        http_addr
+                    ))
+                })?);
+            }
+        }
+
+        // Apply other fields as needed...
+        // This can be extended to cover all config fields
+
+        Ok(())
+    }
+
     /// Validate the configuration
     pub fn validate(&self) -> Result<(), ConfigError> {
         // Worker threads validation (0 is allowed for default)
