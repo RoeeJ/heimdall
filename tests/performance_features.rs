@@ -1,3 +1,5 @@
+mod common;
+use common::*;
 use heimdall::cache::{CacheKey, DnsCache};
 use heimdall::config::DnsConfig;
 use heimdall::dns::enums::{DNSResourceClass, DNSResourceType};
@@ -7,25 +9,9 @@ use heimdall::resolver::DnsResolver;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-fn create_test_packet() -> Vec<u8> {
-    vec![
-        0x12, 0x34, // ID
-        0x01, 0x00, // Flags: standard query
-        0x00, 0x01, // Questions: 1
-        0x00, 0x00, // Answers: 0
-        0x00, 0x00, // Authority: 0
-        0x00, 0x00, // Additional: 0
-        // Question: example.com
-        0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm',
-        0x00, // End of name
-        0x00, 0x01, // Type: A
-        0x00, 0x01, // Class: IN
-    ]
-}
-
 #[test]
 fn test_zero_copy_parsing() {
-    let packet_data = create_test_packet();
+    let packet_data = create_test_packet_bytes();
 
     // Test that zero-copy parsing produces equivalent results to regular parsing
     let regular_packet = DNSPacket::parse(&packet_data).unwrap();
@@ -50,7 +36,7 @@ fn test_zero_copy_parsing() {
 
 #[test]
 fn test_zero_copy_validation() {
-    let packet_data = create_test_packet();
+    let packet_data = create_test_packet_bytes();
     let zero_copy_packet = DNSPacketRef::parse_metadata(&packet_data).unwrap();
 
     // Test question containment - our implementation is simplified
@@ -142,7 +128,7 @@ fn test_domain_trie_operations() {
 
 #[test]
 fn test_zero_copy_serialization() {
-    let packet = DNSPacket::parse(&create_test_packet()).unwrap();
+    let packet = DNSPacket::parse(&create_test_packet_bytes()).unwrap();
     let mut buffer = Vec::new();
 
     // Test zero-copy serialization

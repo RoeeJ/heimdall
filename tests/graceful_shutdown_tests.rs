@@ -1,20 +1,10 @@
 use heimdall::graceful_shutdown::GracefulShutdown;
-use heimdall::resolver::DnsResolver;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 
 mod common;
-use common::test_config;
-
-async fn create_test_resolver() -> Arc<DnsResolver> {
-    let config = test_config();
-    Arc::new(
-        DnsResolver::new(config, None)
-            .await
-            .expect("Failed to create resolver"),
-    )
-}
+use common::*;
 
 #[tokio::test]
 async fn test_graceful_shutdown_creation() {

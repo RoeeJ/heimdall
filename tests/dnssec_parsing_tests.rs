@@ -1,41 +1,10 @@
+mod common;
+use common::*;
 use heimdall::dns::{
     DNSPacket,
     enums::{DNSResourceClass, DNSResourceType},
-    header::DNSHeader,
-    question::DNSQuestion,
     resource::DNSResource,
 };
-
-fn create_test_packet_with_resource(resource: DNSResource) -> Vec<u8> {
-    let packet = DNSPacket {
-        header: DNSHeader {
-            id: 1234,
-            qr: true,
-            opcode: 0,
-            aa: false,
-            tc: false,
-            rd: true,
-            ra: true,
-            z: 0,
-            rcode: 0,
-            qdcount: 1,
-            ancount: 1,
-            nscount: 0,
-            arcount: 0,
-        },
-        questions: vec![DNSQuestion {
-            labels: resource.labels.clone(),
-            qtype: resource.rtype,
-            qclass: resource.rclass,
-        }],
-        answers: vec![resource],
-        authorities: vec![],
-        resources: vec![],
-        edns: None,
-    };
-
-    packet.serialize().unwrap()
-}
 
 #[test]
 fn test_dnskey_record_parsing() {

@@ -1,50 +1,22 @@
 #![allow(clippy::field_reassign_with_default)]
 #![allow(clippy::bool_assert_comparison)]
 
+mod common;
+use common::*;
 use heimdall::config::DnsConfig;
-use heimdall::dns::{
-    DNSPacket,
-    enums::{DNSResourceClass, DNSResourceType, ResponseCode},
-    header::DNSHeader,
-    question::DNSQuestion,
-};
+use heimdall::dns::enums::{DNSResourceType, ResponseCode};
 use heimdall::resolver::DnsResolver;
 
-/// Helper function to create a test DNS query packet
-fn create_test_query(id: u16, opcode: u8, domain: &str, qtype: DNSResourceType) -> DNSPacket {
-    let mut header = DNSHeader::default();
-    header.id = id;
-    header.opcode = opcode;
-    header.qr = false;
-    header.rd = true;
-    header.qdcount = 1;
-
-    let question = DNSQuestion {
-        labels: domain.split('.').map(|s| s.to_string()).collect(),
-        qtype,
-        qclass: DNSResourceClass::IN,
-    };
-
-    DNSPacket {
-        header,
-        questions: vec![question],
-        answers: vec![],
-        authorities: vec![],
-        resources: vec![],
-        edns: None,
-    }
-}
-
-/// Create a test resolver instance
-async fn create_test_resolver() -> DnsResolver {
+/// Create a test resolver instance  
+async fn create_test_resolver_no_arc() -> DnsResolver {
     let config = DnsConfig::default();
     DnsResolver::new(config, None).await.unwrap()
 }
 
 #[tokio::test]
 async fn test_refused_response() {
-    let resolver = create_test_resolver().await;
-    let query = create_test_query(12345, 0, "example.com", DNSResourceType::A);
+    let resolver = create_test_resolver_no_arc().await;
+    let query = create_test_query_with_opcode(12345, 0, "example.com", DNSResourceType::A);
 
     let response = resolver.create_refused_response(&query);
 
@@ -70,8 +42,8 @@ async fn test_refused_response() {
 
 #[tokio::test]
 async fn test_notimpl_response() {
-    let resolver = create_test_resolver().await;
-    let query = create_test_query(54321, 1, "example.com", DNSResourceType::A); // IQUERY opcode
+    let resolver = create_test_resolver_no_arc().await;
+    let query = create_test_query_with_opcode(54321, 1, "example.com", DNSResourceType::A); // IQUERY opcode
 
     let response = resolver.create_notimpl_response(&query);
 
@@ -93,8 +65,8 @@ async fn test_notimpl_response() {
 
 #[tokio::test]
 async fn test_formerr_response() {
-    let resolver = create_test_resolver().await;
-    let mut query = create_test_query(9876, 0, "example.com", DNSResourceType::A);
+    let resolver = create_test_resolver_no_arc().await;
+    let mut query = create_test_query_with_opcode(9876, 0, "example.com", DNSResourceType::A);
 
     // Make the query malformed by setting invalid counters
     query.header.qdcount = 0; // No questions but questions array is not empty
@@ -118,8 +90,8 @@ async fn test_formerr_response() {
 
 #[tokio::test]
 async fn test_existing_servfail_response_uses_enum() {
-    let resolver = create_test_resolver().await;
-    let query = create_test_query(11111, 0, "example.com", DNSResourceType::A);
+    let resolver = create_test_resolver_no_arc().await;
+    let query = create_test_query_with_opcode(11111, 0, "example.com", DNSResourceType::A);
 
     let response = resolver.create_servfail_response(&query);
 
@@ -132,8 +104,8 @@ async fn test_existing_servfail_response_uses_enum() {
 
 #[tokio::test]
 async fn test_existing_nxdomain_response_uses_enum() {
-    let resolver = create_test_resolver().await;
-    let query = create_test_query(22222, 0, "nonexistent.example", DNSResourceType::A);
+    let resolver = create_test_resolver_no_arc().await;
+    let query = create_test_query_with_opcode(22222, 0, "nonexistent.example", DNSResourceType::A);
 
     let response = resolver.create_nxdomain_response(&query);
 
@@ -183,8 +155,8 @@ async fn test_response_code_enum_functionality() {
 
 #[tokio::test]
 async fn test_response_serialization() {
-    let resolver = create_test_resolver().await;
-    let query = create_test_query(33333, 0, "test.example", DNSResourceType::A);
+    let resolver = create_test_resolver_no_arc().await;
+    let query = create_test_query_with_opcode(33333, 0, "test.example", DNSResourceType::A);
 
     // Test that all new response types can be serialized
     let refused = resolver.create_refused_response(&query);

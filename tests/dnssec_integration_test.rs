@@ -4,7 +4,7 @@ use heimdall::dns::{DNSPacket, question::DNSQuestion};
 use heimdall::resolver::DnsResolver;
 
 mod common;
-use common::test_config;
+use common::create_test_config as test_config;
 
 #[tokio::test]
 async fn test_dnssec_disabled_by_default() {

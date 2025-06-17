@@ -1,43 +1,10 @@
 use heimdall::config::DnsConfig;
-use heimdall::dns::{
-    DNSPacket,
-    enums::{DNSResourceClass, DNSResourceType},
-    header::DNSHeader,
-    question::DNSQuestion,
-};
+use heimdall::dns::{DNSPacket, enums::DNSResourceType};
 use heimdall::resolver::DnsResolver;
 
 mod common;
-use common::test_config;
-
-fn create_test_query() -> DNSPacket {
-    DNSPacket {
-        header: DNSHeader {
-            id: 0x1234,
-            qr: false,
-            opcode: 0,
-            aa: false,
-            tc: false,
-            rd: true,
-            ra: false,
-            z: 0,
-            rcode: 0,
-            qdcount: 1,
-            ancount: 0,
-            nscount: 0,
-            arcount: 0,
-        },
-        questions: vec![DNSQuestion {
-            labels: vec!["example".to_string(), "com".to_string()],
-            qtype: DNSResourceType::A,
-            qclass: DNSResourceClass::IN,
-        }],
-        answers: vec![],
-        authorities: vec![],
-        resources: vec![],
-        edns: None,
-    }
-}
+use common::create_test_config as test_config;
+use common::*;
 
 #[test]
 fn test_config_default() {
@@ -77,7 +44,7 @@ async fn test_resolver_creation() {
 #[test]
 fn test_servfail_response() {
     let config = test_config();
-    let query = create_test_query();
+    let query = create_test_query("example.com", DNSResourceType::A);
 
     // We can't easily test the resolver without network access,
     // but we can test the error response generation
@@ -93,7 +60,7 @@ fn test_servfail_response() {
 #[test]
 fn test_nxdomain_response() {
     let config = test_config();
-    let query = create_test_query();
+    let query = create_test_query("example.com", DNSResourceType::A);
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let resolver = rt.block_on(async { DnsResolver::new(config, None).await.unwrap() });
@@ -106,7 +73,7 @@ fn test_nxdomain_response() {
 
 #[test]
 fn test_packet_validation() {
-    let mut packet = create_test_query();
+    let mut packet = create_test_query("example.com", DNSResourceType::A);
     assert!(packet.valid());
 
     // Test invalid packet - wrong question count (requires comprehensive validation)
@@ -133,7 +100,7 @@ fn test_packet_validation() {
 
 #[test]
 fn test_packet_serialization_roundtrip() {
-    let original = create_test_query();
+    let original = create_test_query("example.com", DNSResourceType::A);
 
     // Serialize and deserialize
     let serialized = original.serialize().expect("Failed to serialize");

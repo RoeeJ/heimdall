@@ -1,27 +1,13 @@
+mod common;
+use common::*;
 use heimdall::cache::{CacheKey, DnsCache};
 use heimdall::dns::enums::{DNSResourceClass, DNSResourceType};
 use heimdall::dns::{DNSPacket, DNSPacketRef, PacketBufferPool};
 use std::time::Instant;
 
-fn create_test_packet() -> Vec<u8> {
-    vec![
-        0x12, 0x34, // ID
-        0x01, 0x00, // Flags: standard query
-        0x00, 0x01, // Questions: 1
-        0x00, 0x00, // Answers: 0
-        0x00, 0x00, // Authority: 0
-        0x00, 0x00, // Additional: 0
-        // Question: example.com
-        0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm',
-        0x00, // End of name
-        0x00, 0x01, // Type: A
-        0x00, 0x01, // Class: IN
-    ]
-}
-
 #[test]
 fn benchmark_parsing_comparison() {
-    let packet_data = create_test_packet();
+    let packet_data = create_test_packet_bytes();
     let iterations = 1000;
 
     // Benchmark regular parsing
@@ -114,7 +100,7 @@ fn benchmark_cache_key_optimization() {
 
 #[test]
 fn benchmark_serialization_methods() {
-    let packet_data = create_test_packet();
+    let packet_data = create_test_packet_bytes();
     let packet = DNSPacket::parse(&packet_data).unwrap();
     let iterations = 1000;
 

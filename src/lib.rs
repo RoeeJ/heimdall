@@ -8,6 +8,7 @@ pub mod dnssec;
 pub mod dynamic_update;
 pub mod error;
 pub mod graceful_shutdown;
+pub mod heimdall_error;
 pub mod http_server;
 pub mod metrics;
 pub mod pool;

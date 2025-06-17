@@ -1,46 +1,19 @@
 #![allow(clippy::field_reassign_with_default)]
 #![allow(clippy::bool_assert_comparison)]
 
-use heimdall::dns::{
-    DNSPacket,
-    enums::{DNSResourceClass, DNSResourceType, ResponseCode},
-    header::DNSHeader,
-    question::DNSQuestion,
-};
+use heimdall::dns::enums::{DNSResourceClass, DNSResourceType, ResponseCode};
 use heimdall::resolver::DnsResolver;
 
 mod common;
-use common::test_config;
+use common::*;
 
-/// Create a test DNS query packet
-fn create_test_query(id: u16, domain: &str, qtype: DNSResourceType) -> DNSPacket {
-    let mut header = DNSHeader::default();
-    header.id = id;
-    header.opcode = 0;
-    header.qr = false;
-    header.rd = true;
-    header.qdcount = 1;
-
-    let question = DNSQuestion {
-        labels: domain.split('.').map(|s| s.to_string()).collect(),
-        qtype,
-        qclass: DNSResourceClass::IN,
-    };
-
-    DNSPacket {
-        header,
-        questions: vec![question],
-        answers: vec![],
-        authorities: vec![],
-        resources: vec![],
-        edns: None,
-    }
-}
+// Re-export test_config with the old name for compatibility
+use common::create_test_config as test_config;
 
 #[tokio::test]
 async fn test_nxdomain_response_includes_soa() {
     let resolver = DnsResolver::new(test_config(), None).await.unwrap();
-    let query = create_test_query(12345, "nonexistent.example.com", DNSResourceType::A);
+    let query = create_test_query_with_id(12345, "nonexistent.example.com", DNSResourceType::A);
 
     let response = resolver.create_nxdomain_response(&query);
 
@@ -72,7 +45,7 @@ async fn test_nxdomain_response_includes_soa() {
 #[tokio::test]
 async fn test_nxdomain_response_with_single_label() {
     let resolver = DnsResolver::new(test_config(), None).await.unwrap();
-    let query = create_test_query(54321, "com", DNSResourceType::A);
+    let query = create_test_query_with_id(54321, "com", DNSResourceType::A);
 
     let response = resolver.create_nxdomain_response(&query);
 
@@ -88,7 +61,8 @@ async fn test_nxdomain_response_with_single_label() {
 #[tokio::test]
 async fn test_nxdomain_response_with_subdomain() {
     let resolver = DnsResolver::new(test_config(), None).await.unwrap();
-    let query = create_test_query(9876, "www.nonexistent.example.com", DNSResourceType::AAAA);
+    let query =
+        create_test_query_with_id(9876, "www.nonexistent.example.com", DNSResourceType::AAAA);
 
     let response = resolver.create_nxdomain_response(&query);
 
@@ -105,7 +79,7 @@ async fn test_nxdomain_response_with_subdomain() {
 #[tokio::test]
 async fn test_nxdomain_response_with_empty_questions() {
     let resolver = DnsResolver::new(test_config(), None).await.unwrap();
-    let mut query = create_test_query(11111, "example.com", DNSResourceType::A);
+    let mut query = create_test_query_with_id(11111, "example.com", DNSResourceType::A);
 
     // Clear questions to test edge case
     query.questions.clear();
@@ -122,7 +96,7 @@ async fn test_nxdomain_response_with_empty_questions() {
 #[tokio::test]
 async fn test_soa_rdata_format() {
     let resolver = DnsResolver::new(test_config(), None).await.unwrap();
-    let query = create_test_query(22222, "test.example.org", DNSResourceType::MX);
+    let query = create_test_query_with_id(22222, "test.example.org", DNSResourceType::MX);
 
     let response = resolver.create_nxdomain_response(&query);
 
@@ -154,7 +128,7 @@ async fn test_soa_rdata_format() {
 #[tokio::test]
 async fn test_servfail_response_no_soa() {
     let resolver = DnsResolver::new(test_config(), None).await.unwrap();
-    let query = create_test_query(33333, "server-error.example.com", DNSResourceType::A);
+    let query = create_test_query_with_id(33333, "server-error.example.com", DNSResourceType::A);
 
     let response = resolver.create_servfail_response(&query);
 
@@ -169,7 +143,7 @@ async fn test_servfail_response_no_soa() {
 #[tokio::test]
 async fn test_soa_ttl_for_negative_caching() {
     let resolver = DnsResolver::new(test_config(), None).await.unwrap();
-    let query = create_test_query(44444, "cached.example.net", DNSResourceType::TXT);
+    let query = create_test_query_with_id(44444, "cached.example.net", DNSResourceType::TXT);
 
     let response = resolver.create_nxdomain_response(&query);
 
@@ -198,7 +172,7 @@ async fn test_multiple_label_domain_handling() {
     ];
 
     for (domain, expected_soa_labels) in test_cases {
-        let query = create_test_query(55555, domain, DNSResourceType::A);
+        let query = create_test_query_with_id(55555, domain, DNSResourceType::A);
         let response = resolver.create_nxdomain_response(&query);
 
         assert_eq!(

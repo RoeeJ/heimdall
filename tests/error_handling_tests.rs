@@ -11,7 +11,7 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 
 mod common;
-use common::test_config;
+use common::create_test_config as test_config;
 
 /// Test REFUSED response for zone transfer queries
 #[tokio::test]

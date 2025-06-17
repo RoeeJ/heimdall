@@ -7,7 +7,7 @@ use std::time::Duration;
 use tokio::time::timeout;
 
 mod common;
-use common::test_config;
+use common::create_test_config as test_config;
 
 #[tokio::test]
 #[ignore] // This test requires network access
