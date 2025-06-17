@@ -201,10 +201,9 @@ pub fn create_test_local_cache(max_size: usize) -> LocalCache {
 
 /// Create a test Redis cache (requires Redis connection)
 pub async fn create_test_redis_cache() -> Option<RedisCache> {
-    match RedisCache::new("redis://127.0.0.1:6379", "heimdall_test:".to_string(), 3600).await {
-        Ok(cache) => Some(cache),
-        Err(_) => None,
-    }
+    RedisCache::new("redis://127.0.0.1:6379", "heimdall_test:".to_string(), 3600)
+        .await
+        .ok()
 }
 
 /// Create a default test configuration

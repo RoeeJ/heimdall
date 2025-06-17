@@ -1,6 +1,6 @@
 # Kubernetes Deployment Guide for Heimdall DNS Server
 
-This guide provides instructions for deploying Heimdall DNS server on Kubernetes using either Helm or plain Kubernetes manifests.
+This comprehensive guide covers deploying Heimdall DNS server on Kubernetes using Helm, plain manifests, and GitOps with ArgoCD.
 
 ## Prerequisites
 
@@ -10,9 +10,11 @@ This guide provides instructions for deploying Heimdall DNS server on Kubernetes
 - (Optional) Helm 3.0+ for Helm deployment
 - (Optional) ArgoCD for GitOps deployment
 
-## Option 1: Deploy with Helm Chart
+## Deployment Options
 
-### Quick Start
+### Option 1: Deploy with Helm Chart (Recommended)
+
+#### Quick Start
 
 ```bash
 # Clone the repository
@@ -29,7 +31,7 @@ helm install heimdall ./helm/heimdall -n dns-system --create-namespace
 helm install heimdall ./helm/heimdall -f custom-values.yaml
 ```
 
-### Custom Values Example
+#### Custom Values Example
 
 Create a `custom-values.yaml` file:
 
@@ -65,9 +67,11 @@ persistence:
   storageClass: fast-ssd
 ```
 
-## Option 2: Deploy with Kubernetes Manifests
+For a complete list of configuration options, see the [Helm Chart documentation](HELM.md).
 
-### Quick Start
+### Option 2: Deploy with Kubernetes Manifests
+
+#### Quick Start
 
 ```bash
 # Apply the manifest
@@ -80,7 +84,7 @@ kubectl get all -n heimdall-dns
 kubectl get svc heimdall -n heimdall-dns
 ```
 
-### Customizing the Manifest
+#### Customizing the Manifest
 
 Edit `k8s-manifest.yaml` to customize:
 - Replica count
@@ -88,9 +92,19 @@ Edit `k8s-manifest.yaml` to customize:
 - Environment variables
 - Storage size
 
-## Option 3: Deploy with ArgoCD (Automated CI/CD)
+### Option 3: GitOps with ArgoCD (Automated CI/CD)
 
-### Quick Setup with Automated Updates
+#### 🎯 Overview
+
+**Automated Workflow:**
+1. **GitHub Actions** builds and pushes image to `ghcr.io/roeej/heimdall:latest`
+2. **ArgoCD Image Updater** detects the new image
+3. **ArgoCD** automatically updates the deployment
+4. **Old ReplicaSets** are cleaned up (only keeps 3 latest)
+
+#### 🚀 Quick Setup
+
+##### Automated Setup (Recommended)
 
 ```bash
 # Run the automated setup script
@@ -103,7 +117,49 @@ This sets up:
 - ✅ ReplicaSet cleanup (keeps only 3 old versions)
 - ✅ Zero-touch deployment pipeline
 
-## Option 4: Automatic Updates with Keel
+##### Manual Setup
+
+1. **Install ArgoCD** (if not already installed):
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+```
+
+2. **Install ArgoCD Image Updater**:
+```bash
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/stable/manifests/install.yaml
+```
+
+3. **Apply configurations**:
+```bash
+kubectl apply -f .argocd/image-updater-config.yaml
+kubectl apply -f .argocd/application.yaml
+```
+
+#### 🖥️ Accessing ArgoCD
+
+```bash
+# Get admin password
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+
+# Port forward to ArgoCD server
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+
+# Access UI at https://localhost:8080
+# Username: admin
+# Password: (from command above)
+```
+
+#### 🔄 How Automatic Updates Work
+
+1. **Code Push**: Triggers GitHub Actions
+2. **Image Build**: GHA builds and pushes to `ghcr.io/roeej/heimdall:latest`
+3. **Detection**: ArgoCD Image Updater polls registry every 2 minutes
+4. **Update**: New image SHA triggers deployment update
+5. **Rolling Update**: Kubernetes performs zero-downtime update
+6. **Cleanup**: Old ReplicaSets beyond limit (3) are deleted
+
+### Option 4: Automatic Updates with Keel
 
 The Helm chart includes built-in support for [Keel](https://keel.sh/) automatic updates. When deployed with default settings, Keel will:
 
@@ -112,7 +168,7 @@ The Helm chart includes built-in support for [Keel](https://keel.sh/) automatic 
 - ✅ Poll for updates every 5 minutes
 - ✅ Match semantic version tags (e.g., v1.2.3)
 
-### Enabling Keel Updates
+#### Enabling Keel Updates
 
 Keel annotations are included by default in the Helm chart. To customize:
 
@@ -125,7 +181,7 @@ keel:
     keel.sh/approvals: "1"      # Require manual approval
 ```
 
-### Disabling Keel Updates
+#### Disabling Keel Updates
 
 To disable automatic updates:
 
@@ -133,22 +189,6 @@ To disable automatic updates:
 keel:
   annotations: {}  # Empty annotations disable Keel
 ```
-
-### Manual ArgoCD Application
-
-If you prefer manual setup, apply the pre-configured application:
-
-```bash
-kubectl apply -f .argocd/application.yaml
-```
-
-**Features:**
-- **Automatic sync** when code changes
-- **Image updates** when GHA pushes new images
-- **Self-healing** if resources are modified
-- **Revision cleanup** to prevent ReplicaSet accumulation
-
-For detailed ArgoCD setup instructions, see [argocd-setup.md](argocd-setup.md).
 
 ## Verifying the Deployment
 
@@ -172,11 +212,12 @@ kubectl get svc heimdall -n heimdall-dns
 # Using dig
 dig google.com @<EXTERNAL-IP>
 
-# Using dig (recommended)
-dig google.com @<EXTERNAL-IP>
-
 # Using host
 host google.com <EXTERNAL-IP>
+
+# Test with specific record types
+dig AAAA google.com @<EXTERNAL-IP>
+dig MX gmail.com @<EXTERNAL-IP>
 ```
 
 ### 4. Check Metrics and Health
@@ -228,7 +269,7 @@ env:
 - name: HEIMDALL_ENABLE_PARALLEL_QUERIES
   value: "true"
 - name: RUST_LOG
-  value: "heimdall=info,warn"  # Production logging (info for operations, debug for troubleshooting)
+  value: "heimdall=info,warn"  # Production logging
 ```
 
 ### Logging Levels
@@ -295,6 +336,32 @@ dig google.com @heimdall.heimdall-dns.svc.cluster.local
 3. **DNS timeouts**: Check upstream server connectivity
 4. **High latency**: Enable cache and parallel queries
 
+### ArgoCD Specific Troubleshooting
+
+#### Application Not Syncing
+```bash
+# Force sync
+kubectl patch application heimdall-dns -n argocd --type merge -p='{"operation":{"initiatedBy":{"username":"admin"},"sync":{"syncStrategy":{"hook":{},"apply":{"force":true}}}}}'
+
+# Or use ArgoCD CLI
+argocd app sync heimdall-dns
+```
+
+#### Image Updates Not Working
+```bash
+# Check Image Updater logs
+kubectl logs -n argocd deployment/argocd-image-updater | grep -E "(error|heimdall)"
+
+# Verify registry access
+kubectl run test-pull --image=ghcr.io/roeej/heimdall:latest --rm -it --restart=Never
+```
+
+#### Too Many ReplicaSets
+```bash
+# Manual cleanup (if needed)
+kubectl delete rs -n dns-system $(kubectl get rs -n dns-system -o name | grep heimdall | tail -n +4)
+```
+
 ## Updating
 
 ### Helm
@@ -313,6 +380,37 @@ kubectl apply -f k8s-manifest.yaml
 
 The deployment uses RollingUpdate strategy by default, ensuring zero downtime.
 
+## Advanced Configuration
+
+### DNS-over-TLS (DoT) and DNS-over-HTTPS (DoH)
+
+Heimdall supports encrypted DNS protocols. To enable:
+
+```yaml
+# values.yaml
+config:
+  dot:
+    enabled: true
+    bindAddr: "0.0.0.0:853"
+  doh:
+    enabled: true
+    bindAddr: "0.0.0.0:943"
+```
+
+### Redis Distributed Cache
+
+Enable Redis for shared cache across replicas:
+
+```yaml
+redis:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 10Gi
+```
+
+For detailed configuration options, see the [Helm Chart documentation](HELM.md).
+
 ## Cleanup
 
 ### Helm
@@ -326,3 +424,30 @@ helm uninstall heimdall -n heimdall-dns
 ```bash
 kubectl delete -f k8s-manifest.yaml
 ```
+
+### ArgoCD
+
+```bash
+kubectl delete application heimdall-dns -n argocd
+```
+
+## Benefits of Each Deployment Method
+
+### Helm
+✅ **Templatable configuration**  
+✅ **Easy upgrades and rollbacks**  
+✅ **Built-in best practices**  
+✅ **Reusable across environments**  
+
+### ArgoCD + Image Updater
+✅ **Zero-touch deployment**: Push code → automatic deployment  
+✅ **Resource cleanup**: No accumulation of old ReplicaSets  
+✅ **GitOps compliance**: All changes tracked in Git  
+✅ **Rollback capability**: Easy rollback through ArgoCD UI  
+✅ **Monitoring**: Full visibility through ArgoCD dashboard  
+
+### Keel
+✅ **Simple setup**: Just annotations on deployments  
+✅ **Flexible policies**: Control update behavior  
+✅ **No additional infrastructure**: Works with existing deployments  
+✅ **Manual approval options**: For production safety
