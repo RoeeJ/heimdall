@@ -209,7 +209,7 @@ pub async fn create_test_redis_cache() -> Option<RedisCache> {
 /// Create a default test configuration
 pub fn create_test_config() -> DnsConfig {
     DnsConfig {
-        bind_addr: "127.0.0.1:10053".parse().unwrap(),
+        bind_addr: "127.0.0.1:1053".parse().unwrap(),
         upstream_servers: vec!["8.8.8.8:53".parse().unwrap()],
         root_servers: vec![],
         enable_iterative: false,
