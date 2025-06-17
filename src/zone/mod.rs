@@ -1,14 +1,20 @@
+pub mod authoritative;
 pub mod errors;
+pub mod notify;
 pub mod parser;
 pub mod record;
 pub mod store;
+pub mod transfer;
 #[allow(clippy::module_inception)]
 pub mod zone;
 
+pub use authoritative::AuthoritativeResponder;
 pub use errors::{Result, ZoneError};
+pub use notify::NotifyHandler;
 pub use parser::ZoneParser;
 pub use record::ZoneRecord;
 pub use store::{QueryResult, ZoneStore};
+pub use transfer::ZoneTransferHandler;
 pub use zone::Zone;
 
 /// Zone constants

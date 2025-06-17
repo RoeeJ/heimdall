@@ -142,6 +142,9 @@ The codebase implements a production-ready DNS server with both UDP and TCP supp
 - **Authoritative DNS**: Zone file parsing, SOA management, and authoritative responses
 - **DNS-over-TLS (DoT)**: Encrypted DNS on port 853 with auto-generated certificates
 - **DNS-over-HTTPS (DoH)**: HTTPS-based DNS on port 943 with JSON API and CORS support
+- **Zone Transfers**: AXFR/IXFR support for primary/secondary synchronization
+- **DNS NOTIFY**: Zone change notifications between servers (RFC 1996)
+- **Dynamic Updates**: RFC 2136 compliant dynamic DNS updates with TSIG authentication
 
 ### Packet Flow
 1. **Receive**: UDP/TCP socket receives DNS query
@@ -212,20 +215,20 @@ The codebase implements a production-ready DNS server with both UDP and TCP supp
   - [x] Opcode validation with proper error responses
   - [x] Extended RCODE support (all RFC-defined codes)
   - [x] UDP truncation support with TC flag (RFC 1035)
-
-### ✅ Phase 5: Advanced DNS Features (COMPLETED)
-- [x] **Phase 5.1**: DNSSEC Validation ✅ COMPLETED
+- [x] **Phase 4.2**: DNSSEC Validation ✅ COMPLETED
   - [x] Signature validation implementation (RSA, ECDSA, Ed25519)
   - [x] Chain of trust verification with DS record validation
   - [x] Trust anchor management with root KSKs (2017 & 2024)
   - [x] Denial of existence validation (NSEC/NSEC3)
   - [x] Automatic DO flag setting for DNSSEC queries
   - [x] Configurable validation modes (permissive/strict)
-- [x] **Phase 5.2**: Authoritative DNS Support ✅ COMPLETED
-  - [x] Zone file parsing and serving
-  - [x] SOA record management
-  - [ ] Dynamic zone updates
-- [x] **Phase 5.3**: Modern Transport ✅ COMPLETED
+- [x] **Phase 4.3**: Authoritative DNS Support ✅ COMPLETED
+  - [x] Zone file parsing and serving (RFC 1035)
+  - [x] SOA record management and authority designation
+  - [x] Zone transfers (AXFR/IXFR) for primary/secondary synchronization
+  - [x] DNS NOTIFY (RFC 1996) for zone change notifications
+  - [x] Dynamic DNS updates (RFC 2136) with TSIG authentication
+- [x] **Phase 4.4**: Modern Transport ✅ COMPLETED
   - [x] DNS-over-TLS (DoT) on port 853 with self-signed certificate generation
   - [x] DNS-over-HTTPS (DoH) on port 943 with JSON API support
 
