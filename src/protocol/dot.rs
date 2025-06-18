@@ -15,7 +15,6 @@ use crate::error::{DnsError, Result};
 use crate::metrics::DnsMetrics;
 use crate::pool::{BufferPool, PooledItem};
 use crate::resolver::DnsResolver;
-use crate::transport::tls::TlsConfig;
 
 use super::{
     ConnectionState, MetricEvent, MetricsRecorder, PermitManager, ProtocolHandler, QueryProcessor,
@@ -82,7 +81,7 @@ pub struct DotProtocolHandler {
 impl DotProtocolHandler {
     pub fn new(
         listener: Arc<TcpListener>,
-        tls_config: TlsConfig,
+        tls_acceptor: Arc<TlsAcceptor>,
         config: Arc<DnsConfig>,
         buffer_pool: Arc<BufferPool>,
         resolver: Arc<DnsResolver>,
@@ -100,13 +99,6 @@ impl DotProtocolHandler {
         let permit_manager = Arc::new(PermitManager::new(config.max_concurrent_queries, "DoT"));
 
         let query_processor = Arc::new(QueryProcessor::new(buffer_pool.clone(), resolver, metrics));
-
-        // Create TLS acceptor from config
-        let tls_acceptor = Arc::new(
-            tls_config
-                .create_acceptor_sync()
-                .map_err(|e| DnsError::Io(format!("Failed to create TLS acceptor: {}", e)))?,
-        );
 
         Ok(Self {
             listener,

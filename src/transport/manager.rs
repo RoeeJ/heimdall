@@ -51,27 +51,23 @@ impl TransportManager {
             {
                 info!("Starting DoT server on {}", bind_addr);
 
-                // Pre-generate certificates if needed (async)
-                if tls_config.auto_generate_cert {
-                    info!("Generating TLS certificates for DoT...");
-                    // Create a temporary acceptor to trigger certificate generation
-                    match tls_config.create_acceptor().await {
-                        Ok(_) => info!("TLS certificates ready"),
-                        Err(e) => {
-                            error!("Failed to generate TLS certificates: {}", e);
-                            return Err(Box::new(DnsError::Io(format!(
-                                "TLS certificate generation failed: {}",
-                                e
-                            ))));
-                        }
+                // Create TLS acceptor
+                let tls_acceptor = match tls_config.create_acceptor().await {
+                    Ok(acceptor) => Arc::new(acceptor),
+                    Err(e) => {
+                        error!("Failed to create TLS acceptor: {}", e);
+                        return Err(Box::new(DnsError::Io(format!(
+                            "TLS acceptor creation failed: {}",
+                            e
+                        ))));
                     }
-                }
+                };
 
                 let listener = Arc::new(TcpListener::bind(bind_addr).await?);
 
                 let handler = Arc::new(DotProtocolHandler::new(
                     listener,
-                    tls_config.clone(),
+                    tls_acceptor,
                     dns_config.clone(),
                     buffer_pool.clone(),
                     resolver.clone(),
