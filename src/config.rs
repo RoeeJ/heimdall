@@ -110,6 +110,9 @@ pub struct DnsConfig {
 
     /// Transport layer configuration for DNS-over-TLS and other protocols
     pub transport_config: TransportConfig,
+
+    /// IP addresses allowed to perform zone transfers (empty = allow all)
+    pub allowed_zone_transfers: Vec<String>,
 }
 
 impl Default for DnsConfig {
@@ -185,6 +188,7 @@ impl Default for DnsConfig {
             blocklist_update_interval: 86400, // 24 hours
             blocking_download_psl,
             transport_config: TransportConfig::default(),
+            allowed_zone_transfers: vec![], // Empty = allow all
         }
     }
 }
@@ -552,6 +556,15 @@ impl DnsConfig {
             config.transport_config.doh_enable_json_api = parse_bool(&enable_json_api, true);
         }
 
+        // Zone transfer configuration
+        if let Ok(allowed_transfers) = std::env::var("HEIMDALL_ALLOWED_ZONE_TRANSFERS") {
+            config.allowed_zone_transfers = allowed_transfers
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+        }
+
         // Redis configuration (auto-detected)
         config.redis_config = RedisConfig::from_env();
 
@@ -621,6 +634,16 @@ impl DnsConfig {
                     ))
                 })?);
             }
+        }
+
+        if let Some(allowed_transfers) = toml_value
+            .get("allowed_zone_transfers")
+            .and_then(|v| v.as_array())
+        {
+            self.allowed_zone_transfers = allowed_transfers
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
         }
 
         // Apply other fields as needed...

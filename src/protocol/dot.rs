@@ -103,8 +103,8 @@ impl DotProtocolHandler {
 
         // Create TLS acceptor from config
         let tls_acceptor = Arc::new(
-            tokio::runtime::Handle::current()
-                .block_on(tls_config.create_acceptor())
+            tls_config
+                .create_acceptor_sync()
                 .map_err(|e| DnsError::Io(format!("Failed to create TLS acceptor: {}", e)))?,
         );
 

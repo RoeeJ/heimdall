@@ -63,6 +63,7 @@ pub struct TcpProtocolHandler {
     rate_limiter: Arc<RateLimiter>,
     permit_manager: Arc<PermitManager>,
     query_processor: Arc<QueryProcessor>,
+    resolver: Arc<DnsResolver>,
     metrics_recorder: StandardMetricsRecorder,
 }
 
@@ -85,7 +86,11 @@ impl TcpProtocolHandler {
 
         let permit_manager = Arc::new(PermitManager::new(config.max_concurrent_queries, "TCP"));
 
-        let query_processor = Arc::new(QueryProcessor::new(buffer_pool.clone(), resolver, metrics));
+        let query_processor = Arc::new(QueryProcessor::new(
+            buffer_pool.clone(),
+            resolver.clone(),
+            metrics,
+        ));
 
         Self {
             listener,
@@ -94,6 +99,7 @@ impl TcpProtocolHandler {
             rate_limiter,
             permit_manager,
             query_processor,
+            resolver,
             metrics_recorder: StandardMetricsRecorder,
         }
     }
@@ -187,64 +193,108 @@ impl TcpProtocolHandler {
                 },
             );
 
-            // Process the query
-            match self.process_tcp_query(&msg_buf, addr, metrics).await {
-                Ok(response) => {
-                    // Send response with length prefix
-                    let response_len = response.len() as u16;
-                    let mut tcp_response = Vec::with_capacity(2 + response.len());
-                    tcp_response.extend_from_slice(&response_len.to_be_bytes());
-                    tcp_response.extend_from_slice(&response);
+            // Parse the query to check if it's a zone transfer
+            let is_zone_transfer = if let Ok(query) = DNSPacket::parse(&msg_buf) {
+                !query.questions.is_empty()
+                    && (query.questions[0].qtype == crate::dns::enums::DNSResourceType::AXFR
+                        || query.questions[0].qtype == crate::dns::enums::DNSResourceType::IXFR)
+            } else {
+                false
+            };
 
-                    if let Err(e) = stream.write_all(&tcp_response).await {
-                        error!("Failed to send TCP response: {}", e);
+            if is_zone_transfer {
+                // Handle zone transfer specially - it returns multiple packets
+                match self.process_zone_transfer(&msg_buf, addr, metrics).await {
+                    Ok(packets) => {
+                        // Send each packet with its own length prefix
+                        for packet_bytes in packets {
+                            let response_len = packet_bytes.len() as u16;
+                            let mut tcp_response = Vec::with_capacity(2 + packet_bytes.len());
+                            tcp_response.extend_from_slice(&response_len.to_be_bytes());
+                            tcp_response.extend_from_slice(&packet_bytes);
+
+                            if let Err(e) = stream.write_all(&tcp_response).await {
+                                error!("Failed to send TCP zone transfer response: {}", e);
+                                break;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to process zone transfer from {}: {}", addr, e);
+                        // Send error response
+                        if let Ok(query) = DNSPacket::parse(&msg_buf) {
+                            let error_response =
+                                self.create_error_response(&query, DNSRcode::SERVFAIL);
+                            let error_bytes = error_response.to_bytes();
+                            let response_len = error_bytes.len() as u16;
+                            let mut tcp_response = Vec::with_capacity(2 + error_bytes.len());
+                            tcp_response.extend_from_slice(&response_len.to_be_bytes());
+                            tcp_response.extend_from_slice(&error_bytes);
+                            let _ = stream.write_all(&tcp_response).await;
+                        }
+                    }
+                }
+            } else {
+                // Process regular query
+                match self.process_tcp_query(&msg_buf, addr, metrics).await {
+                    Ok(response) => {
+                        // Send response with length prefix
+                        let response_len = response.len() as u16;
+                        let mut tcp_response = Vec::with_capacity(2 + response.len());
+                        tcp_response.extend_from_slice(&response_len.to_be_bytes());
+                        tcp_response.extend_from_slice(&response);
+
+                        if let Err(e) = stream.write_all(&tcp_response).await {
+                            error!("Failed to send TCP response: {}", e);
+                            break;
+                        }
+
+                        // Record bytes sent
+                        self.record_metrics(
+                            metrics,
+                            MetricEvent::BytesSent {
+                                protocol: "TCP".to_string(),
+                                bytes: tcp_response.len(),
+                            },
+                        );
+
+                        self.record_metrics(
+                            metrics,
+                            MetricEvent::ResponseSent {
+                                protocol: "TCP".to_string(),
+                                status: ResponseStatus::Success,
+                            },
+                        );
+                    }
+                    Err(e) => {
+                        error!("Failed to process TCP query from {}: {}", addr, e);
+
+                        // Try to send error response
+                        if let Ok(query) = DNSPacket::parse(&msg_buf) {
+                            let error_response =
+                                self.create_error_response(&query, DNSRcode::SERVFAIL);
+                            let error_bytes = error_response.to_bytes();
+                            let response_len = error_bytes.len() as u16;
+
+                            let mut tcp_response = Vec::with_capacity(2 + error_bytes.len());
+                            tcp_response.extend_from_slice(&response_len.to_be_bytes());
+                            tcp_response.extend_from_slice(&error_bytes);
+
+                            let _ = stream.write_all(&tcp_response).await;
+                        }
+
+                        self.record_metrics(
+                            metrics,
+                            MetricEvent::ResponseSent {
+                                protocol: "TCP".to_string(),
+                                status: ResponseStatus::Error,
+                            },
+                        );
+
                         break;
                     }
-
-                    // Record bytes sent
-                    self.record_metrics(
-                        metrics,
-                        MetricEvent::BytesSent {
-                            protocol: "TCP".to_string(),
-                            bytes: tcp_response.len(),
-                        },
-                    );
-
-                    self.record_metrics(
-                        metrics,
-                        MetricEvent::ResponseSent {
-                            protocol: "TCP".to_string(),
-                            status: ResponseStatus::Success,
-                        },
-                    );
                 }
-                Err(e) => {
-                    error!("Failed to process TCP query from {}: {}", addr, e);
-
-                    // Try to send error response
-                    if let Ok(query) = DNSPacket::parse(&msg_buf) {
-                        let error_response = self.create_error_response(&query, DNSRcode::SERVFAIL);
-                        let error_bytes = error_response.to_bytes();
-                        let response_len = error_bytes.len() as u16;
-
-                        let mut tcp_response = Vec::with_capacity(2 + error_bytes.len());
-                        tcp_response.extend_from_slice(&response_len.to_be_bytes());
-                        tcp_response.extend_from_slice(&error_bytes);
-
-                        let _ = stream.write_all(&tcp_response).await;
-                    }
-
-                    self.record_metrics(
-                        metrics,
-                        MetricEvent::ResponseSent {
-                            protocol: "TCP".to_string(),
-                            status: ResponseStatus::Error,
-                        },
-                    );
-
-                    break;
-                }
-            }
+            } // Close the else block for non-zone-transfer queries
         }
 
         // Record connection closed
@@ -265,6 +315,27 @@ impl TcpProtocolHandler {
         _metrics: &DnsMetrics,
     ) -> Result<Vec<u8>> {
         self.query_processor.process_query(data, "TCP", addr).await
+    }
+
+    async fn process_zone_transfer(
+        &self,
+        data: &[u8],
+        addr: SocketAddr,
+        _metrics: &DnsMetrics,
+    ) -> Result<Vec<Vec<u8>>> {
+        // Parse the query
+        let query = DNSPacket::parse(data).map_err(|e| DnsError::ParseError(e.to_string()))?;
+
+        // Handle zone transfer through resolver
+        let packets = self.resolver.handle_zone_transfer(&query, addr)?;
+
+        // Convert packets to bytes
+        let mut responses = Vec::new();
+        for packet in packets {
+            responses.push(packet.to_bytes());
+        }
+
+        Ok(responses)
     }
 }
 

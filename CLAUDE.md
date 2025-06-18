@@ -69,6 +69,21 @@ curl -H "accept: application/dns-message" \
      "https://localhost:943/dns-query?dns=$(echo -n 'YOUR_BASE64_DNS_QUERY' | base64)"
 # or use Firefox/Chrome with custom DoH server: https://localhost:943/dns-query
 
+# Test Zone Transfers (AXFR/IXFR)
+# First, ensure you have zone files loaded and authoritative serving enabled
+export HEIMDALL_ZONE_FILES="/path/to/zone/files"
+export HEIMDALL_AUTHORITATIVE_ENABLED=true
+export HEIMDALL_ALLOWED_ZONE_TRANSFERS=""  # Empty = allow all (testing only!)
+
+# Test AXFR (full zone transfer)
+dig @127.0.0.1 -p 1053 example.com AXFR +tcp
+
+# Test IXFR (incremental zone transfer) 
+dig @127.0.0.1 -p 1053 example.com IXFR=2024010100 +tcp
+
+# Run the demo script for a complete example
+./scripts/demo_zone_transfer.sh
+
 # Use the provided watch script for continuous testing
 ./watch.sh
 

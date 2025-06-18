@@ -259,6 +259,7 @@ pub fn create_test_config() -> DnsConfig {
         blocklist_auto_update: false,
         blocklist_update_interval: 0,
         blocking_download_psl: false,
+        allowed_zone_transfers: vec![],
     }
 }
 

@@ -12,7 +12,7 @@ use crate::dns::{
 use crate::dnssec::{DnsSecValidator, TrustAnchorStore, ValidationResult};
 use crate::error::{DnsError, Result};
 use crate::metrics::DnsMetrics;
-use crate::zone::{QueryResult, ZoneStore};
+use crate::zone::{QueryResult, ZoneStore, ZoneTransferHandler};
 
 /// Helper struct for SOA record fields to avoid too many function parameters
 #[derive(Debug, Clone)]
@@ -289,6 +289,8 @@ pub struct DnsResolver {
     dnssec_validator: Option<Arc<DnsSecValidator>>,
     /// Zone store for authoritative DNS serving
     pub zone_store: Option<Arc<ZoneStore>>,
+    /// Zone transfer handler (optional)
+    pub zone_transfer_handler: Option<Arc<ZoneTransferHandler>>,
     /// DNS blocker (optional)
     pub blocker: Option<Arc<DnsBlocker>>,
     /// Dynamic update processor (optional)
@@ -546,6 +548,16 @@ impl DnsResolver {
             None
         };
 
+        // Initialize zone transfer handler if zone store is available
+        let zone_transfer_handler = if let Some(ref zs) = zone_store {
+            Some(Arc::new(ZoneTransferHandler::new(
+                Arc::clone(zs),
+                config.allowed_zone_transfers.clone(),
+            )))
+        } else {
+            None
+        };
+
         // Initialize update processor if zone store is available
         let update_processor = if let Some(ref zs) = zone_store {
             if config.dynamic_updates_enabled {
@@ -588,13 +600,14 @@ impl DnsResolver {
             error_counter: AtomicU64::new(0),
             dnssec_validator,
             zone_store,
+            zone_transfer_handler,
             blocker,
             update_processor,
         })
     }
 
     /// Create DNS resolver with only core components for immediate startup
-    async fn new_core_components(
+    pub async fn new_core_components(
         config: DnsConfig,
         metrics: Option<Arc<DnsMetrics>>,
     ) -> Result<Self> {
@@ -758,6 +771,24 @@ impl DnsResolver {
             None
         };
 
+        // Initialize zone transfer handler if zone store is available
+        let zone_transfer_handler = if let Some(ref zs) = zone_store {
+            info!(
+                "Zone transfer handler initialized with {} allowed IPs",
+                if config.allowed_zone_transfers.is_empty() {
+                    "all (unrestricted)".to_string()
+                } else {
+                    config.allowed_zone_transfers.len().to_string()
+                }
+            );
+            Some(Arc::new(ZoneTransferHandler::new(
+                zs.clone(),
+                config.allowed_zone_transfers.clone(),
+            )))
+        } else {
+            None
+        };
+
         Ok(Self {
             config,
             client_socket,
@@ -770,6 +801,7 @@ impl DnsResolver {
             error_counter: AtomicU64::new(0),
             dnssec_validator,
             zone_store,
+            zone_transfer_handler,
             blocker,
             update_processor,
         })
@@ -945,6 +977,33 @@ impl DnsResolver {
         self.resolve(query.clone(), query.header.id).await
     }
 
+    /// Handle zone transfer requests (AXFR/IXFR)
+    /// Returns multiple packets for the zone transfer
+    pub fn handle_zone_transfer(
+        &self,
+        query: &DNSPacket,
+        client_addr: SocketAddr,
+    ) -> Result<Vec<DNSPacket>> {
+        if let Some(ref handler) = self.zone_transfer_handler {
+            if !query.questions.is_empty() {
+                let question = &query.questions[0];
+                match question.qtype {
+                    DNSResourceType::AXFR => handler.handle_axfr(query, &client_addr),
+                    DNSResourceType::IXFR => handler.handle_ixfr(query, &client_addr),
+                    _ => {
+                        warn!("handle_zone_transfer called with non-transfer query type");
+                        Ok(vec![self.create_formerr_response(query)])
+                    }
+                }
+            } else {
+                Ok(vec![self.create_formerr_response(query)])
+            }
+        } else {
+            // No zone store configured, return REFUSED
+            Ok(vec![self.create_refused_response(query)])
+        }
+    }
+
     /// Resolve a DNS query with automatic mode detection
     pub async fn resolve(&self, query: DNSPacket, original_id: u16) -> Result<DNSPacket> {
         // Increment query counter
@@ -976,6 +1035,20 @@ impl DnsResolver {
                         BlockingMode::Refused => Ok(self.create_refused_response(&query)),
                     };
                 }
+            }
+        }
+
+        // Check for zone transfer requests (AXFR/IXFR) first
+        if !query.questions.is_empty() {
+            let question = &query.questions[0];
+            if question.qtype == DNSResourceType::AXFR || question.qtype == DNSResourceType::IXFR {
+                // Zone transfers are handled differently - they return multiple packets
+                // This should be handled by the TCP handler, not here
+                // For now, return NOTIMPL
+                debug!(
+                    "Zone transfer request received in resolver - should be handled by TCP handler"
+                );
+                return Ok(self.create_notimpl_response(&query));
             }
         }
 

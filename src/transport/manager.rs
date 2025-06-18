@@ -1,5 +1,6 @@
 use crate::{
     config::DnsConfig,
+    error::DnsError,
     metrics::DnsMetrics,
     pool::BufferPool,
     protocol::{doh::DohProtocolHandler, dot::DotProtocolHandler},
@@ -49,6 +50,22 @@ impl TransportManager {
                 (&self.config.dot_bind_addr, &self.config.tls_config)
             {
                 info!("Starting DoT server on {}", bind_addr);
+
+                // Pre-generate certificates if needed (async)
+                if tls_config.auto_generate_cert {
+                    info!("Generating TLS certificates for DoT...");
+                    // Create a temporary acceptor to trigger certificate generation
+                    match tls_config.create_acceptor().await {
+                        Ok(_) => info!("TLS certificates ready"),
+                        Err(e) => {
+                            error!("Failed to generate TLS certificates: {}", e);
+                            return Err(Box::new(DnsError::Io(format!(
+                                "TLS certificate generation failed: {}",
+                                e
+                            ))));
+                        }
+                    }
+                }
 
                 let listener = Arc::new(TcpListener::bind(bind_addr).await?);
 

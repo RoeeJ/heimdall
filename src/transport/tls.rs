@@ -85,8 +85,8 @@ pub enum TlsError {
 impl Default for TlsConfig {
     fn default() -> Self {
         Self {
-            cert_path: Some("/tls/server.crt".to_string()),
-            key_path: Some("/tls/server.key".to_string()),
+            cert_path: None, // No paths = in-memory certificate generation
+            key_path: None,  // No paths = in-memory certificate generation
             server_name: None,
             min_tls_version: TlsVersion::V1_2,
             max_tls_version: TlsVersion::V1_3,
@@ -168,6 +168,122 @@ impl TlsConfig {
         };
 
         Ok(TlsAcceptor::from(Arc::new(config)))
+    }
+
+    /// Create a TLS acceptor from this configuration (synchronous version)
+    pub fn create_acceptor_sync(&self) -> Result<TlsAcceptor, TlsError> {
+        // Install default crypto provider if not already installed
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+        // Load certificates and private key synchronously
+        let (certs, key) = self.load_certificates_sync()?;
+
+        // Create server configuration with default crypto provider
+        let config = if self.require_client_cert {
+            if let Some(ca_path) = &self.client_ca_path {
+                let ca_certs = self.load_ca_certificates(ca_path)?;
+                let mut client_auth_roots = rustls::RootCertStore::empty();
+                for cert in ca_certs {
+                    client_auth_roots.add(cert)?;
+                }
+
+                ServerConfig::builder()
+                    .with_client_cert_verifier(
+                        rustls::server::WebPkiClientVerifier::builder(Arc::new(client_auth_roots))
+                            .build()
+                            .map_err(|e| {
+                                TlsError::CertificateParse(format!("Client verifier error: {}", e))
+                            })?,
+                    )
+                    .with_single_cert(certs, key)
+                    .map_err(TlsError::ConfigError)?
+            } else {
+                return Err(TlsError::ConfigError(rustls::Error::General(
+                    "Client certificate required but no CA path provided".to_string(),
+                )));
+            }
+        } else {
+            ServerConfig::builder()
+                .with_no_client_auth()
+                .with_single_cert(certs, key)
+                .map_err(TlsError::ConfigError)?
+        };
+
+        Ok(TlsAcceptor::from(Arc::new(config)))
+    }
+
+    /// Load certificates synchronously
+    fn load_certificates_sync(
+        &self,
+    ) -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>), TlsError> {
+        if self.auto_generate_cert {
+            // For synchronous loading, we need to use blocking I/O
+            // This is used during server initialization, so blocking is acceptable
+            let hostname = self.server_name.as_deref().unwrap_or("localhost");
+
+            // Check if certificates already exist
+            if let (Some(cert_path), Some(key_path)) = (&self.cert_path, &self.key_path) {
+                if std::path::Path::new(cert_path).exists()
+                    && std::path::Path::new(key_path).exists()
+                {
+                    // Load existing certificates
+                    let certs = self.load_certificates()?;
+                    let key = self.load_private_key()?;
+                    return Ok((certs, key));
+                }
+            }
+
+            // If no paths are provided, generate in-memory certificate
+            if self.cert_path.is_none() && self.key_path.is_none() {
+                // Generate in-memory certificate synchronously
+                let (cert_pem, key_pem) = crate::transport::cert_gen::generate_self_signed_cert(
+                    hostname,
+                    self.additional_sans.clone(),
+                )
+                .map_err(|e| {
+                    TlsError::ConfigError(rustls::Error::General(format!(
+                        "Failed to generate certificate: {}",
+                        e
+                    )))
+                })?;
+
+                // Parse the PEM data
+                let mut cert_cursor = std::io::Cursor::new(cert_pem.as_bytes());
+                let certs: Result<Vec<CertificateDer<'static>>, _> =
+                    rustls_pemfile::certs(&mut cert_cursor).collect();
+                let certs = certs.map_err(|e| TlsError::CertificateParse(e.to_string()))?;
+
+                let mut key_cursor = std::io::Cursor::new(key_pem.as_bytes());
+                let keys: Result<Vec<_>, _> =
+                    rustls_pemfile::pkcs8_private_keys(&mut key_cursor).collect();
+                let keys = keys.map_err(|e| TlsError::PrivateKeyParse(e.to_string()))?;
+
+                if keys.is_empty() {
+                    // Try RSA format
+                    key_cursor.set_position(0);
+                    let keys: Result<Vec<_>, _> =
+                        rustls_pemfile::rsa_private_keys(&mut key_cursor).collect();
+                    let keys = keys.map_err(|e| TlsError::PrivateKeyParse(e.to_string()))?;
+
+                    if !keys.is_empty() {
+                        return Ok((certs, PrivateKeyDer::Pkcs1(keys[0].clone_key())));
+                    }
+                    return Err(TlsError::NoPrivateKey);
+                }
+
+                return Ok((certs, PrivateKeyDer::Pkcs8(keys[0].clone_key())));
+            }
+
+            // If auto-generation is needed in sync context with file paths, we need to generate beforehand
+            return Err(TlsError::ConfigError(rustls::Error::General(
+                "Certificate auto-generation to files requires async context. Please generate certificates beforehand or use async initialization.".to_string(),
+            )));
+        }
+
+        // Load from files
+        let certs = self.load_certificates()?;
+        let key = self.load_private_key()?;
+        Ok((certs, key))
     }
 
     /// Load or generate certificates
