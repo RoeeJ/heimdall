@@ -170,13 +170,23 @@ impl ZoneTransferHandler {
         // TODO: Implement incremental transfers with zone history
         info!("IXFR requested but not implemented, falling back to AXFR");
 
-        // Change the question type to AXFR and process
+        // Process as AXFR but keep the original IXFR question in the response
+        // Get AXFR response
         let mut axfr_query = query.clone();
         if !axfr_query.questions.is_empty() {
             axfr_query.questions[0].qtype = DNSResourceType::AXFR;
         }
 
-        self.handle_axfr(&axfr_query, client_addr)
+        let mut packets = self.handle_axfr(&axfr_query, client_addr)?;
+
+        // Fix the question section in all response packets to show IXFR
+        for packet in &mut packets {
+            if !packet.questions.is_empty() {
+                packet.questions[0].qtype = DNSResourceType::IXFR;
+            }
+        }
+
+        Ok(packets)
     }
 
     /// Create a base response packet
