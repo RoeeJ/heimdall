@@ -166,27 +166,45 @@ impl ZoneTransferHandler {
             return Ok(vec![self.create_refused_response(query)]);
         }
 
+        // Validate query
+        if query.questions.is_empty() {
+            return Ok(vec![self.create_formerr_response(query)]);
+        }
+
+        let question = &query.questions[0];
+        if question.qtype != DNSResourceType::IXFR {
+            return Ok(vec![self.create_formerr_response(query)]);
+        }
+
+        let zone_name = question.labels.join(".").to_lowercase();
+
+        // Get the zone
+        let zone = match self.zone_store.get_zone(&zone_name) {
+            Some(zone) => zone,
+            None => {
+                info!("IXFR request for non-existent zone: {}", zone_name);
+                return Ok(vec![self.create_notauth_response(query)]);
+            }
+        };
+
+        // Extract client's serial number from authority section
+        let client_serial = self.extract_client_serial(query);
+
+        info!(
+            "Processing IXFR request for zone {} from {} (client serial: {:?})",
+            zone_name, client_addr, client_serial
+        );
+
         // For now, fall back to AXFR
         // TODO: Implement incremental transfers with zone history
-        info!("IXFR requested but not implemented, falling back to AXFR");
-
-        // Process as AXFR but keep the original IXFR question in the response
-        // Get AXFR response
-        let mut axfr_query = query.clone();
-        if !axfr_query.questions.is_empty() {
-            axfr_query.questions[0].qtype = DNSResourceType::AXFR;
+        if client_serial.is_some() {
+            debug!(
+                "IXFR with serial number requested but zone history not implemented, falling back to AXFR"
+            );
         }
 
-        let mut packets = self.handle_axfr(&axfr_query, client_addr)?;
-
-        // Fix the question section in all response packets to show IXFR
-        for packet in &mut packets {
-            if !packet.questions.is_empty() {
-                packet.questions[0].qtype = DNSResourceType::IXFR;
-            }
-        }
-
-        Ok(packets)
+        // Build IXFR response (currently same as AXFR)
+        self.build_ixfr_response(query, &zone, client_serial)
     }
 
     /// Create a base response packet
@@ -241,6 +259,85 @@ impl ZoneTransferHandler {
         let mut response = self.create_base_response(query);
         response.header.rcode = ResponseCode::ServerFailure as u8;
         response
+    }
+
+    /// Extract client's serial number from IXFR query authority section
+    fn extract_client_serial(&self, query: &DNSPacket) -> Option<u32> {
+        // RFC 1995: IXFR query contains SOA in authority section with client's serial
+        if query.authorities.is_empty() {
+            return None;
+        }
+
+        // Look for SOA record in authority section
+        for auth in &query.authorities {
+            if auth.rtype == DNSResourceType::SOA {
+                // Parse SOA rdata to extract serial number
+                // SOA format: mname rname serial refresh retry expire minimum
+                if let Ok(soa_data) = String::from_utf8(auth.rdata.clone()) {
+                    // Simple parsing - in real implementation would use proper SOA parser
+                    let parts: Vec<&str> = soa_data.split_whitespace().collect();
+                    if parts.len() >= 3 {
+                        if let Ok(serial) = parts[2].parse::<u32>() {
+                            return Some(serial);
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Build IXFR response packets
+    fn build_ixfr_response(
+        &self,
+        query: &DNSPacket,
+        zone: &Zone,
+        client_serial: Option<u32>,
+    ) -> Result<Vec<DNSPacket>> {
+        // Get current zone serial
+        let current_serial = zone
+            .get_soa()
+            .and_then(|soa| soa.serial())
+            .ok_or_else(|| DnsError::ParseError("Zone has no SOA record".to_string()))?;
+
+        // Check if we can provide incremental transfer
+        if let Some(client_serial) = client_serial {
+            if client_serial == current_serial {
+                // Client is up to date - return single packet with just SOA
+                let mut response = self.create_base_response(query);
+                response.header.aa = true;
+
+                if let Some(soa) = zone.get_soa() {
+                    let soa_resource = soa
+                        .to_dns_resource(&zone.origin, zone.default_ttl)
+                        .map_err(DnsError::ParseError)?;
+                    response.answers.push(soa_resource);
+                    response.header.ancount = 1;
+                }
+
+                debug!("IXFR: Client is up to date (serial {})", current_serial);
+                return Ok(vec![response]);
+            }
+
+            // TODO: Implement incremental transfers when zone history is available
+            debug!(
+                "IXFR: Client has serial {}, current is {}, but no history available",
+                client_serial, current_serial
+            );
+        }
+
+        // Fall back to AXFR-style response but keep IXFR question
+        let mut packets = self.build_axfr_response(query, zone)?;
+
+        // Ensure question sections show IXFR
+        for packet in &mut packets {
+            if !packet.questions.is_empty() {
+                packet.questions[0].qtype = DNSResourceType::IXFR;
+            }
+        }
+
+        Ok(packets)
     }
 }
 

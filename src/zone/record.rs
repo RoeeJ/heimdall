@@ -290,4 +290,19 @@ impl ZoneRecord {
 
         Ok((encoded, name.to_string()))
     }
+
+    /// Extract serial number from SOA record
+    pub fn serial(&self) -> Option<u32> {
+        if self.rtype != DNSResourceType::SOA {
+            return None;
+        }
+
+        // SOA format: mname rname serial refresh retry expire minimum
+        let parts: Vec<&str> = self.rdata.split_whitespace().collect();
+        if parts.len() >= 3 {
+            parts[2].parse::<u32>().ok()
+        } else {
+            None
+        }
+    }
 }

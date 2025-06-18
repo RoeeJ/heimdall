@@ -5,7 +5,7 @@ use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::OwnedSemaphorePermit;
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 
 use crate::config::DnsConfig;
 use crate::dns::{DNSPacket, DNSRcode};
@@ -194,12 +194,35 @@ impl TcpProtocolHandler {
             );
 
             // Parse the query to check if it's a zone transfer
-            let is_zone_transfer = if let Ok(query) = DNSPacket::parse(&msg_buf) {
-                !query.questions.is_empty()
-                    && (query.questions[0].qtype == crate::dns::enums::DNSResourceType::AXFR
-                        || query.questions[0].qtype == crate::dns::enums::DNSResourceType::IXFR)
-            } else {
-                false
+            let is_zone_transfer = match DNSPacket::parse(&msg_buf) {
+                Ok(query) => {
+                    let is_xfr = !query.questions.is_empty()
+                        && (query.questions[0].qtype == crate::dns::enums::DNSResourceType::AXFR
+                            || query.questions[0].qtype
+                                == crate::dns::enums::DNSResourceType::IXFR);
+                    if is_xfr {
+                        debug!(
+                            "Detected zone transfer: type={:?}, authorities={}",
+                            query.questions[0].qtype,
+                            query.authorities.len()
+                        );
+                    }
+                    is_xfr
+                }
+                Err(e) => {
+                    debug!("Failed to parse query for zone transfer detection: {:?}", e);
+                    // Try a more lenient check - look for IXFR/AXFR type in the raw bytes
+                    // IXFR = 251 (0x00FB), AXFR = 252 (0x00FC)
+                    let has_xfr_type = msg_buf
+                        .windows(2)
+                        .any(|w| w[0] == 0x00 && (w[1] == 0xFB || w[1] == 0xFC));
+                    if has_xfr_type {
+                        warn!(
+                            "Query parse failed but detected XFR type in raw bytes, treating as zone transfer"
+                        );
+                    }
+                    has_xfr_type
+                }
             };
 
             if is_zone_transfer {
