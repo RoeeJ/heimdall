@@ -219,7 +219,7 @@ impl From<u16> for DNSResourceType {
             65 => DNSResourceType::HTTPS,
             252 => DNSResourceType::AXFR,
             253 => DNSResourceType::MAILB,
-            254 => DNSResourceType::IXFR,
+            251 => DNSResourceType::IXFR,
             255 => DNSResourceType::ANY,
             257 => DNSResourceType::CAA,
 
@@ -329,7 +329,7 @@ impl From<DNSResourceType> for u16 {
             DNSResourceType::OPT => 41,
             DNSResourceType::AXFR => 252,
             DNSResourceType::MAILB => 253,
-            DNSResourceType::IXFR => 254,
+            DNSResourceType::IXFR => 251,
             DNSResourceType::ANY => 255,
 
             // Phase 1 type mappings

@@ -546,12 +546,18 @@ impl DNSPacket {
         let mut packet = DNSPacket::default();
         packet.header.read(&mut reader)?;
         debug!(
-            "Parsed DNS header: id={}, qr={}, opcode={}, questions={}",
-            packet.header.id, packet.header.qr, packet.header.opcode, packet.header.qdcount
+            "Parsed DNS header: id={}, qr={}, opcode={}, questions={}, authorities={}",
+            packet.header.id,
+            packet.header.qr,
+            packet.header.opcode,
+            packet.header.qdcount,
+            packet.header.nscount
         );
-        for _ in 0..packet.header.qdcount {
+        for i in 0..packet.header.qdcount {
             let mut question = DNSQuestion::default();
+            debug!("Parsing question {} of {}", i + 1, packet.header.qdcount);
             question.read_with_buffer(&mut reader, buf)?;
+            debug!("Parsed question: {:?}", question);
             packet.questions.push(question);
         }
 

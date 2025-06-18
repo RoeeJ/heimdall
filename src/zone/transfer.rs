@@ -271,16 +271,58 @@ impl ZoneTransferHandler {
         // Look for SOA record in authority section
         for auth in &query.authorities {
             if auth.rtype == DNSResourceType::SOA {
-                // Parse SOA rdata to extract serial number
-                // SOA format: mname rname serial refresh retry expire minimum
-                if let Ok(soa_data) = String::from_utf8(auth.rdata.clone()) {
-                    // Simple parsing - in real implementation would use proper SOA parser
-                    let parts: Vec<&str> = soa_data.split_whitespace().collect();
-                    if parts.len() >= 3 {
-                        if let Ok(serial) = parts[2].parse::<u32>() {
-                            return Some(serial);
-                        }
+                // SOA RDATA format in wire format:
+                // MNAME (domain name)
+                // RNAME (domain name)
+                // SERIAL (32 bits)
+                // REFRESH (32 bits)
+                // RETRY (32 bits)
+                // EXPIRE (32 bits)
+                // MINIMUM (32 bits)
+
+                let rdata = &auth.rdata;
+                let mut offset = 0;
+
+                // Skip MNAME (domain name)
+                while offset < rdata.len() {
+                    let label_len = rdata[offset] as usize;
+                    if label_len == 0 {
+                        offset += 1;
+                        break;
                     }
+                    // Handle compression pointers
+                    if label_len & 0xC0 == 0xC0 {
+                        offset += 2;
+                        break;
+                    }
+                    offset += 1 + label_len;
+                }
+
+                // Skip RNAME (domain name)
+                while offset < rdata.len() {
+                    let label_len = rdata[offset] as usize;
+                    if label_len == 0 {
+                        offset += 1;
+                        break;
+                    }
+                    // Handle compression pointers
+                    if label_len & 0xC0 == 0xC0 {
+                        offset += 2;
+                        break;
+                    }
+                    offset += 1 + label_len;
+                }
+
+                // Now we should be at the SERIAL field
+                if offset + 4 <= rdata.len() {
+                    let serial = u32::from_be_bytes([
+                        rdata[offset],
+                        rdata[offset + 1],
+                        rdata[offset + 2],
+                        rdata[offset + 3],
+                    ]);
+                    debug!("Extracted client serial from SOA: {}", serial);
+                    return Some(serial);
                 }
             }
         }
