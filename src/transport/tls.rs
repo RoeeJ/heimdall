@@ -555,11 +555,13 @@ mod tests {
     #[test]
     fn test_default_tls_config() {
         let config = TlsConfig::default();
-        assert_eq!(config.cert_path, Some("/tls/server.crt".to_string()));
-        assert_eq!(config.key_path, Some("/tls/server.key".to_string()));
+        assert_eq!(config.cert_path, None);
+        assert_eq!(config.key_path, None);
         assert_eq!(config.min_tls_version, TlsVersion::V1_2);
         assert_eq!(config.max_tls_version, TlsVersion::V1_3);
         assert!(!config.require_client_cert);
+        assert!(config.auto_generate_cert);
+        assert!(config.additional_sans.is_empty());
     }
 
     #[test]
