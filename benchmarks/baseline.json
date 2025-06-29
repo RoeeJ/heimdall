@@ -2,53 +2,53 @@
   "version": "0.1.0",
   "benchmarks": {
     "dns_parsing_regular": {
-      "mean_time_ns": 256.4435,
-      "std_dev_ns": 25.64435,
+      "mean_time_ns": 345.4265,
+      "std_dev_ns": 34.54265,
       "name": "dns_parsing_regular",
-      "timestamp": "2025-06-22T02:40:36.922984831+00:00"
-    },
-    "buffer_pool": {
-      "mean_time_ns": 20.819,
-      "std_dev_ns": 2.0819,
-      "name": "buffer_pool",
-      "timestamp": "2025-06-22T02:40:36.932324983+00:00"
-    },
-    "cache_misses": {
-      "mean_time_ns": 24.9415,
-      "std_dev_ns": 1.2470750000000002,
-      "name": "cache_misses",
-      "timestamp": "2025-06-22T02:40:36.931372737+00:00"
+      "timestamp": "2025-06-29T02:42:51.915954436+00:00"
     },
     "dns_parsing_zerocopy": {
-      "mean_time_ns": 77.73,
-      "std_dev_ns": 7.773000000000001,
+      "mean_time_ns": 77.42,
+      "std_dev_ns": 7.742000000000001,
       "name": "dns_parsing_zerocopy",
-      "timestamp": "2025-06-22T02:40:36.922987025+00:00"
-    },
-    "buffer_allocation": {
-      "mean_time_ns": 0.13,
-      "std_dev_ns": 0.013000000000000001,
-      "name": "buffer_allocation",
-      "timestamp": "2025-06-22T02:40:36.932325785+00:00"
+      "timestamp": "2025-06-29T02:42:51.915956750+00:00"
     },
     "cache_hits": {
-      "mean_time_ns": 199.5125,
-      "std_dev_ns": 9.975625,
+      "mean_time_ns": 190.311,
+      "std_dev_ns": 9.515550000000001,
       "name": "cache_hits",
-      "timestamp": "2025-06-22T02:40:36.931371545+00:00"
+      "timestamp": "2025-06-29T02:42:51.923656470+00:00"
     },
-    "serialization_regular": {
-      "mean_time_ns": 171.315,
-      "std_dev_ns": 17.1315,
-      "name": "serialization_regular",
-      "timestamp": "2025-06-22T02:40:36.932275531+00:00"
+    "cache_misses": {
+      "mean_time_ns": 27.0755,
+      "std_dev_ns": 1.3537750000000002,
+      "name": "cache_misses",
+      "timestamp": "2025-06-29T02:42:51.923657552+00:00"
     },
     "serialization_zerocopy": {
-      "mean_time_ns": 117.915,
-      "std_dev_ns": 11.791500000000001,
+      "mean_time_ns": 123.942,
+      "std_dev_ns": 12.3942,
       "name": "serialization_zerocopy",
-      "timestamp": "2025-06-22T02:40:36.932276383+00:00"
+      "timestamp": "2025-06-29T02:42:51.924659887+00:00"
+    },
+    "buffer_allocation": {
+      "mean_time_ns": 0.1955,
+      "std_dev_ns": 0.01955,
+      "name": "buffer_allocation",
+      "timestamp": "2025-06-29T02:42:51.924708789+00:00"
+    },
+    "serialization_regular": {
+      "mean_time_ns": 164.2775,
+      "std_dev_ns": 16.42775,
+      "name": "serialization_regular",
+      "timestamp": "2025-06-29T02:42:51.924658836+00:00"
+    },
+    "buffer_pool": {
+      "mean_time_ns": 20.0925,
+      "std_dev_ns": 2.00925,
+      "name": "buffer_pool",
+      "timestamp": "2025-06-29T02:42:51.924707807+00:00"
     }
   },
-  "created_at": "2025-06-22T02:40:36.932335042+00:00"
+  "created_at": "2025-06-29T02:42:51.924715832+00:00"
 }
