@@ -1,54 +1,54 @@
 {
   "version": "0.1.0",
   "benchmarks": {
-    "buffer_allocation": {
-      "mean_time_ns": 0.18,
-      "std_dev_ns": 0.018,
-      "name": "buffer_allocation",
-      "timestamp": "2025-07-20T02:46:58.519619767+00:00"
-    },
-    "dns_parsing_regular": {
-      "mean_time_ns": 259.0675,
-      "std_dev_ns": 25.906750000000002,
-      "name": "dns_parsing_regular",
-      "timestamp": "2025-07-20T02:46:58.510739310+00:00"
-    },
-    "serialization_regular": {
-      "mean_time_ns": 163.9055,
-      "std_dev_ns": 16.39055,
-      "name": "serialization_regular",
-      "timestamp": "2025-07-20T02:46:58.519574643+00:00"
-    },
     "cache_misses": {
-      "mean_time_ns": 24.8415,
-      "std_dev_ns": 1.242075,
+      "mean_time_ns": 24.947,
+      "std_dev_ns": 1.24735,
       "name": "cache_misses",
-      "timestamp": "2025-07-20T02:46:58.518619232+00:00"
-    },
-    "cache_hits": {
-      "mean_time_ns": 188.692,
-      "std_dev_ns": 9.434600000000001,
-      "name": "cache_hits",
-      "timestamp": "2025-07-20T02:46:58.518617538+00:00"
-    },
-    "serialization_zerocopy": {
-      "mean_time_ns": 117.2685,
-      "std_dev_ns": 11.72685,
-      "name": "serialization_zerocopy",
-      "timestamp": "2025-07-20T02:46:58.519575495+00:00"
-    },
-    "buffer_pool": {
-      "mean_time_ns": 17.838,
-      "std_dev_ns": 1.7838000000000003,
-      "name": "buffer_pool",
-      "timestamp": "2025-07-20T02:46:58.519618956+00:00"
+      "timestamp": "2025-07-27T02:47:22.289575820+00:00"
     },
     "dns_parsing_zerocopy": {
-      "mean_time_ns": 77.1335,
-      "std_dev_ns": 7.71335,
+      "mean_time_ns": 85.8105,
+      "std_dev_ns": 8.581050000000001,
       "name": "dns_parsing_zerocopy",
-      "timestamp": "2025-07-20T02:46:58.510741945+00:00"
+      "timestamp": "2025-07-27T02:47:22.281444167+00:00"
+    },
+    "buffer_allocation": {
+      "mean_time_ns": 0.1855,
+      "std_dev_ns": 0.01855,
+      "name": "buffer_allocation",
+      "timestamp": "2025-07-27T02:47:22.290677270+00:00"
+    },
+    "serialization_regular": {
+      "mean_time_ns": 177.2615,
+      "std_dev_ns": 17.72615,
+      "name": "serialization_regular",
+      "timestamp": "2025-07-27T02:47:22.290624972+00:00"
+    },
+    "dns_parsing_regular": {
+      "mean_time_ns": 252.848,
+      "std_dev_ns": 25.284800000000004,
+      "name": "dns_parsing_regular",
+      "timestamp": "2025-07-27T02:47:22.281441522+00:00"
+    },
+    "serialization_zerocopy": {
+      "mean_time_ns": 110.502,
+      "std_dev_ns": 11.0502,
+      "name": "serialization_zerocopy",
+      "timestamp": "2025-07-27T02:47:22.290625924+00:00"
+    },
+    "buffer_pool": {
+      "mean_time_ns": 20.253,
+      "std_dev_ns": 2.0253,
+      "name": "buffer_pool",
+      "timestamp": "2025-07-27T02:47:22.290676118+00:00"
+    },
+    "cache_hits": {
+      "mean_time_ns": 207.904,
+      "std_dev_ns": 10.3952,
+      "name": "cache_hits",
+      "timestamp": "2025-07-27T02:47:22.289574027+00:00"
     }
   },
-  "created_at": "2025-07-20T02:46:58.519629265+00:00"
+  "created_at": "2025-07-27T02:47:22.290684443+00:00"
 }
